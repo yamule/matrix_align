@@ -41,9 +41,9 @@ pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
             let sum_chunk = _mm_hadd_ps(mul, mul);
 
             // スカラーに変換して合計
-            // 出力を a[1],a[1],b[1],b[1] とし、最初の要素を取り出す
+            
             sum += _mm_cvtss_f32(sum_chunk) + 
-            _mm_cvtss_f32(_mm_shuffle_ps(sum_chunk, sum_chunk, 0x55));
+            _mm_cvtss_f32(_mm_shuffle_ps(sum_chunk, sum_chunk, 0x55));//0x55 は 01010101 と展開されつまり結果の配列については a[1],a[1],b[1],b[1] となる。
         }
     }
     sum
@@ -51,7 +51,7 @@ pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
 
 
 #[cfg(target_feature = "avx2")]
-fn dot_product(a: &[f32], b: &[f32]) -> f32 {
+pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len());
     assert!(a.len() % 8 == 0);
 
@@ -75,15 +75,61 @@ fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     sum
 }
 
-
 #[cfg(not(target_feature = "sse3"))]
 #[cfg(not(target_feature = "avx2"))]
-fn dot_product(a: &[f32], b: &[f32]) -> f32 {
+pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len());
     eprintln!("running native");
     return a.iter().zip(b.iter()).map(|(x,y)|x*y).sum();
 }
 
+
+#[cfg(not(target_feature = "avx2"))]
+#[cfg(target_feature = "sse3")]
+unsafe fn multiply_elements(vec: &mut [f32], factor: f32) {
+    let factor_vec = _mm_set1_ps(factor);
+
+    let mut i = 0;
+    while i + 3 < vec.len() {
+        let chunk = _mm_loadu_ps(vec.as_ptr().add(i));
+        let result = _mm_mul_ps(chunk, factor_vec);
+        _mm_storeu_ps(vec.as_mut_ptr().add(i), result);
+        i += 4;
+    }
+
+    // ベクタのサイズが4の倍数でない場合の処理
+    for j in i..vec.len() {
+        vec[j] *= factor;
+    }
+}
+
+
+#[cfg(target_feature = "avx2")]
+unsafe fn multiply_elements(vec: &mut [f32], factor: f32) {
+    let factor_vec = _mm256_set1_ps(factor);
+
+    let mut i = 0;
+    while i + 7 < vec.len() {
+        let chunk = _mm256_loadu_ps(vec.as_ptr().add(i));
+        let result = _mm256_mul_ps(chunk, factor_vec);
+        _mm256_storeu_ps(vec.as_mut_ptr().add(i), result);
+        i += 8;
+    }
+
+    // ベクタのサイズが8の倍数でない場合の処理
+    for j in i..vec.len() {
+        vec[j] *= factor;
+    }
+}
+
+
+#[cfg(not(target_feature = "sse3"))]
+#[cfg(not(target_feature = "avx2"))]
+pub fn multiply_elements(vec: &mut [f32], factor: f32) {
+    for elem in vec {
+        *elem *= factor;
+    }
+}
 
 #[test]
 fn test(){
