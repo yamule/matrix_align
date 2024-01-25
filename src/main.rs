@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::io;
 use regex::Regex;
 use matrix_align::matrix_process;
+use matrix_align::sequence_weighting;
 
 //use rand::prelude::*;
 
@@ -11,6 +12,7 @@ use std::time::Instant;
 
 const NUM_CHARTYPE:usize = 28;
 const ACCEPTABLE_CHARS:&str = "ACDEFGHIKLMNPQRSTVWXY-";
+const GAP_CHAR:char = '-';
 const DIREC_UPLEFT:u8 = 0;
 const DIREC_UP:u8 = 1;
 const DIREC_LEFT:u8 = 2;
@@ -24,7 +26,7 @@ pub struct ScoredSeqAligner{
     pub alen:usize,
     pub blen:usize,
     pub alignment_buffer:Vec<Vec<char>>,//全配列がアラインメントされた状態で保持されている
-    pub pssm_buffer:Vec<Vec<(Vec<f32>,f32)>>,//その内積がスコア計算に使われるベクトル。第二要素はギャップの割合
+    pub pssm_buffer:Vec<Vec<(Vec<f32>,f32)>>,//その内積がスコア計算に使われるベクトル。第二要素は前の要素と結合している配列のウェイト、最後の残基についてはベクトルの要素は使わない
     pub alibuff_used:Vec<bool>,
     pub pssmbuff_used:Vec<bool>,
     pub alibuff_next:usize,
@@ -37,7 +39,7 @@ impl ScoredSeqAligner {
         let path_matrix:Vec<Vec<Vec<u8>>> = vec![vec![vec![];1];1];
         let mut charmap:Vec<usize> = vec![NUM_CHARTYPE;256];
         let alignment_buffer = vec![vec!['-';buff_len];buff_seqnum];
-        let pssm_buffer:Vec<Vec<(Vec<f32>,f32)>> = vec![vec![(vec![0.0;NUM_CHARTYPE],0.0);buff_len];buff_seqnum];
+        let pssm_buffer:Vec<Vec<(Vec<f32>,f32)>> = vec![vec![(vec![0.0;NUM_CHARTYPE],0.0);buff_len+1];buff_seqnum];
         let buff_used:Vec<bool> = vec![false;buff_seqnum];
         let pssmbuff_used:Vec<bool> = vec![false;buff_seqnum];
         let cc:Vec<char> = ACCEPTABLE_CHARS.chars().into_iter().collect();
@@ -134,6 +136,7 @@ impl ScoredSeqAligner {
             self.pssm_buffer[b][i].0.copy_from_slice(&self.pssm_buffer[a][i].0);
             self.pssm_buffer[b][i].1 = self.pssm_buffer[a][i].1;
         }
+        self.pssm_buffer[b][len].1 = self.pssm_buffer[a][len].1;
     }
     
     pub fn copy_ali_a_to_b(&mut self,a:usize,b:usize,len:usize){
@@ -149,14 +152,14 @@ impl ScoredSeqAligner {
 
     //文字列を保持しておくバッファのサイズを確認し、小さい場合は冗長性を少し加えて大きくする
     pub fn check_pssmbuff_length(&mut self,id:usize,len:usize){
-        if self.pssm_buffer[id].len() < len{
-            self.pssm_buffer[id] = vec![(vec![0.0;NUM_CHARTYPE],0.0);len+5];
+        if self.pssm_buffer[id].len() < len+1{
+            self.pssm_buffer[id] = vec![(vec![0.0;NUM_CHARTYPE],0.0);len+6];
         }
     }
     
     pub fn format_pssmbuff(&mut self,id:usize,len:usize){
         self.check_pssmbuff_length(id, len);
-        for vv in 0..len{
+        for vv in 0..=len{
             self.pssm_buffer[id][vv].0.fill(0.0);
             self.pssm_buffer[id][vv].1 = 0.0;
         }
@@ -167,7 +170,6 @@ impl ScoredSeqAligner {
         return matrix_process::dot_product(a,b);
     }
     
-
     pub fn pssm_colget(&self,lid:usize,pos:usize)->&(Vec<f32>,f32){
         return &self.pssm_buffer[lid][pos];
     }
@@ -227,6 +229,8 @@ impl ScoredSeqAligner {
         let blid = b.pssmbuff_id as usize;
         //let gap_penalty= -exbias/2.0;
         let mut currentpenal = 0.0;
+        
+        // B 側 N 末にギャップを入れる
         for ii in 0..=aalen{
             if ii != 0{
                 if ii == 1{
@@ -246,6 +250,8 @@ impl ScoredSeqAligner {
             self.path_matrix[ii][0][1] = DIREC_LEFT;
             self.path_matrix[ii][0][2] = DIREC_LEFT;
         }
+
+        // A 側 N 末にギャップを入れる
         let mut currentpenal = 0.0;
         for ii in 0..=bblen{
             if ii != 0{
@@ -440,7 +446,7 @@ impl ScoredSeqAligner {
             weight_sum:sumweight
         };
     }
-    pub fn make_msa(&mut self,mut sequences: Vec<ScoredSequence>,gap_penalty:f32,profile_only:bool)
+    pub fn make_msa(&mut self,mut sequences: Vec<ScoredSequence>,gap_open_penalty:f32,gap_extension_penalty:f32,profile_only:bool)
     -> (Vec<ScoredSequence>,f32){
         let mut next_id = sequences.iter().fold(0,|s,a| s.max(a.id)) as i32 + 10000;
         let mut final_score:f32 = 0.0;
@@ -458,7 +464,7 @@ impl ScoredSeqAligner {
                     let bid = sequences[jj].id;
                     if aid < bid{
                         if !calcd.contains_key(&(aid,bid)){
-                            calcd.insert((aid,bid),self.perform_dp(&sequences[ii],&sequences[jj],gap_penalty));
+                            calcd.insert((aid,bid),self.perform_dp(&sequences[ii],&sequences[jj],gap_open_penalty,gap_extension_penalty));
                         }
                         let dscore = calcd.get(&(aid,bid)).unwrap().1;
                         if maxpair.0 == -1 || dscore > maxscore{
@@ -472,7 +478,7 @@ impl ScoredSeqAligner {
                         }
                     }else{
                         if !calcd.contains_key(&(bid,aid)){
-                            calcd.insert((bid,aid),self.perform_dp(&sequences[jj],&sequences[ii],gap_penalty));
+                            calcd.insert((bid,aid),self.perform_dp(&sequences[jj],&sequences[ii], gap_open_penalty,gap_extension_penalty));
                         }
                         let dscore = calcd.get(&(bid,aid)).unwrap().1;
                         if maxpair.0 == -1 || dscore > maxscore{
@@ -840,50 +846,40 @@ impl ScoredSequence{
     
     
     
-    pub fn recalc_freq(&mut self,aligner:&mut ScoredSeqAligner){
+    pub fn calc_pssm(&mut self,aligner:&mut ScoredSeqAligner){
         let lid:usize = self.pssmbuff_id as usize;
         let aidlen = self.alibuff_ids.len();
         let alilen = self.alignment_length;
+        ここから
+        WEIGHT は全体で計算しないと、二つの Alignment を並べる時に配列数が多い方に異様にギャップが入り易くなる
+        1 VS 1 と同じギャップの確率にしたい
+
+        //let weights = sequence_weighting::calc_henikoff_henikoff_weight(&aligner.alignment_buffer,&self.alibuff_ids,alilen);
         for alipos in 0..alilen{
             let mut lett:Vec<usize> = vec![0;NUM_CHARTYPE];
-            for ii in 0..aidlen{
-                lett[aligner.ali_get_i(self.alibuff_ids[ii],alipos)] += 1;
+            (aligner.pssm_buffer[lid][alipos].0).fill(0.0);
+            for (eii,rr) in self.alibuff_ids.iter().enumerate(){
+                aligner.pssm_buffer[lid][alipos].0[aligner.charmap[aligner.alignment_buffer[*rr][alipos] as usize]] += weights[eii];
             }
-            for jj in 0..NUM_CHARTYPE{
-                aligner.pssm_set_i(lid,alipos,jj,lett[jj] as i32);
+            if alipos == 0{
+                aligner.pssm_buffer[lid][alipos].1 = 1.0 - aligner.pssm_buffer[lid][alipos].0[aligner.charmap[GAP_CHAR as usize]];
+            }else{
+                let mut ungapratio = 0.0;
+                for (eii,rr) in self.alibuff_ids.iter().enumerate(){
+                    // 前後で繋がっていて GAPOPEN が必要なもののウェイトを取る
+                    if aligner.alignment_buffer[*rr][alipos-1] != GAP_CHAR && aligner.alignment_buffer[*rr][alipos] != GAP_CHAR{
+                        ungapratio += weights[eii];
+                    }
+                }
+                aligner.pssm_buffer[lid][alipos].1 = ungapratio;
             }
         }
+        aligner.pssm_buffer[lid][alilen].1 = 1.0 - aligner.pssm_buffer[lid][alilen-1].0[aligner.charmap[GAP_CHAR as usize]];
+            
         self.num_sequences = self.primary_ids.len();
     }
     
 
-    pub fn calc_penalty(&self,aligner:&ScoredSeqAligner)->(Vec<f32>,usize){
-        let mut ret:Vec<f32> = vec![0.0;self.primary_ids.len()];
-        let lnum = self.alignment_length;
-        let mut topindex:usize = 0;
-        let mut maxpenal:f32 = 0.0;
-        for ii in 0..lnum{
-            let mut maxchar = 0;
-            let mut maxcount = 0;
-            for cc in 0..NUM_CHARTYPE{
-                let ll = aligner.pssm_get_i(self.pssmbuff_id as usize,ii,cc);
-                if maxcount < ll{
-                    maxchar = cc;
-                    maxcount = ll;
-                }
-            }
-            for (cc,aa) in self.alibuff_ids.iter().enumerate(){
-                if aligner.ali_get_i(*aa,ii) != maxchar{
-                    ret[cc] += 1.0;
-                    if maxpenal < ret[cc]{
-                        topindex = cc;
-                        maxpenal = ret[cc];
-                    }
-                }
-            }
-        }
-        return (ret,topindex);
-    }
 }
 
 fn main(){
