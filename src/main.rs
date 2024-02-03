@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io;
+use std::os::windows;
 use regex::Regex;
 use matrix_align::matrix_process;
 use matrix_align::sequence_weighting;
+use matrix_align::ioutil;
 
 //use rand::prelude::*;
 
@@ -25,6 +27,7 @@ pub struct ScoredSeqAligner{
     pub charmap:Vec<usize>,
     pub alen:usize,
     pub blen:usize,
+    pub weights:Vec<f32>,
     pub alignment_buffer:Vec<Vec<char>>,//全配列がアラインメントされた状態で保持されている
     pub pssm_buffer:Vec<Vec<(Vec<f32>,f32)>>,//その内積がスコア計算に使われるベクトル。第二要素は前の要素と結合している配列のウェイト、最後の残基についてはベクトルの要素は使わない
     pub alibuff_used:Vec<bool>,
@@ -42,6 +45,7 @@ impl ScoredSeqAligner {
         let pssm_buffer:Vec<Vec<(Vec<f32>,f32)>> = vec![vec![(vec![0.0;NUM_CHARTYPE],0.0);buff_len+1];buff_seqnum];
         let buff_used:Vec<bool> = vec![false;buff_seqnum];
         let pssmbuff_used:Vec<bool> = vec![false;buff_seqnum];
+        let weights:Vec<f32> = vec![1.0;buff_seqnum];
         let cc:Vec<char> = ACCEPTABLE_CHARS.chars().into_iter().collect();
         for ee in cc.into_iter().enumerate(){
             charmap[ee.1 as usize] = ee.0;
@@ -53,6 +57,7 @@ impl ScoredSeqAligner {
             ,charmap
             ,alen:0
             ,blen:0
+            ,weights:weights
             ,alignment_buffer:alignment_buffer
             ,alibuff_used:buff_used
             ,pssm_buffer:pssm_buffer
@@ -133,7 +138,7 @@ impl ScoredSeqAligner {
         assert!(self.pssm_buffer[a].len() >= len);
         self.check_pssmbuff_length(b,len);
         for i in 0..len{
-            self.pssm_buffer[b][i].0.copy_from_slice(&self.pssm_buffer[a][i].0);
+            self.pssm_buffer[b][i].0 = self.pssm_buffer[a][i].0.clone();
             self.pssm_buffer[b][i].1 = self.pssm_buffer[a][i].1;
         }
         self.pssm_buffer[b][len].1 = self.pssm_buffer[a][len].1;
@@ -142,7 +147,9 @@ impl ScoredSeqAligner {
     pub fn copy_ali_a_to_b(&mut self,a:usize,b:usize,len:usize){
         assert!(self.alignment_buffer[a].len() >= len);
         self.check_alibufflen(b,len);
-        self.alignment_buffer[b].copy_from_slice(&self.alignment_buffer[a]);
+
+        self.alignment_buffer[b] = self.alignment_buffer[a].clone();
+
     }
 
     pub fn release_pssmbuff(&mut self,id:usize){
@@ -392,7 +399,7 @@ impl ScoredSeqAligner {
                 let poss = ppos.0 as usize;
                 //所属する配列について、アラインメントされた状態の配列を新しいバッファ上に構築する
                 for ap in 0..anumaliseq{
-                    self.ali_set(new_aids[ap],aa, self.ali_get(a.alibuff_ids[ap], poss as usize));
+                    self.ali_set(new_aids[ap],aa, self.ali_get(a.alibuff_idx[ap], poss as usize));
                 }
             }else{
                 //所属する配列について、アラインメントされた状態の配列を新しいバッファ上に構築する
@@ -406,7 +413,7 @@ impl ScoredSeqAligner {
                     //所属する配列について、アラインメントされた状態の配列を新しいバッファ上に構築する
                     for ap in 0..bnumaliseq{
                         self.ali_set(new_aids[ap+anumaliseq],aa,
-                            self.ali_get(b.alibuff_ids[ap], poss as usize));
+                            self.ali_get(b.alibuff_idx[ap], poss as usize));
                     }
                 }
             }else{
@@ -441,7 +448,7 @@ impl ScoredSeqAligner {
             num_sequences:a.num_sequences+b.num_sequences,
             primary_ids:primary_ids,
             pssmbuff_id:lid as i32,
-            alibuff_ids:new_aids,
+            alibuff_idx:new_aids,
             alignment_length:alignment_length,
             weight_sum:sumweight
         };
@@ -637,7 +644,20 @@ impl ScoredSeqAligner {
         return (sequences,-1.0);
     }
 
-    
+
+    //配列のウェイトを計算する
+    //全配列の MSA が作られている前提
+    pub fn calc_weights(&mut self,alibuff_ids:&Vec<usize>,alilen:usize){
+        for aa in alibuff_ids.iter(){
+            if alilen < self.alignment_buffer.len()+1{
+                assert!(self.alignment_buffer[*aa][alilen+1] == '-',"All sequences must have been aligned. Found {} at sequence {}.",self.alignment_buffer[*aa][alilen+1],*aa);
+            }
+        }
+        let weights = sequence_weighting::calc_henikoff_henikoff_weight(&self.alignment_buffer,alibuff_ids,alilen);
+        for aa in alibuff_ids.iter().enumerate(){
+            self.weights[*aa.1] = weights[aa.0];
+        }
+    }
 
     pub fn calc_alignment_dist(&self,seq:&ScoredSequence)->(Vec<Vec<f32>>,HashMap<i32,usize>){
         let mut pids = seq.primary_ids.clone();
@@ -646,12 +666,12 @@ impl ScoredSeqAligner {
         assert_eq!(primaryid_map.len(),pids.len());
         
         let mut dist:Vec<Vec<f32>> = vec![vec![0.0;pids.len()];pids.len()];
-        for ii in 0..seq.alibuff_ids.len(){
-            for jj in (ii+1)..seq.alibuff_ids.len(){
+        for ii in 0..seq.alibuff_idx.len(){
+            for jj in (ii+1)..seq.alibuff_idx.len(){
                 let mut diff:i32 = 0;
-                for kk in 0..seq.alibuff_ids.len(){
-                    if self.ali_get(seq.alibuff_ids[ii],kk)
-                        != self.ali_get(seq.alibuff_ids[jj],kk){
+                for kk in 0..seq.alibuff_idx.len(){
+                    if self.ali_get(seq.alibuff_idx[ii],kk)
+                        != self.ali_get(seq.alibuff_idx[jj],kk){
                         diff += 1;
                     }
                 }
@@ -672,9 +692,9 @@ pub struct ScoredSequence{
     //pub letters:Vec<Vec<usize>>,//カラムごとの文字の出現数
     //pub alignments:Vec<Vec<char>>,
     pub num_sequences:usize,
-    pub primary_ids:Vec<i32>,
+    pub primary_ids:Vec<i32>, //weights のインデクスにも対応している
     pub pssmbuff_id:i32,
-    pub alibuff_ids:Vec<usize>,
+    pub alibuff_idx:Vec<usize>,
     pub alignment_length:usize,
     pub weight_sum:f32
 }
@@ -685,21 +705,22 @@ impl ScoredSequence{
         let aid = aligner.get_unused_alibuffid();
         aligner.register_pssmbuff(lid,a.len());
         aligner.register_alibuff(aid,a.len());
-        for aa in a.iter().zip(a_pssm.iter()).enumerate(){
-            if aligner.charmap[*(aa.1).0 as usize] != NUM_CHARTYPE{
-                aligner.pssm_set(lid,aa.0,&(*(aa.1).1,0.0));
-                aligner.ali_set(aid,aa.0,*(aa.1).0);
+        let alen = a.len();
+        for aa in a.into_iter().zip(a_pssm.into_iter()).enumerate(){
+            if aligner.charmap[(aa.1).0 as usize] != NUM_CHARTYPE{
+                aligner.pssm_set(lid,aa.0,&((aa.1).1,0.0));
+                aligner.ali_set(aid,aa.0,(aa.1).0);
             }else{
-                panic!("can not process {}!",*(aa.1).0);
+                panic!("can not process {}!",(aa.1).0);
             }
         }
         return ScoredSequence{
             id:-1,
             pssmbuff_id:lid as i32,
-            alibuff_ids:vec![aid],
+            alibuff_idx:vec![aid],
             num_sequences:1,
             primary_ids:vec![],//id はまだ発行しない。した方が良いか？
-            alignment_length:a.len(),
+            alignment_length:alen,
             weight_sum:1.0
         }
     }
@@ -745,19 +766,19 @@ impl ScoredSequence{
         aligner.register_pssmbuff(lid, alignment_length);
         aligner.copy_pssm_a_to_b(self.pssmbuff_id as usize,lid,alignment_length);
 
-        let nseq = self.alibuff_ids.len();
+        let nseq = self.alibuff_idx.len();
         let mut alibuff_ids:Vec<usize> = vec![];
         for nn in 0..nseq{ 
             let aid = aligner.get_unused_alibuffid();
             alibuff_ids.push(aid);
             aligner.register_alibuff(aid, alignment_length);
-            aligner.copy_ali_a_to_b(self.alibuff_ids[nn],aid,alignment_length);
+            aligner.copy_ali_a_to_b(self.alibuff_idx[nn],aid,alignment_length);
         }
         return ScoredSequence{
             id:id,
             primary_ids:primary_ids,
             pssmbuff_id:lid as i32,
-            alibuff_ids:alibuff_ids,
+            alibuff_idx:alibuff_ids,
             num_sequences:self.num_sequences,
             alignment_length:alignment_length,
             weight_sum:self.weight_sum
@@ -775,10 +796,10 @@ impl ScoredSequence{
             aligner.register_pssmbuff(lid,self.alignment_length);
             self.pssmbuff_id = lid as i32;
         }
-        while self.alibuff_ids.len() < self.primary_ids.len(){
+        while self.alibuff_idx.len() < self.primary_ids.len(){
             let aid = aligner.get_unused_alibuffid();
             aligner.register_alibuff(aid,self.alignment_length); 
-            self.alibuff_ids.push(aid);
+            self.alibuff_idx.push(aid);
         }
     }
 
@@ -789,21 +810,16 @@ impl ScoredSequence{
     pub fn release_buffs(&mut self,aligner:&mut ScoredSeqAligner){
         aligner.release_pssmbuff(self.pssmbuff_id as usize);
         self.pssmbuff_id = -1;
-        for pp in self.alibuff_ids.iter(){
+        for pp in self.alibuff_idx.iter(){
             aligner.release_alibuff(*pp);
         }
-        self.alibuff_ids.clear();
-    }
-
-    pub fn set_first_primary_id(&mut self,idd:i32){
-        assert!(self.primary_ids.len() == 1);
-        self.primary_ids[0] = idd;
+        self.alibuff_idx.clear();
     }
 
     pub fn set_id(&mut self,idd:i32){
         if self.primary_ids.len() == 0{
             self.id = idd;
-            self.primary_ids.push(idd);
+            self.primary_ids.push(idd); //--------- 唯一 primary id を指定するところ。重要。
         }else{
             self.id = idd;
         }
@@ -820,62 +836,52 @@ impl ScoredSequence{
         return targetidx;
     }
 
+
     /*
     pub fn split_one_with_id(&mut self,id:i32,aligner:&ScoredSeqAligner)->ScoredSequence{
         let mut targetidx:usize = self.get_index_of(id);
         return self.split_one(targetidx, aligner);
     }
     */
-
-    //remids に入った primary id を持つ配列を削除する
-    pub fn remove_seqs(&mut self,remids:&Vec<i32>,aligner:&mut ScoredSeqAligner){
-        let lid:usize = self.pssmbuff_id as usize;
-        for ii in remids.iter(){
-            let idx_:Option<usize> = self.get_index_of(*ii);
-            if let Some(idx) = idx_{
-                let aid = self.alibuff_ids.remove(idx);
-                let _idd = self.primary_ids.remove(idx);
-                let lnum = self.alignment_length;
-                for jj in 0..lnum{
-                    aligner.pssm_add(lid,jj,aligner.ali_get(aid,jj), -1);
-                }
-                aligner.release_alibuff(aid);
-            }
-        }
-    }
-    
-    
     
     pub fn calc_pssm(&mut self,aligner:&mut ScoredSeqAligner){
         let lid:usize = self.pssmbuff_id as usize;
-        let aidlen = self.alibuff_ids.len();
         let alilen = self.alignment_length;
-        ここから
-        WEIGHT は全体で計算しないと、二つの Alignment を並べる時に配列数が多い方に異様にギャップが入り易くなる
-        1 VS 1 と同じギャップの確率にしたい
 
         //let weights = sequence_weighting::calc_henikoff_henikoff_weight(&aligner.alignment_buffer,&self.alibuff_ids,alilen);
         for alipos in 0..alilen{
-            let mut lett:Vec<usize> = vec![0;NUM_CHARTYPE];
             (aligner.pssm_buffer[lid][alipos].0).fill(0.0);
-            for (eii,rr) in self.alibuff_ids.iter().enumerate(){
-                aligner.pssm_buffer[lid][alipos].0[aligner.charmap[aligner.alignment_buffer[*rr][alipos] as usize]] += weights[eii];
+            for (_eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
+                if *ppid < 0{
+                    panic!("???");
+                }
+                aligner.pssm_buffer[lid][alipos].0[aligner.charmap[aligner.alignment_buffer[*aidx][alipos] as usize]]
+                 += aligner.weights[*ppid as usize];
             }
-            if alipos == 0{
-                aligner.pssm_buffer[lid][alipos].1 = 1.0 - aligner.pssm_buffer[lid][alipos].0[aligner.charmap[GAP_CHAR as usize]];
-            }else{
-                let mut ungapratio = 0.0;
-                for (eii,rr) in self.alibuff_ids.iter().enumerate(){
-                    // 前後で繋がっていて GAPOPEN が必要なもののウェイトを取る
-                    if aligner.alignment_buffer[*rr][alipos-1] != GAP_CHAR && aligner.alignment_buffer[*rr][alipos] != GAP_CHAR{
-                        ungapratio += weights[eii];
+            let mut ungapratio = 0.0;
+            for (_eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
+                // 前後で繋がっていて GAPOPEN が必要なもののウェイトを取る
+                if alipos == 0{
+                    if aligner.alignment_buffer[*aidx][alipos] != GAP_CHAR{
+                        ungapratio +=  aligner.weights[*ppid as usize];
+                    }
+                }else{
+                    if aligner.alignment_buffer[*aidx][alipos-1] != GAP_CHAR && aligner.alignment_buffer[*aidx][alipos] != GAP_CHAR{
+                        ungapratio +=  aligner.weights[*ppid as usize];
                     }
                 }
-                aligner.pssm_buffer[lid][alipos].1 = ungapratio;
             }
+            aligner.pssm_buffer[lid][alipos].1 = ungapratio;
         }
-        aligner.pssm_buffer[lid][alilen].1 = 1.0 - aligner.pssm_buffer[lid][alilen-1].0[aligner.charmap[GAP_CHAR as usize]];
-            
+
+        // 最後の残基以降のギャップ
+        let mut ungapratio = 0.0;
+        for (_eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
+                if aligner.alignment_buffer[*aidx][alilen-1] != GAP_CHAR{
+                    ungapratio +=  aligner.weights[*ppid as usize];
+                }
+            }
+        aligner.pssm_buffer[lid][alilen].1 = ungapratio;
         self.num_sequences = self.primary_ids.len();
     }
     
@@ -886,3 +892,10 @@ fn main(){
 
 }
 
+#[test]
+fn aligntest(){
+    let mut aligner:ScoredSeqAligner = ScoredSeqAligner::new(200,100);
+    let pssm1 = ioutil::load_pssm_matrix("./example_files/esm2_650m_example_output/d6iyia_.res.gz",true);
+    let pssm2 = ioutil::load_pssm_matrix("./example_files/esm2_650m_example_output/d7diha_.res.gz",true);
+    
+}

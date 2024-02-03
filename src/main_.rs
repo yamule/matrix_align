@@ -1175,3 +1175,8 @@ fn main_() {
     }
     //println!("{:?}",sequences[0].letters);
 }
+#[test]
+fn aligntest(){
+    let mut aligner:FreqSeqAligner = FreqSeqAligner::new();
+    
+}
