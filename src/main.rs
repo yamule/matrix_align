@@ -912,9 +912,26 @@ impl ScoredSequence{
         self.num_sequences = self.primary_ids.len();
     }
     
-
 }
 
+pub fn calc_vec_stats(filenames:&Vec<String>){
+    let mut ssum:Vec<f32> = vec![];
+    let mut smax:Vec<f32> = vec![];
+    let mut smin:Vec<f32> = vec![];
+    
+    for fname in filenames.into_iter(){
+        let pssm1 = ioutil::load_pssm_matrix(fname,fname.ends_with(".gz"));
+        if ssum.len() == 0{
+            ssum = vec![0.0;pssm1.1[0].len()];
+            smax = pssm1.1[0].clone();
+            smin = pssm1.1[0].clone();
+        }
+        for ii in pssm1.1.iter(){
+            
+        }
+    }
+
+}
 fn main(){
 
 }
