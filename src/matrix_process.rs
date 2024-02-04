@@ -79,7 +79,7 @@ pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(not(target_feature = "avx2"))]
 pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len());
-    eprintln!("running native");
+    //eprintln!("running native");
     return a.iter().zip(b.iter()).map(|(x,y)|x*y).sum();
 }
 

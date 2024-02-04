@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io;
 use std::os::windows;
+use std::vec;
 use regex::Regex;
 use matrix_align::matrix_process;
 use matrix_align::sequence_weighting;
@@ -25,11 +26,12 @@ pub struct ScoredSeqAligner{
     pub dp_matrix:Vec<Vec<Vec<f32>>>,
     pub path_matrix:Vec<Vec<Vec<u8>>>,
     pub charmap:Vec<usize>,
+    pub vec_size:usize,
     pub alen:usize,
     pub blen:usize,
     pub weights:Vec<f32>,
     pub alignment_buffer:Vec<Vec<char>>,//全配列がアラインメントされた状態で保持されている
-    pub pssm_buffer:Vec<Vec<(Vec<f32>,f32)>>,//その内積がスコア計算に使われるベクトル。第二要素は前の要素と結合している配列のウェイト、最後の残基についてはベクトルの要素は使わない
+    pub pssm_buffer:Vec<Vec<(Vec<f32>,f32,f32)>>,//その内積がスコア計算に使われるベクトル。第二要素は前の要素と結合している配列のウェイト、最後の残基についてはベクトルの要素は使わない
     pub alibuff_used:Vec<bool>,
     pub pssmbuff_used:Vec<bool>,
     pub alibuff_next:usize,
@@ -37,12 +39,12 @@ pub struct ScoredSeqAligner{
     pub penalty_warning:bool
 }
 impl ScoredSeqAligner {
-    pub fn new(buff_len:usize,buff_seqnum:usize)->ScoredSeqAligner{
+    pub fn new(vec_size:usize,buff_len:usize,buff_seqnum:usize)->ScoredSeqAligner{
         let dp_matrix:Vec<Vec<Vec<f32>>> = vec![vec![vec![];1];1];
         let path_matrix:Vec<Vec<Vec<u8>>> = vec![vec![vec![];1];1];
         let mut charmap:Vec<usize> = vec![NUM_CHARTYPE;256];
         let alignment_buffer = vec![vec!['-';buff_len];buff_seqnum];
-        let pssm_buffer:Vec<Vec<(Vec<f32>,f32)>> = vec![vec![(vec![0.0;NUM_CHARTYPE],0.0);buff_len+1];buff_seqnum];
+        let pssm_buffer:Vec<Vec<(Vec<f32>,f32,f32)>> = vec![vec![(vec![0.0;vec_size],0.0,0.0);buff_len+1];buff_seqnum];
         let buff_used:Vec<bool> = vec![false;buff_seqnum];
         let pssmbuff_used:Vec<bool> = vec![false;buff_seqnum];
         let weights:Vec<f32> = vec![1.0;buff_seqnum];
@@ -55,6 +57,7 @@ impl ScoredSeqAligner {
             dp_matrix:dp_matrix
             ,path_matrix:path_matrix
             ,charmap
+            ,vec_size:vec_size
             ,alen:0
             ,blen:0
             ,weights:weights
@@ -123,7 +126,7 @@ impl ScoredSeqAligner {
         }
         let newid = self.pssmbuff_used.len();
         self.pssmbuff_used.push(false);
-        self.pssm_buffer.push(vec![(vec![0.0;NUM_CHARTYPE],0.0);self.pssm_buffer[0].len()]);
+        self.pssm_buffer.push(vec![(vec![0.0;NUM_CHARTYPE],0.0,0.0);self.pssm_buffer[0].len()]);
         return newid;
     }
     
@@ -160,7 +163,7 @@ impl ScoredSeqAligner {
     //文字列を保持しておくバッファのサイズを確認し、小さい場合は冗長性を少し加えて大きくする
     pub fn check_pssmbuff_length(&mut self,id:usize,len:usize){
         if self.pssm_buffer[id].len() < len+1{
-            self.pssm_buffer[id] = vec![(vec![0.0;NUM_CHARTYPE],0.0);len+6];
+            self.pssm_buffer[id] = vec![(vec![0.0;self.vec_size],0.0,0.0);len+6];
         }
     }
     
@@ -177,14 +180,15 @@ impl ScoredSeqAligner {
         return matrix_process::dot_product(a,b);
     }
     
-    pub fn pssm_colget(&self,lid:usize,pos:usize)->&(Vec<f32>,f32){
+    pub fn pssm_colget(&self,lid:usize,pos:usize)->&(Vec<f32>,f32,f32){
         return &self.pssm_buffer[lid][pos];
     }
 
     //別関数になるかも
-    pub fn pssm_set(&mut self,lid:usize,pos:usize,val:&(Vec<f32>,f32)){
+    pub fn pssm_set(&mut self,lid:usize,pos:usize,val:&(Vec<f32>,f32,f32)){
         self.pssm_buffer[lid][pos].0.copy_from_slice(&val.0);
-        self.pssm_buffer[lid][pos].1 = val.1;
+        self.pssm_buffer[lid][pos].1 = val.1;//二番目は前の残基とギャップにならず連続しているもののウェイト合計。Gap Open として考慮される
+        self.pssm_buffer[lid][pos].2 = val.2;//三番目は前の残基とギャップになっているもののウェイト合計。Gap Extend として考慮される
     }
 
     //この辺違う関数になるはず
@@ -229,27 +233,21 @@ impl ScoredSeqAligner {
         if recflag{
             self.reconstruct_matrix(aalen+25, bblen+25);
         }
-        let anumseq = a.get_num_seq();
-        let bnumseq = b.get_num_seq();
-        let exbias:f32 =  1.0/((anumseq*bnumseq) as f32);
+        
         let alid = a.pssmbuff_id as usize;
         let blid = b.pssmbuff_id as usize;
-        //let gap_penalty= -exbias/2.0;
+        
         let mut currentpenal = 0.0;
         
         // B 側 N 末にギャップを入れる
         for ii in 0..=aalen{
             if ii != 0{
                 if ii == 1{
-                    currentpenal = (1.0-self.pssm_colget(alid,ii-1).1)*gap_open_penalty;
+                    currentpenal = self.pssm_colget(alid,ii-1).1*gap_open_penalty+self.pssm_colget(alid,ii-1).2*gap_extension_penalty;
                 }else{
-                    currentpenal += (1.0-self.pssm_colget(alid,ii-1).1)*gap_extension_penalty;
+                    currentpenal = self.pssm_colget(alid,ii-1).1*gap_extension_penalty+self.pssm_colget(alid,ii-1).2*gap_extension_penalty;
                 }
                 self.dp_matrix[ii][0][DIREC_LEFT as usize] = self.dp_matrix[ii-1][0][DIREC_LEFT as usize] + currentpenal;
-                self.dp_matrix[ii][0][DIREC_UPLEFT as usize] = self.dp_matrix[ii][0][DIREC_LEFT as usize]-1000.0;
-                self.dp_matrix[ii][0][DIREC_UP as usize] = self.dp_matrix[ii][0][DIREC_LEFT as usize]-1000.0;
-            }else{
-                self.dp_matrix[ii][0][DIREC_LEFT as usize] = 0.0;
                 self.dp_matrix[ii][0][DIREC_UPLEFT as usize] = self.dp_matrix[ii][0][DIREC_LEFT as usize]-1000.0;
                 self.dp_matrix[ii][0][DIREC_UP as usize] = self.dp_matrix[ii][0][DIREC_LEFT as usize]-1000.0;
             }
@@ -263,15 +261,12 @@ impl ScoredSeqAligner {
         for ii in 0..=bblen{
             if ii != 0{
                 if ii == 1{
-                    currentpenal = (1.0-self.pssm_colget(blid,ii-1).1)*gap_open_penalty;
+                    currentpenal = self.pssm_colget(blid,ii-1).1*gap_open_penalty+self.pssm_colget(blid,ii-1).2*gap_extension_penalty;
                 }else{
-                    currentpenal += (1.0-self.pssm_colget(blid,ii-1).1)*gap_extension_penalty;
+                    currentpenal = self.pssm_colget(blid,ii-1).1*gap_extension_penalty+self.pssm_colget(blid,ii-1).2*gap_extension_penalty;
                 }
+                println!("{}",currentpenal);
                 self.dp_matrix[0][ii][DIREC_UP as usize] = self.dp_matrix[0][ii-1][DIREC_UP as usize]+currentpenal;
-                self.dp_matrix[0][ii][DIREC_UPLEFT as usize] = self.dp_matrix[0][ii][DIREC_UP as usize]-1000.0;
-                self.dp_matrix[0][ii][DIREC_LEFT as usize] = self.dp_matrix[0][ii][DIREC_UP as usize]-1000.0;
-            }else{
-                self.dp_matrix[0][ii][DIREC_UP as usize] = 0.0;
                 self.dp_matrix[0][ii][DIREC_UPLEFT as usize] = self.dp_matrix[0][ii][DIREC_UP as usize]-1000.0;
                 self.dp_matrix[0][ii][DIREC_LEFT as usize] = self.dp_matrix[0][ii][DIREC_UP as usize]-1000.0;
             }
@@ -279,26 +274,37 @@ impl ScoredSeqAligner {
             self.path_matrix[0][ii][1] = DIREC_UP;
             self.path_matrix[0][ii][2] = DIREC_UP;
         }
-        
+        self.dp_matrix[0][0][DIREC_UP as usize] = 0.0;
+        self.dp_matrix[0][0][DIREC_UPLEFT as usize] = 0.0;
+        self.dp_matrix[0][0][DIREC_LEFT as usize] = 0.0;
+        self.path_matrix[0][0][0] = 0;
+        self.path_matrix[0][0][1] = 0;
+        self.path_matrix[0][0][2] = 0;
+
         for ii in 1..=aalen{
             for jj in 1..=bblen{
                 let acol = self.pssm_colget(alid,ii-1);
                 let bcol = self.pssm_colget(blid,jj-1);
                 let sc:f32 = ScoredSeqAligner::calc_match_score(&acol.0,&bcol.0);
-
+                if ii == jj{
+                    println!("{} {}",sc,acol.1*gap_open_penalty);   
+                }
                 let diag_m:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UPLEFT as usize] + sc;
                 let diag_l:f32 = self.dp_matrix[ii-1][jj-1][DIREC_LEFT as usize] + sc;
                 let diag_u:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UP as usize] + sc;
 
 
-                let lef_m:f32 = self.dp_matrix[ii-1][jj][DIREC_UPLEFT as usize] + (1.0-acol.1)*gap_open_penalty;
-                let lef_l:f32 = self.dp_matrix[ii-1][jj][DIREC_LEFT as usize] + (1.0-acol.1)*gap_extension_penalty;
-                let lef_u:f32 = self.dp_matrix[ii-1][jj][DIREC_UP as usize] + (1.0-acol.1)*gap_open_penalty;
+                let lef_m:f32 = self.dp_matrix[ii-1][jj][DIREC_UPLEFT as usize] + acol.1*gap_open_penalty + acol.2*gap_extension_penalty;
+                let lef_l:f32 = self.dp_matrix[ii-1][jj][DIREC_LEFT as usize] + acol.1*gap_extension_penalty + acol.2*gap_extension_penalty;
+                let lef_u:f32 = self.dp_matrix[ii-1][jj][DIREC_UP as usize] + acol.1*gap_open_penalty + acol.2*gap_extension_penalty;
+                if ii == jj{
+                    eprintln!("{:?}",self.dp_matrix[ii-1][jj]);
+                    eprintln!("{} {} {}",lef_m,lef_l,lef_u);
+                }
 
-
-                let up_m:f32 = self.dp_matrix[ii][jj-1][DIREC_UPLEFT as usize] + (1.0-bcol.1)*gap_open_penalty;
-                let up_l:f32 = self.dp_matrix[ii][jj-1][DIREC_LEFT as usize] + (1.0-bcol.1)*gap_open_penalty;
-                let up_u:f32 = self.dp_matrix[ii][jj-1][DIREC_UP as usize] + (1.0-bcol.1)*gap_extension_penalty;
+                let up_m:f32 = self.dp_matrix[ii][jj-1][DIREC_UPLEFT as usize] + bcol.1*gap_open_penalty + bcol.2*gap_extension_penalty;
+                let up_l:f32 = self.dp_matrix[ii][jj-1][DIREC_LEFT as usize] + bcol.1*gap_open_penalty + bcol.2*gap_extension_penalty;
+                let up_u:f32 = self.dp_matrix[ii][jj-1][DIREC_UP as usize] + bcol.1*gap_extension_penalty + bcol.2*gap_extension_penalty;
                 
 
                 let px = vec![
@@ -314,7 +320,7 @@ impl ScoredSeqAligner {
                         self.dp_matrix[ii][jj][poss as usize] = _m;
                         self.path_matrix[ii][jj][poss as usize] = DIREC_UPLEFT;
                     }else{
-                        if diag_l >= diag_u{
+                        if _l >= _u{
                             self.dp_matrix[ii][jj][poss as usize] = _l;
                             self.path_matrix[ii][jj][poss as usize] = DIREC_LEFT;
                         }else{
@@ -336,6 +342,7 @@ impl ScoredSeqAligner {
                 maxscore = self.dp_matrix[currentx][currenty][ii];
             }
         }
+        let mut nexpos = self.path_matrix[currentx][currenty][currentpos as usize];
         let mut aligned_tuple:Vec<(i32,i32)> = vec![];
         while currentx > 0 || currenty > 0{
             if currentpos == DIREC_UPLEFT{
@@ -351,7 +358,8 @@ impl ScoredSeqAligner {
             }else{
                 panic!("???");
             }
-            currentpos = self.path_matrix[currentx][currenty][currentpos as usize];
+            currentpos = nexpos;
+            nexpos = self.path_matrix[currentx][currenty][currentpos as usize];
             
         }
         aligned_tuple.reverse();
@@ -700,7 +708,7 @@ pub struct ScoredSequence{
 }
 
 impl ScoredSequence{
-    pub fn new(a:Vec<char>,a_pssm:Vec<Vec<f32>>,aligner:&mut ScoredSeqAligner)-> ScoredSequence{
+    pub fn new(a:Vec<char>,a_pssm:Vec<Vec<f32>>,aligner:&mut ScoredSeqAligner,register_id:bool)-> ScoredSequence{
         let lid = aligner.get_unused_pssmbuffid();
         let aid = aligner.get_unused_alibuffid();
         aligner.register_pssmbuff(lid,a.len());
@@ -708,18 +716,27 @@ impl ScoredSequence{
         let alen = a.len();
         for aa in a.into_iter().zip(a_pssm.into_iter()).enumerate(){
             if aligner.charmap[(aa.1).0 as usize] != NUM_CHARTYPE{
-                aligner.pssm_set(lid,aa.0,&((aa.1).1,0.0));
+                aligner.pssm_set(lid,aa.0,&((aa.1).1,1.0,0.0)); 
                 aligner.ali_set(aid,aa.0,(aa.1).0);
             }else{
                 panic!("can not process {}!",(aa.1).0);
             }
         }
+        
+        aligner.pssm_set(lid,alen,&(vec![0.0;aligner.vec_size],1.0,0.0));
+        
+        let mut idd = -1_i32;
+        let mut pidd:Vec<i32> = vec![];
+        if register_id{
+            idd = aid as i32;
+            pidd.push(aid as i32);
+        }
         return ScoredSequence{
-            id:-1,
+            id:idd,
             pssmbuff_id:lid as i32,
             alibuff_idx:vec![aid],
             num_sequences:1,
-            primary_ids:vec![],//id はまだ発行しない。した方が良いか？
+            primary_ids:pidd,
             alignment_length:alen,
             weight_sum:1.0
         }
@@ -819,7 +836,7 @@ impl ScoredSequence{
     pub fn set_id(&mut self,idd:i32){
         if self.primary_ids.len() == 0{
             self.id = idd;
-            self.primary_ids.push(idd); //--------- 唯一 primary id を指定するところ。重要。
+            self.primary_ids.push(idd); 
         }else{
             self.id = idd;
         }
@@ -859,29 +876,39 @@ impl ScoredSequence{
                  += aligner.weights[*ppid as usize];
             }
             let mut ungapratio = 0.0;
+            let mut gapratio = 0.0;
             for (_eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
                 // 前後で繋がっていて GAPOPEN が必要なもののウェイトを取る
                 if alipos == 0{
                     if aligner.alignment_buffer[*aidx][alipos] != GAP_CHAR{
                         ungapratio +=  aligner.weights[*ppid as usize];
+                    }else{
+                        gapratio +=  aligner.weights[*ppid as usize];
                     }
                 }else{
                     if aligner.alignment_buffer[*aidx][alipos-1] != GAP_CHAR && aligner.alignment_buffer[*aidx][alipos] != GAP_CHAR{
                         ungapratio +=  aligner.weights[*ppid as usize];
+                    }else{
+                        gapratio +=  aligner.weights[*ppid as usize];
                     }
                 }
             }
             aligner.pssm_buffer[lid][alipos].1 = ungapratio;
+            aligner.pssm_buffer[lid][alipos].2 = gapratio;
         }
 
         // 最後の残基以降のギャップ
         let mut ungapratio = 0.0;
+        let mut gapratio = 0.0;
         for (_eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
-                if aligner.alignment_buffer[*aidx][alilen-1] != GAP_CHAR{
-                    ungapratio +=  aligner.weights[*ppid as usize];
-                }
+            if aligner.alignment_buffer[*aidx][alilen-1] != GAP_CHAR{
+                ungapratio +=  aligner.weights[*ppid as usize];
+            }else{
+                gapratio +=  aligner.weights[*ppid as usize];
             }
+        }
         aligner.pssm_buffer[lid][alilen].1 = ungapratio;
+        aligner.pssm_buffer[lid][alilen].2 = gapratio;
         self.num_sequences = self.primary_ids.len();
     }
     
@@ -894,8 +921,55 @@ fn main(){
 
 #[test]
 fn aligntest(){
-    let mut aligner:ScoredSeqAligner = ScoredSeqAligner::new(200,100);
+
     let pssm1 = ioutil::load_pssm_matrix("./example_files/esm2_650m_example_output/d6iyia_.res.gz",true);
+    //let pssm2 = ioutil::load_pssm_matrix("./example_files/esm2_650m_example_output/d6iyia_.res.gz",true);
     let pssm2 = ioutil::load_pssm_matrix("./example_files/esm2_650m_example_output/d7diha_.res.gz",true);
     
+    //let pssm1 = ioutil::load_pssm_matrix("./example_files/test1.pssm",false);
+    //let pssm2 = ioutil::load_pssm_matrix("./example_files/test2.pssm",false);
+    let mut aligner:ScoredSeqAligner = ScoredSeqAligner::new(pssm1.1[0].len(),200,100);
+    let seq1 = ScoredSequence::new(
+        pssm1.0,pssm1.1,&mut aligner,true
+    );
+
+    let seq2 = ScoredSequence::new(
+        pssm2.0,pssm2.1,&mut aligner,true
+    );
+
+    let res = aligner.perform_dp(
+        &seq1,&seq2,-10.0,-0.5
+    );
+
+    println!("{:?}",res);
+
+    for cc in 0..3{
+        for ii in 0..11{
+            for jj in 0..6{
+                print!("{:>.1} ",aligner.dp_matrix[ii][jj][cc]);
+            }
+            println!("");
+        }
+        println!("");
+    }
+
+    let plen = res.0.len();
+    let apos = seq1.alibuff_idx[0];
+    let bpos = seq2.alibuff_idx[0];
+    let mut aseq = "".to_owned();
+    let mut bseq = "".to_owned();
+    for rr in res.0.iter(){
+        if rr.0 > -1{
+            aseq += &aligner.alignment_buffer[apos][rr.0 as usize].to_string();
+        }else{
+            aseq += "-";
+        }
+        if rr.1 > -1{
+            bseq += &aligner.alignment_buffer[bpos][rr.1 as usize].to_string();
+        }else{
+            bseq += "-";
+        }
+    }
+    println!("{}",aseq);
+    println!("{}",bseq);
 }
