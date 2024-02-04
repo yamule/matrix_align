@@ -237,6 +237,44 @@ pub fn vector_add(vec1:&mut [f32],vec2:&[f32]){
     }
 }
 
+#[cfg(all(not(target_feature = "avx2"),target_feature = "sse3"))]
+pub unsafe fn vector_square(vec: &mut [f32]){
+    let mut i = 0;
+    while i + 3 < vec.len() {
+        let chunk = _mm_loadu_ps(vec.as_ptr().add(i));
+        let result = _mm256_mul_ps(chunk, chunk);
+        _mm_storeu_ps(vec.as_mut_ptr().add(i), result);
+        i += 4;
+    }
+    // ベクタのサイズが8の倍数でない場合の処理
+    for j in i..vec.len() {
+        vec[j] = vec[j]*vec[j] ;
+    }
+}
+
+
+#[cfg(target_feature = "avx2")]
+pub unsafe fn vector_square(vec: &mut [f32]){
+    let mut i = 0;
+    while i + 7 < vec.len() {
+        let chunk = _mm256_loadu_ps(vec.as_ptr().add(i));
+        let result = _mm256_mul_ps(chunk, chunk);
+        _mm256_storeu_ps(vec.as_mut_ptr().add(i), result);
+        i += 8;
+    }
+    // ベクタのサイズが8の倍数でない場合の処理
+    for j in i..vec.len() {
+        vec[j] = vec[j]*vec[j] ;
+    }
+}
+
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn vector_square(vec: &mut[f32]){
+    for j in 0..vec.len() {
+        vec[j] = vec[j]*vec[j] ;
+    }
+}
 
 
 

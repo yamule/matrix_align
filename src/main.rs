@@ -912,21 +912,41 @@ impl ScoredSequence{
     
 }
 
-pub fn calc_vec_stats(filenames:&Vec<String>){
+pub unsafe fn calc_vec_stats(filenames:&Vec<String>){
     let mut ssum:Vec<f32> = vec![];
     let mut smax:Vec<f32> = vec![];
     let mut smin:Vec<f32> = vec![];
+    let mut counter = 0_usize;
     
+    let mut allval:Vec<Vec<f32>> = vec![];//まあ多分メモリ上に乘るだろう。。。
     for fname in filenames.into_iter(){
-        let pssm1 = ioutil::load_pssm_matrix(fname,fname.ends_with(".gz"));
+        let mut pssm1 = ioutil::load_pssm_matrix(fname,fname.ends_with(".gz"));
         if ssum.len() == 0{
             ssum = vec![0.0;pssm1.1[0].len()];
             smax = pssm1.1[0].clone();
             smin = pssm1.1[0].clone();
         }
-        for ii in pssm1.1.iter(){
-
+        for pp in pssm1.1.iter(){
+            matrix_process::vector_add(&mut ssum, &pp);
+            matrix_process::vector_max(&mut smax, &pp);
+            matrix_process::vector_min(&mut smin, &pp);
+            counter += 1;
         }
+        allval.append(&mut pssm1.1);
+    }
+    let mut smean = ssum.clone();
+    matrix_process::multiply_elements(&mut smean,1.0/(counter as f32));
+
+    let mut svar:Vec<f32> = vec![0.0;ssum.len()];
+    let mut smeanneg = smean.clone();
+    matrix_process::multiply_elements(&mut smeanneg,-1.0);
+    for mut pp in allval.into_iter(){
+        matrix_process::vector_add(&mut pp,&smeanneg);
+        matrix_process::vector_square(&mut pp);
+        matrix_process::vector_add(&mut svar,&pp);
+    }
+    for ii in 0..ssum.len(){
+        println!("mean:\t{}\tmax:\t{}\tmin:\t{}\tvar:{}",smean[ii],smax[ii],smin[ii],svar[ii]/(counter as f32));
     }
 
 }
@@ -936,7 +956,15 @@ fn main(){
 
 // #[test]
 fn aligntest(){
-
+    let filenames:Vec<String> = vec![
+        "./example_files/test1.pssm".to_owned(),
+        "./example_files/test2.pssm".to_owned(),
+        //"./example_files/esm2_650m_example_output/d6iyia_.res.gz".to_owned(),
+        //"./example_files/esm2_650m_example_output/d7diha_.res.gz".to_owned()
+    ];
+    unsafe{
+        calc_vec_stats(& filenames);
+    }
     let pssm1 = ioutil::load_pssm_matrix("./example_files/esm2_650m_example_output/d6iyia_.res.gz",true);
     //let pssm2 = ioutil::load_pssm_matrix("./example_files/esm2_650m_example_output/d6iyia_.res.gz",true);
     let pssm2 = ioutil::load_pssm_matrix("./example_files/esm2_650m_example_output/d7diha_.res.gz",true);
