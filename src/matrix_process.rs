@@ -1,29 +1,13 @@
 use std::arch::x86_64::*;
 
-/*
-use std::simd::f32x4;
 
-fn dot_product(a: &[f32], b: &[f32]) -> f32 {
-    assert_eq!(a.len(), b.len());
-    assert!(a.len() % 4 == 0);
-
-    let mut sum = f32x4::splat(0.0);
-    for i in (0..a.len()).step_by(4) {
-        let a_chunk = f32x4::from_slice(&a[i..i + 4]);
-        let b_chunk = f32x4::from_slice(&b[i..i + 4]);
-        sum += a_chunk * b_chunk;
-    }
-
-    sum.reduce_sum()
-}
-*/
 
 #[cfg(all(not(target_feature = "avx2"),target_feature = "sse3"))]
 pub unsafe fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len());
     assert!(a.len() % 4 == 0);
 
-    eprintln!("running sse3");
+    //eprintln!("running sse3");
     let mut sum = 0.0;
     for i in (0..a.len()).step_by(4) {
         // SIMD型にデータをロード
@@ -50,8 +34,7 @@ pub unsafe fn dot_product(a: &[f32], b: &[f32]) -> f32 {
 pub unsafe fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len());
     assert!(a.len() % 8 == 0);
-
-    eprintln!("running avx2");
+    //eprintln!("running avx2");
     let mut sum = 0.0;
     let mut sum_vec = _mm256_setzero_ps();
     for i in (0..a.len()).step_by(8) {

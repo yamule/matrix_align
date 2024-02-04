@@ -177,7 +177,9 @@ impl ScoredSeqAligner {
 
     //呼び出し元から直接 dot_product に飛ばしてもいいかも
     pub fn calc_match_score(a:&Vec<f32>,b:&Vec<f32>)->f32{
-        return matrix_process::dot_product(a,b);
+        unsafe{
+            return matrix_process::dot_product(a,b);
+        }
     }
     
     pub fn pssm_colget(&self,lid:usize,pos:usize)->&(Vec<f32>,f32,f32){
@@ -257,7 +259,7 @@ impl ScoredSeqAligner {
         }
 
         // A 側 N 末にギャップを入れる
-        let mut currentpenal = 0.0;
+        let mut currentpenal;
         for ii in 0..=bblen{
             if ii != 0{
                 if ii == 1{
@@ -265,7 +267,7 @@ impl ScoredSeqAligner {
                 }else{
                     currentpenal = self.pssm_colget(blid,ii-1).1*gap_extension_penalty+self.pssm_colget(blid,ii-1).2*gap_extension_penalty;
                 }
-                println!("{}",currentpenal);
+
                 self.dp_matrix[0][ii][DIREC_UP as usize] = self.dp_matrix[0][ii-1][DIREC_UP as usize]+currentpenal;
                 self.dp_matrix[0][ii][DIREC_UPLEFT as usize] = self.dp_matrix[0][ii][DIREC_UP as usize]-1000.0;
                 self.dp_matrix[0][ii][DIREC_LEFT as usize] = self.dp_matrix[0][ii][DIREC_UP as usize]-1000.0;
@@ -286,9 +288,8 @@ impl ScoredSeqAligner {
                 let acol = self.pssm_colget(alid,ii-1);
                 let bcol = self.pssm_colget(blid,jj-1);
                 let sc:f32 = ScoredSeqAligner::calc_match_score(&acol.0,&bcol.0);
-                if ii == jj{
-                    println!("{} {}",sc,acol.1*gap_open_penalty);   
-                }
+                
+
                 let diag_m:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UPLEFT as usize] + sc;
                 let diag_l:f32 = self.dp_matrix[ii-1][jj-1][DIREC_LEFT as usize] + sc;
                 let diag_u:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UP as usize] + sc;
@@ -297,10 +298,7 @@ impl ScoredSeqAligner {
                 let lef_m:f32 = self.dp_matrix[ii-1][jj][DIREC_UPLEFT as usize] + acol.1*gap_open_penalty + acol.2*gap_extension_penalty;
                 let lef_l:f32 = self.dp_matrix[ii-1][jj][DIREC_LEFT as usize] + acol.1*gap_extension_penalty + acol.2*gap_extension_penalty;
                 let lef_u:f32 = self.dp_matrix[ii-1][jj][DIREC_UP as usize] + acol.1*gap_open_penalty + acol.2*gap_extension_penalty;
-                if ii == jj{
-                    eprintln!("{:?}",self.dp_matrix[ii-1][jj]);
-                    eprintln!("{} {} {}",lef_m,lef_l,lef_u);
-                }
+
 
                 let up_m:f32 = self.dp_matrix[ii][jj-1][DIREC_UPLEFT as usize] + bcol.1*gap_open_penalty + bcol.2*gap_extension_penalty;
                 let up_l:f32 = self.dp_matrix[ii][jj-1][DIREC_LEFT as usize] + bcol.1*gap_open_penalty + bcol.2*gap_extension_penalty;
@@ -927,16 +925,16 @@ pub fn calc_vec_stats(filenames:&Vec<String>){
             smin = pssm1.1[0].clone();
         }
         for ii in pssm1.1.iter(){
-            
+
         }
     }
 
 }
 fn main(){
-
+    aligntest();
 }
 
-#[test]
+// #[test]
 fn aligntest(){
 
     let pssm1 = ioutil::load_pssm_matrix("./example_files/esm2_650m_example_output/d6iyia_.res.gz",true);
@@ -958,6 +956,7 @@ fn aligntest(){
         &seq1,&seq2,-10.0,-0.5
     );
 
+    /*
     println!("{:?}",res);
 
     for cc in 0..3{
@@ -969,7 +968,7 @@ fn aligntest(){
         }
         println!("");
     }
-
+    */
     let plen = res.0.len();
     let apos = seq1.alibuff_idx[0];
     let bpos = seq2.alibuff_idx[0];
