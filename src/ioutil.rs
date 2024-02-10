@@ -148,12 +148,13 @@ pub fn load_pssm_matrix(filename:&str,gzipped:bool)-> (Vec<char>,Vec<Vec<f32>>){
 
 #[test]
 fn pssm_load_check(){
+    //単にエラーが出ないかだけ
     let v = load_pssm_matrix("./example_files/esm2_650m_example_output/d1g43a_.res.gz",true);
     for vv in v.0.into_iter().zip(v.1.into_iter()){
         let mut arr:Vec<f32> = vec![];
         for ii in 0..10{
             arr.push(vv.1[ii]);
         }
-        println!("{} {} {:?}",vv.0,vv.1.len(),arr);
+        //println!("{} {} {:?}",vv.0,vv.1.len(),arr);
     }
 }
