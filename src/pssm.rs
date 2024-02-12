@@ -102,7 +102,7 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>)-> Ve
     for cc in 0..blen{
         let mut evec:Vec<f32> = vec![];    
         for rr in 0..alen{
-            let distt = calc_euclid_dist(&avec[rr], &bvec[cc])/vecsiz;
+            let distt = calc_euclid_dist(&avec[rr], &bvec[cc])/vecsiz;//すぐに 0 とか INF になるのでベクトルのサイズで割る
             evec.push((-1.0*distt).exp());
         }
         let sstat:VectorStats = calc_stats(&evec);

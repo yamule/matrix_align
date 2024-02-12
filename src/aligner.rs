@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+use self::matrix_process::element_multiply;
+use self::matrix_process::vector_add;
+
 use super::*;
 
 #[allow(unused_imports)]
@@ -368,6 +371,7 @@ impl ScoredSeqAligner {
         aligned_tuple.reverse();
         return (aligned_tuple,maxscore);
     }
+
     pub fn make_alignment(&mut self
         ,mut a:ScoredSequence
         ,mut b:ScoredSequence
@@ -384,11 +388,7 @@ impl ScoredSeqAligner {
         let alignment_length = alignment.len();
 
         let mut new_aids = vec![];
-        let lid = self.get_unused_pssmbuffid();
-        self.register_pssmbuff(lid,alignment_length);
-        let alignment_length = alignment.len();
-        
-        self.format_pssmbuff(lid,alignment_length);
+
         if !profile_only{
             for _ii in 0..numallseq{
                 let aid = self.get_unused_alibuffid();
@@ -453,8 +453,10 @@ impl ScoredSeqAligner {
         a.release_buffs(self);
         b.release_buffs(self);
 
-
-        return ScoredSequence{
+        let lid = self.get_unused_pssmbuffid();
+        self.register_pssmbuff(lid,alignment_length);
+        self.format_pssmbuff(lid,alignment_length);
+        let mut ret =  ScoredSequence{
             id:-1,
             num_sequences:a.num_sequences+b.num_sequences,
             primary_ids:primary_ids,
@@ -463,6 +465,8 @@ impl ScoredSeqAligner {
             alignment_length:alignment_length,
             weight_sum:sumweight
         };
+        ret.calc_pssm( self);
+        return ret;
     }
     pub fn make_msa(&mut self,mut sequences: Vec<ScoredSequence>,gap_open_penalty:f32,gap_extension_penalty:f32,profile_only:bool)
     -> (Vec<ScoredSequence>,f32){
@@ -561,6 +565,7 @@ impl ScoredSeqAligner {
             newgroup.set_id(next_id);
             next_id += 1;
             sequences.insert(0,newgroup);
+            //バッファを使い過ぎていた場合、無くなったものを解放
             if calcd.len() > sequences.len()*sequences.len(){
                 let hs:HashSet<i32> = sequences.iter().map(|a| a.id).collect();
                 let mut rempairs:Vec<(i32,i32)> = vec![];
@@ -864,16 +869,30 @@ impl ScoredSequence{
     pub fn calc_pssm(&mut self,aligner:&mut ScoredSeqAligner){
         let lid:usize = self.pssmbuff_id as usize;
         let alilen = self.alignment_length;
-
+        let veclen = (aligner.pssm_buffer[lid][0].0).len();
+        let mut all_weights:f32 = 0.0;
+        for ppid in self.primary_ids.iter(){
+            all_weights += aligner.weights[*ppid as usize];
+        }
         //let weights = sequence_weighting::calc_henikoff_henikoff_weight(&aligner.alignment_buffer,&self.alibuff_ids,alilen);
+        let mut aacount:Vec<usize> = vec![0;alilen]; // 配列毎の次に参照するべき位置
         for alipos in 0..alilen{
             (aligner.pssm_buffer[lid][alipos].0).fill(0.0);
-            for (_eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
+            let mut sum_weight = 0.0;
+            for (eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
                 if *ppid < 0{
                     panic!("???");
                 }
-                aligner.pssm_buffer[lid][alipos].0[aligner.charmap[aligner.alignment_buffer[*aidx][alipos] as usize]]
-                 += aligner.weights[*ppid as usize];
+                if aligner.ali_get(*aidx,alipos) != GAP_CHAR{
+                    for vv in 0..veclen{
+                        aligner.pssm_buffer[lid][alipos].0[vv] += aligner.pssm_buffer[*ppid as usize][aacount[eii]].0[vv]*aligner.weights[*ppid as usize];
+                    }
+                    aacount[eii] += 1;
+                    sum_weight += aligner.weights[*ppid as usize];
+                }
+            }
+            if sum_weight > 0.0{
+                element_multiply(&mut aligner.pssm_buffer[lid][alipos].0,1.0/sum_weight);
             }
             let mut ungapratio = 0.0;
             let mut gapratio = 0.0;
@@ -893,8 +912,8 @@ impl ScoredSequence{
                     }
                 }
             }
-            aligner.pssm_buffer[lid][alipos].1 = ungapratio;
-            aligner.pssm_buffer[lid][alipos].2 = gapratio;
+            aligner.pssm_buffer[lid][alipos].1 = ungapratio/all_weights;
+            aligner.pssm_buffer[lid][alipos].2 = gapratio/all_weights;
         }
 
         // 最後の残基以降のギャップ
@@ -907,8 +926,8 @@ impl ScoredSequence{
                 gapratio +=  aligner.weights[*ppid as usize];
             }
         }
-        aligner.pssm_buffer[lid][alilen].1 = ungapratio;
-        aligner.pssm_buffer[lid][alilen].2 = gapratio;
+        aligner.pssm_buffer[lid][alilen].1 = ungapratio/all_weights;
+        aligner.pssm_buffer[lid][alilen].2 = gapratio/all_weights;
         self.num_sequences = self.primary_ids.len();
     }
     
