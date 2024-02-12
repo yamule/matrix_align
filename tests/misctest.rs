@@ -23,7 +23,6 @@ mod tests{
         unsafe{
             pssmstats = calc_vec_stats(& filenames);
         }
-        let mut a3mres:Vec<String> = vec![];
         let pssm1_ = load_pssm_matrix(&filenames[0],true);
         let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(pssm1_.1[0].len(),200,100);
         let mut seqvec:Vec<ScoredSequence> = vec![];
@@ -31,18 +30,61 @@ mod tests{
             let mut pssm2 = load_pssm_matrix(&filenames[ii],true);
             pssm::normalize_seqmatrix(&mut (pssm2.1), &pssmstats);
             let seq2 = ScoredSequence::new(
-                pssm2.0,pssm2.1,&mut saligner,true
+                pssm2.0,pssm2.1,None,&mut saligner,true
             );
             seqvec.push(seq2);
         }
         let mut ans = saligner.make_msa(seqvec,-10.0,-0.5,false);
         let alires = &ans.0[0];
-        for aa in alires.alibuff_idx.iter(){
+        let mut center_char:Vec<char> = vec![];
+        let mut center_pssm:Vec<Vec<f32>> = vec![];
+        let mut center_gaps:Vec<(f32,f32)> = vec![];
+        for (eii,aa) in alires.alibuff_idx.iter().enumerate(){
+            for ii in 0..alires.alignment_length{
+                print!("{}",saligner.ali_get(*aa,ii));
+            }
+            if alires.primary_ids[eii] == 0{
+                center_char = vec![];
+                center_pssm = vec![];
+                for ii in 0..alires.alignment_length{
+                    //center_char.push(saligner.ali_get(*aa,ii));
+                    center_char.push('X');
+                }
+                for ii in 0..=alires.alignment_length{
+                    let ppp = saligner.pssm_colget(alires.pssmbuff_id  as usize,ii).clone();
+                    center_gaps.push((ppp.1,ppp.2));
+                    if ii < alires.alignment_length{
+                        center_pssm.push(ppp.0);
+                    }
+                }
+            }
+            println!("");
+        }
+        
+        let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(pssm1_.1[0].len(),200,100);
+        let dummy_center = ScoredSequence::new(
+            center_char,center_pssm, Some(center_gaps),&mut saligner,true
+        );
+        let mut seqvec:Vec<ScoredSequence> = vec![dummy_center];
+        for ii in 0..filenames.len(){
+            let mut pssm2 = load_pssm_matrix(&filenames[ii],true);
+            pssm::normalize_seqmatrix(&mut (pssm2.1), &pssmstats);
+            let seq2 = ScoredSequence::new(
+                pssm2.0,pssm2.1, None,&mut saligner,true
+            );
+            seqvec.push(seq2);
+        }
+
+        let ans = saligner.make_msa(seqvec,-10.0,-0.5,false);
+        let alires = &ans.0[0];
+        for (eii,aa) in alires.alibuff_idx.iter().enumerate(){
             for ii in 0..alires.alignment_length{
                 print!("{}",saligner.ali_get(*aa,ii));
             }
             println!("");
         }
+        
+
         /*
             let res = saligner.perform_dp(
                 &seq1,&seq2,-10.0,-0.5

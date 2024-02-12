@@ -149,7 +149,10 @@ for(my $ii = 0;$ii < $pnum;$ii++){
 		my %targetmap = %{posmap(${$aa_to_align{$ssorted[$ii]}}[0],${$aa_to_align{$ssorted[$jj]}}[0])};
 		my %refmap = %{posmap(${$aa_to_align{$ssorted[$ii]}}[1],${$aa_to_align{$ssorted[$jj]}}[1])};
 		
-		my $norm = (length($ssorted[$ii])+length($ssorted[$jj]))/2.0;
+		my $norm = length($ssorted[$ii]);
+		if( length($ssorted[$jj]) < length($ssorted[$ii])){
+			$norm = length($ssorted[$jj]); # min load ‚·‚é‚Ì‚ß‚ñ‚Ç‚­‚³‚¢B
+		}
 		my $counter = 0;
 		foreach my $kk(keys %targetmap){
 			if(defined $refmap{$kk}){

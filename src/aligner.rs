@@ -70,7 +70,7 @@ impl ScoredSeqAligner {
         return ret;
     }
     
-
+    
     pub fn get_unused_alibuffid(&mut self)->usize{
         for ii in self.alibuff_next..self.alibuff_used.len(){
             if !self.alibuff_used[ii]{
@@ -236,7 +236,7 @@ impl ScoredSeqAligner {
         let alid = a.pssmbuff_id as usize;
         let blid = b.pssmbuff_id as usize;
         
-        let mut currentpenal = 0.0;
+        let mut currentpenal:f32;
         
         // B 側 N 末にギャップを入れる
         for ii in 0..=aalen{
@@ -289,7 +289,11 @@ impl ScoredSeqAligner {
         for ii in 0..bblen{
             bbvec.push(&self.pssm_buffer[blid][ii].0);
         }
+
+        //バッファに入れようかと思ったが、結局新しく領域を確保していたのでやめた
+        //ToDo 場所ごとにギャップでない配列の重みの合計をかける
         let match_score:Vec<Vec<f32>> = pssm::calc_dist_zscore_matrix(&aavec, &bbvec);
+
         for ii in 1..=aalen{
             for jj in 1..=bblen{
                 let acol = self.pssm_colget(alid,ii-1);
@@ -378,7 +382,10 @@ impl ScoredSeqAligner {
         ,alignment:Vec<(i32,i32)>
         ,profile_only:bool // true にすると alignment の文字は a に関してのみ保持する
     )->ScoredSequence{
-        if a.id >= b.id{
+
+        assert!(!profile_only);//全体の Profile を iterative に作成して、その間はアラインメントの更新は行わず、最終的な MSA とする際だけ更新する予定だが、今は全体 Alignment を作らないと計算できない
+        // 後で変える
+        if a.id >= b.id{//なぜこうしているのか忘れてしまった・・・
             panic!("a.id must be smaller than b.id! {} {} ",a.id,b.id);
         }
 
@@ -472,114 +479,27 @@ impl ScoredSeqAligner {
     -> (Vec<ScoredSequence>,f32){
         let mut next_id = sequences.iter().fold(0,|s,a| s.max(a.id)) as i32 + 10000;
         let mut final_score:f32 = 0.0;
-        //必ず若い方の id を先に入れること
-        let mut calcd:HashMap<(i32,i32),(Vec<(i32,i32)>,f32)> = HashMap::new();
-        let mut calc_priority = false;
-        while sequences.len() > 1{
-            let numseq = sequences.len();
-            let mut maxpair:(i32,i32) = (-1,-1);
-            let mut maxscore:f32 = -10000.0;
-            let mut prioritymap:HashMap<usize,f32> = HashMap::new();
-            'outer:for ii in 0..numseq{
-                let aid = sequences[ii].id;
-                for jj in (ii+1)..numseq{
-                    let bid = sequences[jj].id;
-                    if aid < bid{
-                        if !calcd.contains_key(&(aid,bid)){
-                            calcd.insert((aid,bid),self.perform_dp(&sequences[ii],&sequences[jj],gap_open_penalty,gap_extension_penalty));
-                        }
-                        let dscore = calcd.get(&(aid,bid)).unwrap().1;
-                        if maxpair.0 == -1 || dscore > maxscore{
-                            maxpair = (aid,bid);
-                            maxscore = dscore;
-                        }
-                        if !calc_priority{
-                            break 'outer;
-                        }else{
-                            prioritymap.insert(jj,dscore);
-                        }
-                    }else{
-                        if !calcd.contains_key(&(bid,aid)){
-                            calcd.insert((bid,aid),self.perform_dp(&sequences[jj],&sequences[ii], gap_open_penalty,gap_extension_penalty));
-                        }
-                        let dscore = calcd.get(&(bid,aid)).unwrap().1;
-                        if maxpair.0 == -1 || dscore > maxscore{
-                            maxpair = (bid,aid);
-                            maxscore = dscore;
-                        }
-                        
-                        if !calc_priority{
-                            break 'outer;
-                        }else{
-                            prioritymap.insert(jj,dscore);
-                        }
-                    }
-                }
-                break;
-            }
-            assert!(maxpair.0 > -1);
-            if calc_priority{
-                
-                let mut newseq:Vec<(ScoredSequence,f32)> = vec![];
-                for pp in sequences.into_iter().enumerate(){
-                    if prioritymap.contains_key(&pp.0){
-                        newseq.push((pp.1,*prioritymap.get(&pp.0).unwrap()));
-                    }else{
-                        newseq.push((pp.1,100.0));
-                    }
-                }
-                newseq.sort_by(|a,b|b.1.partial_cmp(&a.1).unwrap());
-                sequences = newseq.into_iter().map(|a|a.0).collect();
-                
-                calc_priority = false;
-            }
-            let mut aseq:Option<ScoredSequence> = None;
-            let mut bseq:Option<ScoredSequence> = None;
-            for ii in 0..numseq{
-                if sequences[ii].id == maxpair.0{
-                    aseq = Some(sequences.remove(ii));
-                    if let Some(_) = bseq{
-                        break;
-                    }
-                    if sequences[ii].id == maxpair.1{
-                        bseq = Some(sequences.remove(ii));
-                        break;
-                    }
-                }
-                
-                if sequences[ii].id == maxpair.1{
-                    bseq = Some(sequences.remove(ii));
-                    if let Some(_) = aseq{
-                        break;
-                    }
-                    if sequences[ii].id == maxpair.0{
-                        aseq = Some(sequences.remove(ii));
-                        break;
-                    }
-                }
-            }
-
-            let dpres = calcd.remove(&maxpair).unwrap();
-            final_score = maxscore;
-            let mut newgroup = ScoredSeqAligner::make_alignment(self,aseq.unwrap(),bseq.unwrap(),dpres.0,profile_only);
+        sequences.reverse();
+        let mut center_seq = sequences.pop().unwrap();
+        let mut firstrun = true;
+        while sequences.len() > 0{
+            let bseq = sequences.pop().unwrap();
+            let dpres;
+            let mut newgroup;
+            if firstrun{
+                dpres = self.perform_dp(&center_seq,&bseq,gap_open_penalty,gap_extension_penalty);
+                newgroup = ScoredSeqAligner::make_alignment(self,center_seq,bseq,dpres.0,profile_only);
+                firstrun = false;
+            }else{
+                dpres = self.perform_dp(&bseq,&center_seq,gap_open_penalty,gap_extension_penalty);
+                newgroup = ScoredSeqAligner::make_alignment(self,bseq,center_seq,dpres.0,profile_only);
+            };
+            final_score = dpres.1;
             newgroup.set_id(next_id);
             next_id += 1;
-            sequences.insert(0,newgroup);
-            //バッファを使い過ぎていた場合、無くなったものを解放
-            if calcd.len() > sequences.len()*sequences.len(){
-                let hs:HashSet<i32> = sequences.iter().map(|a| a.id).collect();
-                let mut rempairs:Vec<(i32,i32)> = vec![];
-                for hh in calcd.iter(){
-                    if !hs.contains(&(hh.0).0) || !hs.contains(&(hh.0).1){
-                        rempairs.push((hh.0).clone());
-                    } 
-                }
-                for rr in rempairs.iter(){
-                    calcd.remove(rr);
-                }
-            }
+            center_seq = newgroup;
         }
-        return (sequences,final_score);
+        return (vec![center_seq],final_score);
     }
 
     
@@ -713,7 +633,7 @@ pub struct ScoredSequence{
 }
 
 impl ScoredSequence{
-    pub fn new(a:Vec<char>,a_pssm:Vec<Vec<f32>>,aligner:&mut ScoredSeqAligner,register_id:bool)-> ScoredSequence{
+    pub fn new(a:Vec<char>,a_pssm:Vec<Vec<f32>>,gap_state:Option<Vec<(f32,f32)>>,aligner:&mut ScoredSeqAligner,register_id:bool)-> ScoredSequence{
         let lid = aligner.get_unused_pssmbuffid();
         let aid = aligner.get_unused_alibuffid();
         aligner.register_pssmbuff(lid,a.len());
@@ -726,6 +646,15 @@ impl ScoredSequence{
             }else{
                 panic!("can not process {}!",(aa.1).0);
             }
+        }
+        if let Some(x) = gap_state{
+            assert_eq!(alen+1,x.len());
+            for ii in 0..alen{
+                aligner.pssm_buffer[lid][ii].1 = x[ii].0;
+                aligner.pssm_buffer[lid][ii].2 = x[ii].1;
+            }
+            aligner.pssm_buffer[lid][alen].1 = x[alen].0;
+            aligner.pssm_buffer[lid][alen].2 = x[alen].1;
         }
         
         aligner.pssm_set(lid,alen,&(vec![0.0;aligner.vec_size],1.0,0.0));
@@ -867,6 +796,7 @@ impl ScoredSequence{
     */
     
     pub fn calc_pssm(&mut self,aligner:&mut ScoredSeqAligner){
+        
         let lid:usize = self.pssmbuff_id as usize;
         let alilen = self.alignment_length;
         let veclen = (aligner.pssm_buffer[lid][0].0).len();
@@ -879,10 +809,31 @@ impl ScoredSequence{
         for alipos in 0..alilen{
             (aligner.pssm_buffer[lid][alipos].0).fill(0.0);
             let mut sum_weight = 0.0;
+            let mut ungapratio = 0.0;
+            let mut gapratio = 0.0;
             for (eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
                 if *ppid < 0{
                     panic!("???");
                 }
+                // 前後で繋がっていて GAPOPEN が必要なもののウェイトを取る
+                if alipos == 0{
+                    if aligner.ali_get(*aidx,alipos) != GAP_CHAR{
+                        ungapratio += aligner.weights[*ppid as usize]*aligner.pssm_buffer[lid][aacount[eii]].1;
+                        gapratio +=  aligner.weights[*ppid as usize]*aligner.pssm_buffer[lid][aacount[eii]].2;
+                    }else{
+                        gapratio +=  aligner.weights[*ppid as usize]*(aligner.pssm_buffer[lid][aacount[eii]].2
+                            +aligner.pssm_buffer[lid][aacount[eii]].1);
+                    }
+                }else{
+                    if aligner.alignment_buffer[*aidx][alipos-1] != GAP_CHAR && aligner.alignment_buffer[*aidx][alipos] != GAP_CHAR{
+                        ungapratio += aligner.weights[*ppid as usize]*aligner.pssm_buffer[lid][aacount[eii]].1;
+                        gapratio +=  aligner.weights[*ppid as usize]*aligner.pssm_buffer[lid][aacount[eii]].2;
+                    }else{
+                        gapratio +=  aligner.weights[*ppid as usize]*(aligner.pssm_buffer[lid][aacount[eii]].2
+                            +aligner.pssm_buffer[lid][aacount[eii]].1);
+                    }
+                }
+
                 if aligner.ali_get(*aidx,alipos) != GAP_CHAR{
                     for vv in 0..veclen{
                         aligner.pssm_buffer[lid][alipos].0[vv] += aligner.pssm_buffer[*ppid as usize][aacount[eii]].0[vv]*aligner.weights[*ppid as usize];
@@ -891,39 +842,23 @@ impl ScoredSequence{
                     sum_weight += aligner.weights[*ppid as usize];
                 }
             }
+            aligner.pssm_buffer[lid][alipos].1 = ungapratio/all_weights;
+            aligner.pssm_buffer[lid][alipos].2 = gapratio/all_weights;
             if sum_weight > 0.0{
                 element_multiply(&mut aligner.pssm_buffer[lid][alipos].0,1.0/sum_weight);
             }
-            let mut ungapratio = 0.0;
-            let mut gapratio = 0.0;
-            for (_eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
-                // 前後で繋がっていて GAPOPEN が必要なもののウェイトを取る
-                if alipos == 0{
-                    if aligner.alignment_buffer[*aidx][alipos] != GAP_CHAR{
-                        ungapratio +=  aligner.weights[*ppid as usize];
-                    }else{
-                        gapratio +=  aligner.weights[*ppid as usize];
-                    }
-                }else{
-                    if aligner.alignment_buffer[*aidx][alipos-1] != GAP_CHAR && aligner.alignment_buffer[*aidx][alipos] != GAP_CHAR{
-                        ungapratio +=  aligner.weights[*ppid as usize];
-                    }else{
-                        gapratio +=  aligner.weights[*ppid as usize];
-                    }
-                }
-            }
-            aligner.pssm_buffer[lid][alipos].1 = ungapratio/all_weights;
-            aligner.pssm_buffer[lid][alipos].2 = gapratio/all_weights;
         }
 
         // 最後の残基以降のギャップ
         let mut ungapratio = 0.0;
         let mut gapratio = 0.0;
-        for (_eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
+        for (eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
             if aligner.alignment_buffer[*aidx][alilen-1] != GAP_CHAR{
-                ungapratio +=  aligner.weights[*ppid as usize];
+                ungapratio += aligner.weights[*ppid as usize]*aligner.pssm_buffer[lid][aacount[eii]].1;
+                gapratio +=  aligner.weights[*ppid as usize]*aligner.pssm_buffer[lid][aacount[eii]].2;
             }else{
-                gapratio +=  aligner.weights[*ppid as usize];
+                gapratio +=  aligner.weights[*ppid as usize]*(aligner.pssm_buffer[lid][aacount[eii]].2
+                    +aligner.pssm_buffer[lid][aacount[eii]].1);
             }
         }
         aligner.pssm_buffer[lid][alilen].1 = ungapratio/all_weights;
