@@ -1,3 +1,5 @@
+use self::matrix_process::{calc_euclid_dist, calc_stats, element_add, element_multiply, VectorStats};
+
 use super::*;
 
 #[derive(Debug, PartialEq)]
@@ -33,11 +35,11 @@ pub unsafe fn calc_vec_stats(filenames:&Vec<String>)->Vec<PssmStatistics>{
         allval.append(&mut pssm1.1);
     }
     let mut smean = ssum.clone();
-    matrix_process::multiply_elements(&mut smean,1.0/(counter as f32));
+    matrix_process::element_multiply(&mut smean,1.0/(counter as f32));
 
     let mut svar:Vec<f32> = vec![0.0;ssum.len()];
     let mut smeanneg = smean.clone();
-    matrix_process::multiply_elements(&mut smeanneg,-1.0);
+    matrix_process::element_multiply(&mut smeanneg,-1.0);
     for mut pp in allval.into_iter(){
         matrix_process::vector_add(&mut pp,&smeanneg);
         matrix_process::vector_square(&mut pp);
@@ -73,6 +75,47 @@ pub fn normalize_seqmatrix(vec:&mut Vec<Vec<f32>>, pssmstats:&Vec<PssmStatistics
         normalize(&mut vec[ii], pssmstats);
     }
 }
+
+// Match State で加算される、スコアの行列を、(avec.len(),bvec.len()) の長さの行列として返す。
+// 要素は一方の行列のある行と他方の行列の全行のユークリッド距離を計算し、統計値を取る。
+// その統計値をもとに ZSCORE を計算し
+// avec, bvec 両方で同様のことを行って平均をとって要素とする。
+//Pantolini, Lorenzo, et al. "Embedding-based alignment: combining protein language models with dynamic programming alignment to detect structural similarities in the twilight-zone." Bioinformatics 40.1 (2024): btad786.
+pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>)-> Vec<Vec<f32>>{
+    let alen = avec.len();
+    let blen = bvec.len();
+    let mut ret:Vec<Vec<f32>> = vec![];
+    let vecsiz = avec[0].len() as f32;
+    for rr in 0..alen{
+        let mut evec:Vec<f32> = vec![];
+        for cc in 0..blen{
+            let distt = calc_euclid_dist(avec[rr], bvec[cc])/vecsiz;
+            evec.push((-1.0*distt).exp());
+        }
+        let sstat:VectorStats = calc_stats(&evec);
+        let stdev = sstat.var.sqrt()+0.0000001;
+        element_add(&mut evec,-1.0*sstat.mean);
+        element_multiply(&mut evec, 1.0/stdev/2.0);// 逆方向の値との平均を取るので 2.0 で割る
+        ret.push(evec);
+    }
+    
+    for cc in 0..blen{
+        let mut evec:Vec<f32> = vec![];    
+        for rr in 0..alen{
+            let distt = calc_euclid_dist(&avec[rr], &bvec[cc])/vecsiz;
+            evec.push((-1.0*distt).exp());
+        }
+        let sstat:VectorStats = calc_stats(&evec);
+        let stdev = sstat.var.sqrt()+0.0000001;
+        element_add(&mut evec,-1.0*sstat.mean);
+        element_multiply(&mut evec, 1.0/stdev);
+        for rr in 0..alen{
+            ret[rr][cc] += evec[rr]/2.0;
+        }
+    }
+    return ret;
+}
+
 
 #[cfg(test)]
 mod tests{

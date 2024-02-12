@@ -4,3 +4,119 @@ Chandonia JM, Guan L, Lin S, Yu C, Fox NK, Brenner SE. 2022. Nucleic Acids Resea
 
 からのデータを
 ESM2-650M にかけて特徴量を抽出した。
+
+TMALIGN のアラインメント
+>d6iyia_.pdb
+SLTSADKSHVRSIWSKAGGSAEEIGAEALGRMLESFPNTKTYFDHYADLSVSSA-QVHTHGKKIIDALTTAVNHID-DI-TG-ALSSLSTLHAQTLRVDPANFKILSHTILVVLALYFPADFTPEVHLACDKFLANVSHALADNYR------
+>d7diha_.pdb
+MLSEETIRVIKSTVPLLKEHGTEITARMFELLFSKYPKTKELFAGA--------SE--EQPKKLANAIIAYATYIDRLEELDNAISTIARSHV-RRNVKPEHYPLVKECLLQAIEEVLN-P-GEEVLKAWEEAYDFLAKTLITLEKKLYSQP
+
+>d6iyia_.pdb
+SLTSADKSHVRSIWSKAGGSAEEIGAEALGRMLESFPNTKTYFDHYADLSVSS--A-QVHTHGKKIIDALTTAVNHIDDITGALSSLSTLHAQTLRVDPANFKILSHTILVVLALYFPADFTPEVHLACDKFLANVSHALADNYR
+>d4f6ia_.pdb
+---------------MV--NWAAVVDDFYQELFKAHPEYQNKFGFKGVALGSLKGNAAYKTQAGKTVDYINAAIGGS--A--DAAGLASRHKG-RNVGSAEFHNAKACLAKACSAHG---A---PD--LGWAIDDILSH-L----
+
+そもそも < 0.5 
+>d6iyia_.pdb
+S------------------------------LTSADKSHVRSIWSKAGGSAEEIGAEALGRMLESFPNTKTYFDHYADLSVSSAQVHTHGKKIIDALTTAVNHIDDI-TGALSSLSTLHAQTLRVDPANFKILSHTILVVLALYFPADFTPEVHLACDKFLANVSHALADNYR
+>d6lumb2.pdb
+-MEPFFDAYRAVKPFLVTSGNPPTKERIQSPTDRARYD-DT--TK-CILC-ACCTTSC--PVYW--S--E--G--S---------Y--FG--PAAIVNAHRFIFDS-RDEAAAERLDILN--E-VDGVWRCR--TT-FNCTEACP--RG---IQ-VTQ-AIQEVKRALMFA--
+
+
+
+>seq1
+SLTSADKSHVRSIWSKAGGSAEEIGAEALGRMLESFPNTKTYFDHYADLSVSSAQVHTHGKKIIDALTTAVNHIDD---ITGALSSLSTLHAQTLRVDPANFKILSHTILVVLALYFPADFTPEVHLACDKFLANVSHALADNYR------
+>d7diha_.res.gz
+MLSEETIRVIKSTVPLLKEHGTEITARMFELLFSKYPKTKELFAGAS---------EEQPKKLANAIIAYATYIDRLEELDNAISTIARSHV-RRNVKPEHYPLVKECLLQAIEEVLN--PGEEVLKAWEEAYDFLAKTLITLEKKLYSQP
+
+>seq1
+SLTSADKSHVRSIWSKAGGSAEEIGAEALGRMLESFPNTKTYFDHYADL---SVSSAQVHTHGKKIIDALTTAVNHIDDITGALSSLSTLHAQTLRVDPANFKILSHTILVVLALYFPADFTPEVHLACDKFLANVSHALADNYR
+>d4f6ia_.res.gz
+M-----------------VNWAAVVDDFYQELFKAHPEYQNKFGFKGVALGSLKGNAAYKTQAGKTVDYINAAIG----GSADAAGLASRHK-GRNVGSAEFHNAKACLAKACSAHGAPDLGWAIDDI-------------LSHL
+
+>seq1
+SLTSADKSHVRSIWSKAGGSAEEIGAEALGRMLESFPNTKTYFDHYADLSVSSAQVHTHGKKIIDALTTAVNHIDDITGALSSLSTLHAQTLRVDPANFKILSHTILVVLALYFPADFTPEVHLACDKFLANVSHALADNYR
+>d6lumb2.res.gz
+MEPFFDAYRAVKPFLVTSGNPPTKERIQSPTDRARYDDTTKCILCACCTTSCPVYWSEGSYFGPAAIVNAHRFIFDSRDEAAAERL--------------DILNEVDGVWRCRTTFNCTEACPRGIQVTQAIQEVKRALMFA
+
+
+
+
+
+(base) D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output>D:\dummy\vscode_projects\cpp\TM-align_mass\bin\TMalign_mass.exe D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d6iyia_.pdb D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d7diha_.pdb
+
+ *********************************************************************
+ * TM-align (Version 20210224): protein structure alignment          *
+ * References: Y Zhang, J Skolnick. Nucl Acids Res 33, 2302-9 (2005) *
+ * Please email comments and suggestions to yangzhanglab@umich.edu   *
+ *********************************************************************
+
+Name of Chain_1: D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d6iyia_.pdb (to be superimposed onto Chain_2)
+Name of Chain_2: D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d7diha_.pdb
+Length of Chain_1: 142 residues
+Length of Chain_2: 139 residues
+
+Aligned length= 129, RMSD=   1.93, Seq_ID=n_identical/n_aligned= 0.186
+TM-score= 0.79753 (if normalized by length of Chain_1, i.e., LN=142, d0=4.43)
+TM-score= 0.81284 (if normalized by length of Chain_2, i.e., LN=139, d0=4.38)
+(You should use TM-score normalized by length of the reference structure)
+
+(":" denotes residue pairs of d <  5.0 Angstrom, "." denotes other aligned residues)
+SLTSADKSHVRSIWSKAGGSAEEIGAEALGRMLESFPNTKTYFDHYADLSVSSA-QVHTHGKKIIDALTTAVNHID-DI-TG-ALSSLSTLHAQTLRVDPANFKILSHTILVVLALYFPADFTPEVHLACDKFLANVSHALADNYR------
+:::::::::::::::::::::::::::::::::::::::::::::.         :  :::::::::::::::::: :. .: :::::::::: ::::::::::::::::::::::::: : ::::::::::::::::::::::::
+MLSEETIRVIKSTVPLLKEHGTEITARMFELLFSKYPKTKELFAGA--------SE--EQPKKLANAIIAYATYIDRLEELDNAISTIARSHV-RRNVKPEHYPLVKECLLQAIEEVLN-P-GEEVLKAWEEAYDFLAKTLITLEKKLYSQP
+
+Total CPU time is  0.02 seconds
+
+(base) D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output>D:\dummy\vscode_projects\cpp\TM-align_mass\bin\TMalign_mass.exe D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d6iyia_.pdb D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d4f6ia_.pdb
+
+ *********************************************************************
+ * TM-align (Version 20210224): protein structure alignment          *
+ * References: Y Zhang, J Skolnick. Nucl Acids Res 33, 2302-9 (2005) *
+ * Please email comments and suggestions to yangzhanglab@umich.edu   *
+ *********************************************************************
+
+Name of Chain_1: D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d6iyia_.pdb (to be superimposed onto Chain_2)
+Name of Chain_2: D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d4f6ia_.pdb
+Length of Chain_1: 142 residues
+Length of Chain_2: 110 residues
+
+Aligned length= 107, RMSD=   2.60, Seq_ID=n_identical/n_aligned= 0.112
+TM-score= 0.59806 (if normalized by length of Chain_1, i.e., LN=142, d0=4.43)
+TM-score= 0.73357 (if normalized by length of Chain_2, i.e., LN=110, d0=3.86)
+(You should use TM-score normalized by length of the reference structure)
+
+(":" denotes residue pairs of d <  5.0 Angstrom, "." denotes other aligned residues)
+SLTSADKSHVRSIWSKAGGSAEEIGAEALGRMLESFPNTKTYFDHYADLSVSS--A-QVHTHGKKIIDALTTAVNHIDDITGALSSLSTLHAQTLRVDPANFKILSHTILVVLALYFPADFTPEVHLACDKFLANVSHALADNYR
+               ::  ::::::::::::::::::::::::..::::::::  : :::::::::::::::::::.  .  ::::::::::: :::::::::::::::::::::::   .   .:  ::::::::::: :
+---------------MV--NWAAVVDDFYQELFKAHPEYQNKFGFKGVALGSLKGNAAYKTQAGKTVDYINAAIGGS--A--DAAGLASRHKG-RNVGSAEFHNAKACLAKACSAHG---A---PD--LGWAIDDILSH-L----
+
+Total CPU time is  0.02 seconds
+
+(base) D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output>D:\dummy\vscode_projects\cpp\TM-align_mass\bin\TMalign_mass.exe D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d6iyia_.pdb D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d6lumb2.pdb
+
+ *********************************************************************
+ * TM-align (Version 20210224): protein structure alignment          *
+ * References: Y Zhang, J Skolnick. Nucl Acids Res 33, 2302-9 (2005) *
+ * Please email comments and suggestions to yangzhanglab@umich.edu   *
+ *********************************************************************
+
+Name of Chain_1: D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d6iyia_.pdb (to be superimposed onto Chain_2)
+Name of Chain_2: D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d6lumb2.pdb
+Length of Chain_1: 142 residues
+Length of Chain_2: 128 residues
+
+Aligned length= 97, RMSD=   4.45, Seq_ID=n_identical/n_aligned= 0.103
+TM-score= 0.40256 (if normalized by length of Chain_1, i.e., LN=142, d0=4.43)
+TM-score= 0.43009 (if normalized by length of Chain_2, i.e., LN=128, d0=4.19)
+(You should use TM-score normalized by length of the reference structure)
+
+(":" denotes residue pairs of d <  5.0 Angstrom, "." denotes other aligned residues)
+S------------------------------LTSADKSHVRSIWSKAGGSAEEIGAEALGRMLESFPNTKTYFDHYADLSVSSAQVHTHGKKIIDALTTAVNHIDDI-TGALSSLSTLHAQTLRVDPANFKILSHTILVVLALYFPADFTPEVHLACDKFLANVSHALADNYR
+                               .....:: ::  :: :::: :::::::  ::..  .  :  :  .         .  ::  .:::::::::::::  ..::::::::.:  : :...:..:  :: ::::::::  ::   .: ..: ::::::::::..
+-MEPFFDAYRAVKPFLVTSGNPPTKERIQSPTDRARYD-DT--TK-CILC-ACCTTSC--PVYW--S--E--G--S---------Y--FG--PAAIVNAHRFIFDS-RDEAAAERLDILN--E-VDGVWRCR--TT-FNCTEACP--RG---IQ-VTQ-AIQEVKRALMFA--
+
+Total CPU time is  0.03 seconds
+
+(base) D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output>
+

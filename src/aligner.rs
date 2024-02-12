@@ -277,11 +277,22 @@ impl ScoredSeqAligner {
         self.path_matrix[0][0][1] = 0;
         self.path_matrix[0][0][2] = 0;
 
+        let mut aavec:Vec<&Vec<f32>> = vec![];
+        for ii in 0..aalen{
+            aavec.push(&self.pssm_buffer[alid][ii].0);
+        }
+        
+        let mut bbvec:Vec<&Vec<f32>> = vec![];
+        for ii in 0..bblen{
+            bbvec.push(&self.pssm_buffer[blid][ii].0);
+        }
+        let match_score:Vec<Vec<f32>> = pssm::calc_dist_zscore_matrix(&aavec, &bbvec);
         for ii in 1..=aalen{
             for jj in 1..=bblen{
                 let acol = self.pssm_colget(alid,ii-1);
                 let bcol = self.pssm_colget(blid,jj-1);
-                let sc:f32 = ScoredSeqAligner::calc_match_score(&acol.0,&bcol.0);
+                //let sc:f32 = ScoredSeqAligner::calc_match_score(&acol.0,&bcol.0);
+                let sc:f32 = match_score[ii-1][jj-1];
                 
 
                 let diag_m:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UPLEFT as usize] + sc;

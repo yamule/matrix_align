@@ -80,20 +80,24 @@ mod tests{
             }
             let afas:String =aseq.iter().collect::<String>();
             let araw:String = aseq.iter().filter(|c| **c != '-').collect::<String>();
-            println!("{}",afas);
-            println!("{}",bseq.iter().collect::<String>());
+            println!(">seq1\n{}",afas);
+            println!(">seq2\n{}",bseq.iter().collect::<String>());
             
             let ba3m:String = subject_ali_to_a3m(&aseq,&bseq).concat();
+            /*
             println!("{}",araw);
             println!("{}",ba3m);
+            */
             a3mres.push(ba3m.clone());
             assert_eq!(
             query_a3m_to_ali(&araw.chars().into_iter().collect::<Vec<char>>(),&ba3m.chars().into_iter().collect::<Vec<char>>()).concat()
             ,afas);
         }
+        /*
         for ii in 0..filenames.len(){
             println!(">{}",filenames[ii]);
             println!("{}",a3mres[ii]);
         }
+        */
     }
 }
