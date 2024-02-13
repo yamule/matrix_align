@@ -34,11 +34,11 @@ mod tests{
             );
             seqvec.push(seq2);
         }
-        let mut ans = saligner.make_msa(seqvec,-10.0,-0.5,false);
+        let ans = saligner.make_msa(seqvec,-10.0,-0.5,false);
         let alires = &ans.0[0];
         let mut center_char:Vec<char> = vec![];
         let mut center_pssm:Vec<Vec<f32>> = vec![];
-        let mut center_gaps:Vec<(f32,f32)> = vec![];
+        let mut center_gaps:Vec<(f32,f32,f32,f32)> = vec![];
         for (eii,aa) in alires.alibuff_idx.iter().enumerate(){
             for ii in 0..alires.alignment_length{
                 print!("{}",saligner.ali_get(*aa,ii));
@@ -46,25 +46,26 @@ mod tests{
             if alires.primary_ids[eii] == 0{
                 center_char = vec![];
                 center_pssm = vec![];
-                for ii in 0..alires.alignment_length{
+                for _ in 0..alires.alignment_length{
                     //center_char.push(saligner.ali_get(*aa,ii));
                     center_char.push('X');
                 }
                 for ii in 0..=alires.alignment_length{
                     let ppp = saligner.pssm_colget(alires.pssmbuff_id  as usize,ii).clone();
-                    center_gaps.push((ppp.1,ppp.2));
+                    center_gaps.push((ppp.match_weight,ppp.del_weight,ppp.connected_weight,ppp.gapped_weight));
                     if ii < alires.alignment_length{
-                        center_pssm.push(ppp.0);
+                        center_pssm.push(ppp.match_vec);
                     }
                 }
             }
             println!("");
         }
-        
         let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(pssm1_.1[0].len(),200,100);
         let dummy_center = ScoredSequence::new(
             center_char,center_pssm, Some(center_gaps),&mut saligner,true
         );
+        saligner.weights[dummy_center.primary_ids[0] as usize] = 3.0;
+        let didx = dummy_center.alibuff_idx[0];
         let mut seqvec:Vec<ScoredSequence> = vec![dummy_center];
         for ii in 0..filenames.len(){
             let mut pssm2 = load_pssm_matrix(&filenames[ii],true);
@@ -77,6 +78,7 @@ mod tests{
 
         let ans = saligner.make_msa(seqvec,-10.0,-0.5,false);
         let alires = &ans.0[0];
+        
         for (eii,aa) in alires.alibuff_idx.iter().enumerate(){
             for ii in 0..alires.alignment_length{
                 print!("{}",saligner.ali_get(*aa,ii));
