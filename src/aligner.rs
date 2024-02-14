@@ -303,18 +303,21 @@ impl ScoredSeqAligner {
         self.path_matrix[0][0][2] = 0;
 
         let mut aavec:Vec<&Vec<f32>> = vec![];
+        let mut aweight:Vec<f32> = vec![];
         for ii in 0..aalen{
             aavec.push(&self.pssm_buffer[alid][ii].match_vec);
+            aweight.push(self.pssm_buffer[alid][ii].match_weight);
         }
         
         let mut bbvec:Vec<&Vec<f32>> = vec![];
+        let mut bweight:Vec<f32> = vec![];
         for ii in 0..bblen{
             bbvec.push(&self.pssm_buffer[blid][ii].match_vec);
+            bweight.push(self.pssm_buffer[blid][ii].match_weight);
         }
-
         //バッファに入れようかと思ったが、結局新しく領域を確保していたのでやめた
-        ToDo 場所ごとにギャップでない配列の重みの合計をかける
-        let match_score:Vec<Vec<f32>> = pssm::calc_dist_zscore_matrix(&aavec, &bbvec);
+        let match_score:Vec<Vec<f32>> = pssm::calc_dist_zscore_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
+        //let match_score:Vec<Vec<f32>> = pssm::calc_dist_zscore_matrix(&aavec, &bbvec,None,None);
 
         for ii in 1..=aalen{
             for jj in 1..=bblen{
@@ -813,8 +816,9 @@ impl ScoredSequence{
                     }
                     aacount[eii] += 1;
                     sum_weight += aligner.weights[*ppid as usize]*aligner.pssm_buffer[*ppid as usize][aacount[eii]].match_weight;
-                }else{
                     sum_weight_del += aligner.weights[*ppid as usize]*aligner.pssm_buffer[*ppid as usize][aacount[eii]].del_weight;
+                }else{
+                    sum_weight_del += aligner.weights[*ppid as usize];
                 }
             }
             aligner.pssm_buffer[lid][alipos].connected_weight = ungapratio/all_weights;

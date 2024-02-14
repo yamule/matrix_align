@@ -64,7 +64,7 @@ mod tests{
         let dummy_center = ScoredSequence::new(
             center_char,center_pssm, Some(center_gaps),&mut saligner,true
         );
-        saligner.weights[dummy_center.primary_ids[0] as usize] = 3.0;
+        saligner.weights[dummy_center.primary_ids[0] as usize] = 1.0;
         let didx = dummy_center.alibuff_idx[0];
         let mut seqvec:Vec<ScoredSequence> = vec![dummy_center];
         for ii in 0..filenames.len(){

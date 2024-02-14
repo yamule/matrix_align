@@ -40,6 +40,11 @@ SLTSADKSHVRSIWSKAGGSAEEIGAEALGRMLESFPNTKTYFDHYADLSVSSAQVHTHGKKIIDALTTAVNHIDDITGA
 MEPFFDAYRAVKPFLVTSGNPPTKERIQSPTDRARYDDTTKCILCACCTTSCPVYWSEGSYFGPAAIVNAHRFIFDSRDEAAAERL--------------DILNEVDGVWRCRTTFNCTEACPRGIQVTQAIQEVKRALMFA
 
 
+>d4f6ia_.pdb
+--------------MV---NWAAVVDDFYQELFKAHPEYQNKFGFKGVALGSLKGNAAYKTQAGKTVDYINAAIGG-----SA--DAAGLASRHKGRNVGSAEFHNAKACLAKACSAHG-A---PD--LG-WAIDDILSHL----------
+>d7diha_.pdb
+MLSEETIRVIKSTVPLLKEHGTEITARMFELLFSKYPKTKELFAGA----------SE--EQPKKLANAIIAYATYIDRLEELDNAISTIARSHVRRNVKPEHYPLVKECLLQAIEEVLNPGEEVLKAWEEAYDFLAKTLITLEKKLYSQP
+
 
 
 
@@ -120,3 +125,28 @@ Total CPU time is  0.03 seconds
 
 (base) D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output>
 
+
+(base) D:\dummy\vscode_projects\matrix_align>D:\dummy\vscode_projects\cpp\TM-align_mass\bin\TMalign_mass.exe D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d4f6ia_.pdb D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d7diha_.pdb
+
+ *********************************************************************
+ * TM-align (Version 20210224): protein structure alignment          *
+ * References: Y Zhang, J Skolnick. Nucl Acids Res 33, 2302-9 (2005) *
+ * Please email comments and suggestions to yangzhanglab@umich.edu   *
+ *********************************************************************
+
+Name of Chain_1: D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d4f6ia_.pdb (to be superimposed onto Chain_2)
+Name of Chain_2: D:\dummy\vscode_projects\matrix_align\example_files\esm2_650m_example_output\d7diha_.pdb
+Length of Chain_1: 110 residues
+Length of Chain_2: 139 residues
+
+Aligned length= 98, RMSD=   2.37, Seq_ID=n_identical/n_aligned= 0.173
+TM-score= 0.72849 (if normalized by length of Chain_1, i.e., LN=110, d0=3.86)
+TM-score= 0.59524 (if normalized by length of Chain_2, i.e., LN=139, d0=4.38)
+(You should use TM-score normalized by length of the reference structure)
+
+(":" denotes residue pairs of d <  5.0 Angstrom, "." denotes other aligned residues)
+--------------MV---NWAAVVDDFYQELFKAHPEYQNKFGFKGVALGSLKGNAAYKTQAGKTVDYINAAIGG-----SA--DAAGLASRHKGRNVGSAEFHNAKACLAKACSAHG-A---PD--LG-WAIDDILSHL----------
+              ::   :::::::::::::::::::::::::..          .:  ::::::::::::::::     ::  :::::::::::::::::::::::::::::::::: :   ::  :: ::::::::::
+MLSEETIRVIKSTVPLLKEHGTEITARMFELLFSKYPKTKELFAGA----------SE--EQPKKLANAIIAYATYIDRLEELDNAISTIARSHVRRNVKPEHYPLVKECLLQAIEEVLNPGEEVLKAWEEAYDFLAKTLITLEKKLYSQP
+
+Total CPU time is  0.00 seconds
