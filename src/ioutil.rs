@@ -3,6 +3,7 @@ use std::io::{Read,BufWriter,Write,BufReader,BufRead};
 use std::fs::File;
 use std::collections::HashMap;
 use std::vec;
+use regex::Regex;
 
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -97,7 +98,7 @@ impl SeqData{
     }
 }
 
-pub fn load_pssm_matrix(filename:&str,gzipped:bool)-> (Vec<char>,Vec<Vec<f32>>){
+pub fn load_gmat(filename:&str,gzipped:bool)-> (Vec<char>,Vec<Vec<f32>>){
     
     let mut ret_c:Vec<char> = vec![];
     let mut ret_f:Vec<Vec<f32>> = vec![];
@@ -145,11 +146,101 @@ pub fn load_pssm_matrix(filename:&str,gzipped:bool)-> (Vec<char>,Vec<Vec<f32>>){
     return (ret_c,ret_f);
 }
 
+pub fn parse_gmat_block(lines:Vec<String>)-> (String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>){
+    let name_matcher:Regex = Regex::new(r">[\s]*([^\s]+)").unwrap();
+    let mut seqname = "".to_owned();
+    let mut vecsize = -1_i32;
+    let mut ret_c:Vec<char> = vec![];
+    let mut ret_f:Vec<Vec<f32>> = vec![];
+    let mut ret_ex:Vec<(f32,f32,f32,f32)> = vec![];
+    for line in lines.into_iter(){
+        let ptt:Vec<String> = line.split_ascii_whitespace().map(|m|m.to_owned()).collect();
+        let cc:Vec<char> = ptt[0].chars().into_iter().collect();
+        if cc[0] == '@'{
+            assert!(ptt.len() == 5);
+            ret_ex.push(
+                (
+                    ptt[1].parse::<f32>().unwrap(),
+                    ptt[2].parse::<f32>().unwrap(),
+                    ptt[3].parse::<f32>().unwrap(),
+                    ptt[4].parse::<f32>().unwrap()
+                )
+            );
+            continue;
+        }
+        if line.starts_with(">"){
+            let cres = name_matcher.captures(&line).unwrap();
+            if let Some(xx) = cres.get(1){
+                seqname = xx.as_str().to_string();
+            }
+            continue;
+        }
+        if cc.len() != 1{
+            panic!("{} is not an expected string.",ptt[0]);
+        }
+        let mut val:Vec<f32> = vec![];
+        if vecsize == -1{
+            vecsize = ptt.len() as i32 -1;
+        }else{
+            assert_eq!(vecsize, ptt.len() as i32 -1);
+        }
+        for ii in 1..ptt.len(){
+            val.push(
+                ptt[ii].parse::<f32>().unwrap_or_else(|e| panic!("{:?}",e))
+            );
+        }
+        ret_c.push(cc[0]);
+        ret_f.push(val);
+    }
+    if ret_ex.len() > 0{
+        return (seqname,ret_c,ret_f,Some(ret_ex));
+    }
+    return (seqname,ret_c,ret_f,None);
+}
+pub fn load_multi_gmat(filename:&str,gzipped:bool)-> Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)>{
+    
+    let mut ret_c:Vec<char> = vec![];
+    let mut ret_f:Vec<Vec<f32>> = vec![];
+    let mut ret_ex:Vec<(f32,f32,f32,f32)> = vec![];
+    
+    //名前、一文字アミノ酸、何らかのベクトル、ギャップなどの補足情報
+    let mut ret:Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)> = vec![];
+    let file = File::open(filename).unwrap_or_else(|e| panic!("Loading {} was failed! {:?}",filename,e));
+        
+    let reader: Box<dyn BufRead> = if gzipped {
+        Box::new(BufReader::new(GzDecoder::new(BufReader::new(file))))
+    } else {
+        Box::new(BufReader::new(file))
+    };
+    
+    let mut linebuff:Vec<String> = vec![];
+    let mut currentname:String = "".to_owned();
+    for (lcount_,line) in reader.lines().enumerate() {
+        if let Ok(x) = line{
+            if x.starts_with("#"){ //コメント行
+                continue;
+            }
+            if x.starts_with(">"){
+                if linebuff.len() > 0{
+                    let pres = parse_gmat_block(linebuff);
+                    ret.push(pres);
+                }
+
+                linebuff = vec![];
+            }
+            linebuff.push(x);
+        }
+    }
+    if linebuff.len() > 0{
+        ret.push(parse_gmat_block(linebuff));
+    }
+    return ret;
+}
 
 #[test]
-fn pssm_load_check(){
+fn gmat_load_check(){
     //単にエラーが出ないかだけ
-    let v = load_pssm_matrix("./example_files/esm2_650m_example_output/d1g43a_.res.gz",true);
+    let v = load_gmat("./example_files/esm2_650m_example_output/d1g43a_.res.gz",true);
     for vv in v.0.into_iter().zip(v.1.into_iter()){
         let mut arr:Vec<f32> = vec![];
         for ii in 0..10{

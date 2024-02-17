@@ -4,40 +4,38 @@
 
 #[cfg(test)]
 mod tests{
+    use std::collections::HashMap;
+
     //extern crate matrix_align;
-    use matrix_align::pssm::{self, calc_vec_stats, PssmStatistics};
+    use matrix_align::gmat::{self, calc_vec_stats, GMatStatistics};
     use matrix_align::aligner::{ScoredSeqAligner,ScoredSequence};
-    use matrix_align::ioutil::load_pssm_matrix;
+    use matrix_align::ioutil::{load_gmat, load_multi_gmat};
     use matrix_align::misc::*;
 
 
     #[test]
     fn aligntest(){
-        let filenames:Vec<String> = vec![
-            "./example_files/esm2_650m_example_output/d6iyia_.res.gz".to_owned(),
-            "./example_files/esm2_650m_example_output/d7diha_.res.gz".to_owned(), //fam
-            "./example_files/esm2_650m_example_output/d4f6ia_.res.gz".to_owned(), //supfam
-            //"./example_files/esm2_650m_example_output/d6lumb2.res.gz".to_owned() //fold        
-        ];
-        let pssmstats:Vec<PssmStatistics>;
+        let filename = "example_files/esm2_650m_example_output/a1_mat.dat".to_owned();
+        let gmatstats:Vec<GMatStatistics>;
         unsafe{
-            pssmstats = calc_vec_stats(& filenames);
+            gmatstats = calc_vec_stats(& vec![filename.clone()]);
         }
-        let pssm1_ = load_pssm_matrix(&filenames[0],true);
-        let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(pssm1_.1[0].len(),200,100);
+        let gmat1 = load_multi_gmat(&filename,filename.ends_with(".gz"));
+        let veclen = gmat1[0].2[0].len();
+        let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,200,100);
         let mut seqvec:Vec<ScoredSequence> = vec![];
-        for ii in 0..filenames.len(){
-            let mut pssm2 = load_pssm_matrix(&filenames[ii],true);
-            pssm::normalize_seqmatrix(&mut (pssm2.1), &pssmstats);
+        for mut tt in gmat1.into_iter(){
+            gmat::normalize_seqmatrix(&mut (tt.2), &gmatstats);
             let seq2 = ScoredSequence::new(
-                pssm2.0,pssm2.1,None,&mut saligner,true
+                tt.1,tt.2,None,&mut saligner,true
             );
             seqvec.push(seq2);
         }
+
         let ans = saligner.make_msa(seqvec,-10.0,-0.5,false);
         let alires = &ans.0[0];
         let mut center_char:Vec<char> = vec![];
-        let mut center_pssm:Vec<Vec<f32>> = vec![];
+        let mut center_gmat:Vec<Vec<f32>> = vec![];
         let mut center_gaps:Vec<(f32,f32,f32,f32)> = vec![];
         for (eii,aa) in alires.alibuff_idx.iter().enumerate(){
             for ii in 0..alires.alignment_length{
@@ -45,48 +43,58 @@ mod tests{
             }
             if alires.primary_ids[eii] == 0{
                 center_char = vec![];
-                center_pssm = vec![];
+                center_gmat = vec![];
                 for _ in 0..alires.alignment_length{
                     //center_char.push(saligner.ali_get(*aa,ii));
                     center_char.push('X');
                 }
                 for ii in 0..=alires.alignment_length{
-                    let ppp = saligner.pssm_colget(alires.pssmbuff_id  as usize,ii).clone();
+                    let ppp = saligner.gmat_colget(alires.gmatbuff_id  as usize,ii).clone();
                     center_gaps.push((ppp.match_weight,ppp.del_weight,ppp.connected_weight,ppp.gapped_weight));
                     if ii < alires.alignment_length{
-                        center_pssm.push(ppp.match_vec);
+                        center_gmat.push(ppp.match_vec);
                     }
                 }
             }
             println!("");
         }
-        let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(pssm1_.1[0].len(),200,100);
+        let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,200,100);
         let dummy_center = ScoredSequence::new(
-            center_char,center_pssm, Some(center_gaps),&mut saligner,true
+            center_char,center_gmat, Some(center_gaps),&mut saligner,true
         );
         saligner.weights[dummy_center.primary_ids[0] as usize] = 1.0;
-        let didx = dummy_center.alibuff_idx[0];
         let mut seqvec:Vec<ScoredSequence> = vec![dummy_center];
-        for ii in 0..filenames.len(){
-            let mut pssm2 = load_pssm_matrix(&filenames[ii],true);
-            pssm::normalize_seqmatrix(&mut (pssm2.1), &pssmstats);
+        
+        let mut primary_id_to_name:HashMap<i32,String> = HashMap::new();
+        let mut id_order:Vec<i32> = vec![];
+        let gmat1 = load_multi_gmat(&filename,filename.ends_with(".gz"));
+        for mut tt in gmat1.into_iter(){
+            gmat::normalize_seqmatrix(&mut (tt.2), &gmatstats);
             let seq2 = ScoredSequence::new(
-                pssm2.0,pssm2.1, None,&mut saligner,true
+                tt.1,tt.2,None,&mut saligner,true
             );
+            assert!(seq2.primary_ids.len() == 1);
+            primary_id_to_name.insert(seq2.primary_ids[0],tt.0);
+            id_order.push(seq2.primary_ids[0]);
             seqvec.push(seq2);
         }
-
+        
         let ans = saligner.make_msa(seqvec,-10.0,-0.5,false);
         let alires = &ans.0[0];
-        
+        let mut primary_id_to_res:HashMap<i32,String> = HashMap::new();
         for (eii,aa) in alires.alibuff_idx.iter().enumerate(){
+            let mut rres:Vec<char> = vec![];
             for ii in 0..alires.alignment_length{
-                print!("{}",saligner.ali_get(*aa,ii));
+                rres.push(saligner.ali_get(*aa,ii))
             }
-            println!("");
+            primary_id_to_res.insert(
+                alires.primary_ids[eii],rres.into_iter().map(|m|m.to_string()).collect::<Vec<String>>().concat()
+            );
         }
-        
-
+        for ii in id_order.iter(){
+            println!(">{}",primary_id_to_name.get(ii).unwrap());
+            println!("{}",primary_id_to_res.get(ii).unwrap());
+        }
         /*
             let res = saligner.perform_dp(
                 &seq1,&seq2,-10.0,-0.5
@@ -156,4 +164,5 @@ mod tests{
         }
         */
     }
+
 }

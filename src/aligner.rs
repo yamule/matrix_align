@@ -18,16 +18,16 @@ const DIREC_UP:u8 = 1;
 const DIREC_LEFT:u8 = 2;
 
 #[derive(Debug,Clone)]
-pub struct PSSMColumn{
+pub struct GMatColumn{
     pub match_vec:Vec<f32>,//match 時に使用されるベクトル
     pub match_weight:f32,
     pub del_weight:f32,
     pub connected_weight:f32, // 前の残基と連続している重み合計
     pub gapped_weight:f32,// 前の残基と連続していない重み合計
 }
-impl PSSMColumn{
-    pub fn new(vecsize:usize)->PSSMColumn{
-        return PSSMColumn{
+impl GMatColumn{
+    pub fn new(vecsize:usize)->GMatColumn{
+        return GMatColumn{
             match_vec:vec![0.0;vecsize],
             match_weight:1.0,
             del_weight:0.0,
@@ -53,11 +53,11 @@ pub struct ScoredSeqAligner{
     pub blen:usize,
     pub weights:Vec<f32>,
     pub alignment_buffer:Vec<Vec<char>>,//全配列がアラインメントされた状態で保持されている
-    pub pssm_buffer:Vec<Vec<PSSMColumn>>,
+    pub gmat_buffer:Vec<Vec<GMatColumn>>,
     pub alibuff_used:Vec<bool>,
-    pub pssmbuff_used:Vec<bool>,
+    pub gmat_used:Vec<bool>,
     pub alibuff_next:usize,
-    pub pssmbuff_next:usize,
+    pub gmat_next:usize,
     pub penalty_warning:bool
 }
 impl ScoredSeqAligner {
@@ -66,9 +66,9 @@ impl ScoredSeqAligner {
         let path_matrix:Vec<Vec<Vec<u8>>> = vec![vec![vec![];1];1];
         let mut charmap:Vec<usize> = vec![NUM_CHARTYPE;256];
         let alignment_buffer = vec![vec!['-';buff_len];buff_seqnum];
-        let pssm_buffer:Vec<Vec<PSSMColumn>> = vec![vec![PSSMColumn::new(vec_size);buff_len+1];buff_seqnum];
+        let gmat_buffer:Vec<Vec<GMatColumn>> = vec![vec![GMatColumn::new(vec_size);buff_len+1];buff_seqnum];
         let buff_used:Vec<bool> = vec![false;buff_seqnum];
-        let pssmbuff_used:Vec<bool> = vec![false;buff_seqnum];
+        let gmat_used:Vec<bool> = vec![false;buff_seqnum];
         let weights:Vec<f32> = vec![1.0;buff_seqnum];
         let cc:Vec<char> = ACCEPTABLE_CHARS.chars().into_iter().collect();
         for ee in cc.into_iter().enumerate(){
@@ -85,10 +85,10 @@ impl ScoredSeqAligner {
             ,weights:weights
             ,alignment_buffer:alignment_buffer
             ,alibuff_used:buff_used
-            ,pssm_buffer:pssm_buffer
-            ,pssmbuff_used:pssmbuff_used
+            ,gmat_buffer
+            ,gmat_used
             ,alibuff_next:0
-            ,pssmbuff_next:0
+            ,gmat_next:0
             ,penalty_warning:false
         };
         ret.reconstruct_matrix(buff_len, buff_len);
@@ -133,36 +133,36 @@ impl ScoredSeqAligner {
         }
     }
 
-    pub fn get_unused_pssmbuffid(&mut self)->usize{
-        for ii in self.pssmbuff_next..self.pssmbuff_used.len(){
-            if !self.pssmbuff_used[ii]{
-                self.pssmbuff_next = ii+1;
+    pub fn get_unused_gmatbuffid(&mut self)->usize{
+        for ii in self.gmat_next..self.gmat_used.len(){
+            if !self.gmat_used[ii]{
+                self.gmat_next = ii+1;
                 return ii;
             }
         }
-        for ii in 0..self.pssmbuff_next{
-            if !self.pssmbuff_used[ii]{
-                self.pssmbuff_next = ii+1;
+        for ii in 0..self.gmat_next{
+            if !self.gmat_used[ii]{
+                self.gmat_next = ii+1;
                 return ii;
             }
         }
-        let newid = self.pssmbuff_used.len();
-        self.pssmbuff_used.push(false);
-        self.pssm_buffer.push(vec![PSSMColumn::new(self.vec_size);self.pssm_buffer[0].len()]);
+        let newid = self.gmat_used.len();
+        self.gmat_used.push(false);
+        self.gmat_buffer.push(vec![GMatColumn::new(self.vec_size);self.gmat_buffer[0].len()]);
         return newid;
     }
     
-    pub fn register_pssmbuff(&mut self,id:usize,len:usize){
-        assert!(!self.pssmbuff_used[id]);
-        self.format_pssmbuff(id, len);
-        self.check_pssmbuff_length(id, len);
-        self.pssmbuff_used[id] = true;
+    pub fn register_gmatbuff(&mut self,id:usize,len:usize){
+        assert!(!self.gmat_used[id]);
+        self.format_gmatbuff(id, len);
+        self.check_gmatbuff_length(id, len);
+        self.gmat_used[id] = true;
     }
 
-    pub fn copy_pssm_a_to_b(&mut self,a:usize,b:usize,len:usize){
-        assert!(self.pssm_buffer[a].len() >= len);
-        self.check_pssmbuff_length(b,len);
-        self.pssm_buffer[b] = self.pssm_buffer[a].clone();
+    pub fn copy_gmat_a_to_b(&mut self,a:usize,b:usize,len:usize){
+        assert!(self.gmat_buffer[a].len() >= len);
+        self.check_gmatbuff_length(b,len);
+        self.gmat_buffer[b] = self.gmat_buffer[a].clone();
     }
     
     pub fn copy_ali_a_to_b(&mut self,a:usize,b:usize,len:usize){
@@ -173,25 +173,25 @@ impl ScoredSeqAligner {
 
     }
 
-    pub fn release_pssmbuff(&mut self,id:usize){
-        assert!(self.pssmbuff_used[id]);
-        self.pssmbuff_used[id] = false;
+    pub fn release_gmatbuff(&mut self,id:usize){
+        assert!(self.gmat_used[id]);
+        self.gmat_used[id] = false;
     }
 
     //文字列を保持しておくバッファのサイズを確認し、小さい場合は冗長性を少し加えて大きくする
-    pub fn check_pssmbuff_length(&mut self,id:usize,len:usize){
-        if self.pssm_buffer[id].len() < len+1{
-            self.pssm_buffer[id] = vec![PSSMColumn::new(self.vec_size);len+6];
+    pub fn check_gmatbuff_length(&mut self,id:usize,len:usize){
+        if self.gmat_buffer[id].len() < len+1{
+            self.gmat_buffer[id] = vec![GMatColumn::new(self.vec_size);len+6];
         }
     }
     
-    pub fn format_pssmbuff(&mut self,id:usize,len:usize){
-        self.check_pssmbuff_length(id, len);
+    pub fn format_gmatbuff(&mut self,id:usize,len:usize){
+        self.check_gmatbuff_length(id, len);
         for vv in 0..=len{
-            self.pssm_buffer[id][vv].match_vec.fill(0.0);
-            self.pssm_buffer[id][vv].del_weight = 0.0;
-            self.pssm_buffer[id][vv].del_weight = 0.0;
-            self.pssm_buffer[id][vv].del_weight = 0.0;
+            self.gmat_buffer[id][vv].match_vec.fill(0.0);
+            self.gmat_buffer[id][vv].del_weight = 0.0;
+            self.gmat_buffer[id][vv].del_weight = 0.0;
+            self.gmat_buffer[id][vv].del_weight = 0.0;
         }
     }
 
@@ -202,26 +202,26 @@ impl ScoredSeqAligner {
         }
     }
     
-    pub fn pssm_colget(&self,lid:usize,pos:usize)->&PSSMColumn{
-        return &self.pssm_buffer[lid][pos];
+    pub fn gmat_colget(&self,lid:usize,pos:usize)->&GMatColumn{
+        return &self.gmat_buffer[lid][pos];
     }
 
     //別関数になるかも
-    pub fn pssm_set(&mut self,lid:usize,pos:usize,vvec:&Vec<f32>,match_weight:f32,del_weight:f32,connected_weight:f32,gapped_weight:f32){
-        self.pssm_buffer[lid][pos].set(vvec,match_weight,del_weight,connected_weight,gapped_weight);
+    pub fn gmat_set(&mut self,lid:usize,pos:usize,vvec:&Vec<f32>,match_weight:f32,del_weight:f32,connected_weight:f32,gapped_weight:f32){
+        self.gmat_buffer[lid][pos].set(vvec,match_weight,del_weight,connected_weight,gapped_weight);
     }
 
 
     //この辺違う関数になるはず
     /*
-    pub fn pssm_add(&mut self,lid:usize,pos:usize,c:char,num:i32){
-        self.pssm_buffer[lid][pos][self.charmap[c as usize]] += num;
-        assert!(self.pssm_buffer[lid][pos][self.charmap[c as usize]] >= 0);
+    pub fn gmat_add(&mut self,lid:usize,pos:usize,c:char,num:i32){
+        self.gmat_buffer[lid][pos][self.charmap[c as usize]] += num;
+        assert!(self.gmat_buffer[lid][pos][self.charmap[c as usize]] >= 0);
     }
 
-    pub fn pssm_add_i(&mut self,lid:usize,pos:usize,c:usize,num:i32){
-        self.pssm_buffer[lid][pos][c] += num;
-        assert!(self.pssm_buffer[lid][pos][c] >= 0);
+    pub fn gmat_add_i(&mut self,lid:usize,pos:usize,c:usize,num:i32){
+        self.gmat_buffer[lid][pos][c] += num;
+        assert!(self.gmat_buffer[lid][pos][c] >= 0);
     }
     */
 
@@ -255,8 +255,8 @@ impl ScoredSeqAligner {
             self.reconstruct_matrix(aalen+25, bblen+25);
         }
         
-        let alid = a.pssmbuff_id as usize;
-        let blid = b.pssmbuff_id as usize;
+        let alid = a.gmatbuff_id as usize;
+        let blid = b.gmatbuff_id as usize;
         
         let mut currentpenal:f32;
         
@@ -264,9 +264,9 @@ impl ScoredSeqAligner {
         for ii in 0..=aalen{
             if ii != 0{
                 if ii == 1{
-                    currentpenal = self.pssm_colget(alid,ii-1).connected_weight*gap_open_penalty+self.pssm_colget(alid,ii-1).gapped_weight*gap_extension_penalty;
+                    currentpenal = self.gmat_colget(alid,ii-1).connected_weight*gap_open_penalty+self.gmat_colget(alid,ii-1).gapped_weight*gap_extension_penalty;
                 }else{
-                    currentpenal = self.pssm_colget(alid,ii-1).connected_weight*gap_extension_penalty+self.pssm_colget(alid,ii-1).gapped_weight*gap_extension_penalty;
+                    currentpenal = self.gmat_colget(alid,ii-1).connected_weight*gap_extension_penalty+self.gmat_colget(alid,ii-1).gapped_weight*gap_extension_penalty;
                 }
                 self.dp_matrix[ii][0][DIREC_LEFT as usize] = self.dp_matrix[ii-1][0][DIREC_LEFT as usize] + currentpenal;
                 self.dp_matrix[ii][0][DIREC_UPLEFT as usize] = self.dp_matrix[ii][0][DIREC_LEFT as usize]-1000.0;
@@ -282,9 +282,9 @@ impl ScoredSeqAligner {
         for ii in 0..=bblen{
             if ii != 0{
                 if ii == 1{
-                    currentpenal = self.pssm_colget(blid,ii-1).connected_weight*gap_open_penalty+self.pssm_colget(blid,ii-1).gapped_weight*gap_extension_penalty;
+                    currentpenal = self.gmat_colget(blid,ii-1).connected_weight*gap_open_penalty+self.gmat_colget(blid,ii-1).gapped_weight*gap_extension_penalty;
                 }else{
-                    currentpenal = self.pssm_colget(blid,ii-1).connected_weight*gap_extension_penalty+self.pssm_colget(blid,ii-1).gapped_weight*gap_extension_penalty;
+                    currentpenal = self.gmat_colget(blid,ii-1).connected_weight*gap_extension_penalty+self.gmat_colget(blid,ii-1).gapped_weight*gap_extension_penalty;
                 }
 
                 self.dp_matrix[0][ii][DIREC_UP as usize] = self.dp_matrix[0][ii-1][DIREC_UP as usize]+currentpenal;
@@ -305,24 +305,24 @@ impl ScoredSeqAligner {
         let mut aavec:Vec<&Vec<f32>> = vec![];
         let mut aweight:Vec<f32> = vec![];
         for ii in 0..aalen{
-            aavec.push(&self.pssm_buffer[alid][ii].match_vec);
-            aweight.push(self.pssm_buffer[alid][ii].match_weight);
+            aavec.push(&self.gmat_buffer[alid][ii].match_vec);
+            aweight.push(self.gmat_buffer[alid][ii].match_weight);
         }
         
         let mut bbvec:Vec<&Vec<f32>> = vec![];
         let mut bweight:Vec<f32> = vec![];
         for ii in 0..bblen{
-            bbvec.push(&self.pssm_buffer[blid][ii].match_vec);
-            bweight.push(self.pssm_buffer[blid][ii].match_weight);
+            bbvec.push(&self.gmat_buffer[blid][ii].match_vec);
+            bweight.push(self.gmat_buffer[blid][ii].match_weight);
         }
         //バッファに入れようかと思ったが、結局新しく領域を確保していたのでやめた
-        let match_score:Vec<Vec<f32>> = pssm::calc_dist_zscore_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
-        //let match_score:Vec<Vec<f32>> = pssm::calc_dist_zscore_matrix(&aavec, &bbvec,None,None);
+        let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
+        //let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,None,None);
 
         for ii in 1..=aalen{
             for jj in 1..=bblen{
-                let acol = self.pssm_colget(alid,ii-1);
-                let bcol = self.pssm_colget(blid,jj-1);
+                let acol = self.gmat_colget(alid,ii-1);
+                let bcol = self.gmat_colget(blid,jj-1);
                 //let sc:f32 = ScoredSeqAligner::calc_match_score(&acol.0,&bcol.0);
                 let sc:f32 = match_score[ii-1][jj-1];
                 
@@ -485,19 +485,19 @@ impl ScoredSeqAligner {
         a.release_buffs(self);
         b.release_buffs(self);
 
-        let lid = self.get_unused_pssmbuffid();
-        self.register_pssmbuff(lid,alignment_length);
-        self.format_pssmbuff(lid,alignment_length);
+        let lid = self.get_unused_gmatbuffid();
+        self.register_gmatbuff(lid,alignment_length);
+        self.format_gmatbuff(lid,alignment_length);
         let mut ret =  ScoredSequence{
             id:-1,
             num_sequences:a.num_sequences+b.num_sequences,
             primary_ids:primary_ids,
-            pssmbuff_id:lid as i32,
+            gmatbuff_id:lid as i32,
             alibuff_idx:new_aids,
             alignment_length:alignment_length,
             weight_sum:sumweight
         };
-        ret.calc_pssm( self);
+        ret.calc_gmat( self);
         return ret;
     }
     pub fn make_msa(&mut self,mut sequences: Vec<ScoredSequence>,gap_open_penalty:f32,gap_extension_penalty:f32,profile_only:bool)
@@ -651,23 +651,23 @@ pub struct ScoredSequence{
     //pub alignments:Vec<Vec<char>>,
     pub num_sequences:usize,
     pub primary_ids:Vec<i32>, //weights のインデクスにも対応している
-    pub pssmbuff_id:i32,
+    pub gmatbuff_id:i32,
     pub alibuff_idx:Vec<usize>,
     pub alignment_length:usize,
     pub weight_sum:f32
 }
 
 impl ScoredSequence{
-    pub fn new(a:Vec<char>,a_pssm:Vec<Vec<f32>>,gap_state:Option<Vec<(f32,f32,f32,f32)>>,aligner:&mut ScoredSeqAligner,register_id:bool)-> ScoredSequence{
-        let lid = aligner.get_unused_pssmbuffid();
+    pub fn new(a:Vec<char>,a_gmat:Vec<Vec<f32>>,gap_state:Option<Vec<(f32,f32,f32,f32)>>,aligner:&mut ScoredSeqAligner,register_id:bool)-> ScoredSequence{
+        let lid = aligner.get_unused_gmatbuffid();
         let aid = aligner.get_unused_alibuffid();
-        aligner.register_pssmbuff(lid,a.len());
+        aligner.register_gmatbuff(lid,a.len());
         aligner.register_alibuff(aid,a.len());
         let alen = a.len();
         
-        for aa in a.into_iter().zip(a_pssm.into_iter()).enumerate(){
+        for aa in a.into_iter().zip(a_gmat.into_iter()).enumerate(){
             if aligner.charmap[(aa.1).0 as usize] != NUM_CHARTYPE{
-                aligner.pssm_set(lid,aa.0,&(aa.1).1,1.0,0.0
+                aligner.gmat_set(lid,aa.0,&(aa.1).1,1.0,0.0
                 ,1.0,0.0); 
                 aligner.ali_set(aid,aa.0,(aa.1).0);
             }else{
@@ -677,16 +677,16 @@ impl ScoredSequence{
         if let Some(x) = gap_state{
             assert_eq!(alen+1,x.len());
             for ii in 0..alen{
-                aligner.pssm_buffer[lid][ii].match_weight = x[ii].0;
-                aligner.pssm_buffer[lid][ii].del_weight = x[ii].1;
-                aligner.pssm_buffer[lid][ii].connected_weight = x[ii].2;
-                aligner.pssm_buffer[lid][ii].gapped_weight = x[ii].3;
+                aligner.gmat_buffer[lid][ii].match_weight = x[ii].0;
+                aligner.gmat_buffer[lid][ii].del_weight = x[ii].1;
+                aligner.gmat_buffer[lid][ii].connected_weight = x[ii].2;
+                aligner.gmat_buffer[lid][ii].gapped_weight = x[ii].3;
             }
-            aligner.pssm_buffer[lid][alen].connected_weight = x[alen].2;
-            aligner.pssm_buffer[lid][alen].gapped_weight = x[alen].3;
+            aligner.gmat_buffer[lid][alen].connected_weight = x[alen].2;
+            aligner.gmat_buffer[lid][alen].gapped_weight = x[alen].3;
         }
         
-        aligner.pssm_set(lid,alen,&(vec![0.0;aligner.vec_size]),1.0,0.0
+        aligner.gmat_set(lid,alen,&(vec![0.0;aligner.vec_size]),1.0,0.0
         ,1.0,0.0);
         
         let mut idd = -1_i32;
@@ -697,7 +697,7 @@ impl ScoredSequence{
         }
         return ScoredSequence{
             id:idd,
-            pssmbuff_id:lid as i32,
+            gmatbuff_id:lid as i32,
             alibuff_idx:vec![aid],
             num_sequences:1,
             primary_ids:pidd,
@@ -716,10 +716,10 @@ impl ScoredSequence{
 
     pub fn set_alignment_length(&mut self,len:usize,aligner:&mut ScoredSeqAligner){
         self.alignment_length = len;
-        if self.pssmbuff_id < 0{
-            let lid = aligner.get_unused_pssmbuffid();
-            aligner.register_pssmbuff(lid,self.alignment_length);
-            self.pssmbuff_id = lid as i32;
+        if self.gmatbuff_id < 0{
+            let lid = aligner.get_unused_gmatbuffid();
+            aligner.register_gmatbuff(lid,self.alignment_length);
+            self.gmatbuff_id = lid as i32;
         }
         while self.alibuff_idx.len() < self.primary_ids.len(){
             let aid = aligner.get_unused_alibuffid();
@@ -733,8 +733,8 @@ impl ScoredSequence{
     }
 
     pub fn release_buffs(&mut self,aligner:&mut ScoredSeqAligner){
-        aligner.release_pssmbuff(self.pssmbuff_id as usize);
-        self.pssmbuff_id = -1;
+        aligner.release_gmatbuff(self.gmatbuff_id as usize);
+        self.gmatbuff_id = -1;
         for pp in self.alibuff_idx.iter(){
             aligner.release_alibuff(*pp);
         }
@@ -769,9 +769,9 @@ impl ScoredSequence{
     }
     */
     
-    pub fn calc_pssm(&mut self,aligner:&mut ScoredSeqAligner){
+    pub fn calc_gmat(&mut self,aligner:&mut ScoredSeqAligner){
         
-        let lid:usize = self.pssmbuff_id as usize;
+        let lid:usize = self.gmatbuff_id as usize;
         let alilen = self.alignment_length;
         let veclen = aligner.vec_size;
         let mut all_weights:f32 = 0.0;
@@ -781,7 +781,7 @@ impl ScoredSequence{
         //let weights = sequence_weighting::calc_henikoff_henikoff_weight(&aligner.alignment_buffer,&self.alibuff_ids,alilen);
         let mut aacount:Vec<usize> = vec![0;alilen]; // 配列毎の次に参照するべき位置
         for alipos in 0..alilen{
-            (aligner.pssm_buffer[lid][alipos].match_vec).fill(0.0);
+            (aligner.gmat_buffer[lid][alipos].match_vec).fill(0.0);
             let mut sum_weight = 0.0;
             let mut sum_weight_del = 0.0;
             let mut ungapratio = 0.0;
@@ -793,43 +793,43 @@ impl ScoredSequence{
                 // 前後で繋がっていて GAPOPEN が必要なもののウェイトを取る
                 if alipos == 0{
                     if aligner.ali_get(*aidx,alipos) != GAP_CHAR{
-                        ungapratio += aligner.weights[*ppid as usize]*aligner.pssm_buffer[lid][aacount[eii]].connected_weight;
-                        gapratio +=  aligner.weights[*ppid as usize]*aligner.pssm_buffer[lid][aacount[eii]].gapped_weight;
+                        ungapratio += aligner.weights[*ppid as usize]*aligner.gmat_buffer[lid][aacount[eii]].connected_weight;
+                        gapratio +=  aligner.weights[*ppid as usize]*aligner.gmat_buffer[lid][aacount[eii]].gapped_weight;
                     }else{
-                        gapratio +=  aligner.weights[*ppid as usize]*(aligner.pssm_buffer[lid][aacount[eii]].gapped_weight
-                            +aligner.pssm_buffer[lid][aacount[eii]].connected_weight);
+                        gapratio +=  aligner.weights[*ppid as usize]*(aligner.gmat_buffer[lid][aacount[eii]].gapped_weight
+                            +aligner.gmat_buffer[lid][aacount[eii]].connected_weight);
                     }
                 }else{
                     if aligner.alignment_buffer[*aidx][alipos-1] != GAP_CHAR && aligner.alignment_buffer[*aidx][alipos] != GAP_CHAR{
-                        ungapratio += aligner.weights[*ppid as usize]*aligner.pssm_buffer[lid][aacount[eii]].connected_weight;
-                        gapratio +=  aligner.weights[*ppid as usize]*aligner.pssm_buffer[lid][aacount[eii]].gapped_weight;
+                        ungapratio += aligner.weights[*ppid as usize]*aligner.gmat_buffer[lid][aacount[eii]].connected_weight;
+                        gapratio +=  aligner.weights[*ppid as usize]*aligner.gmat_buffer[lid][aacount[eii]].gapped_weight;
                     }else{
-                        gapratio +=  aligner.weights[*ppid as usize]*(aligner.pssm_buffer[lid][aacount[eii]].gapped_weight
-                            +aligner.pssm_buffer[lid][aacount[eii]].connected_weight);
+                        gapratio +=  aligner.weights[*ppid as usize]*(aligner.gmat_buffer[lid][aacount[eii]].gapped_weight
+                            +aligner.gmat_buffer[lid][aacount[eii]].connected_weight);
                     }
                 }
 
                 if aligner.ali_get(*aidx,alipos) != GAP_CHAR{
                     for vv in 0..veclen{
-                        aligner.pssm_buffer[lid][alipos].match_vec[vv] += aligner.pssm_buffer[*ppid as usize][aacount[eii]].match_vec[vv]
-                        *aligner.weights[*ppid as usize]*aligner.pssm_buffer[*ppid as usize][aacount[eii]].match_weight;
+                        aligner.gmat_buffer[lid][alipos].match_vec[vv] += aligner.gmat_buffer[*ppid as usize][aacount[eii]].match_vec[vv]
+                        *aligner.weights[*ppid as usize]*aligner.gmat_buffer[*ppid as usize][aacount[eii]].match_weight;
                     }
                     aacount[eii] += 1;
-                    sum_weight += aligner.weights[*ppid as usize]*aligner.pssm_buffer[*ppid as usize][aacount[eii]].match_weight;
-                    sum_weight_del += aligner.weights[*ppid as usize]*aligner.pssm_buffer[*ppid as usize][aacount[eii]].del_weight;
+                    sum_weight += aligner.weights[*ppid as usize]*aligner.gmat_buffer[*ppid as usize][aacount[eii]].match_weight;
+                    sum_weight_del += aligner.weights[*ppid as usize]*aligner.gmat_buffer[*ppid as usize][aacount[eii]].del_weight;
                 }else{
                     sum_weight_del += aligner.weights[*ppid as usize];
                 }
             }
-            aligner.pssm_buffer[lid][alipos].connected_weight = ungapratio/all_weights;
-            aligner.pssm_buffer[lid][alipos].gapped_weight = gapratio/all_weights;
+            aligner.gmat_buffer[lid][alipos].connected_weight = ungapratio/all_weights;
+            aligner.gmat_buffer[lid][alipos].gapped_weight = gapratio/all_weights;
 
             if sum_weight > 0.0{
-                element_multiply(&mut aligner.pssm_buffer[lid][alipos].match_vec,1.0/sum_weight);
+                element_multiply(&mut aligner.gmat_buffer[lid][alipos].match_vec,1.0/sum_weight);
             }
             let pallweight = sum_weight+sum_weight_del;
-            aligner.pssm_buffer[lid][alipos].match_weight = sum_weight/pallweight;
-            aligner.pssm_buffer[lid][alipos].del_weight = sum_weight_del/pallweight;
+            aligner.gmat_buffer[lid][alipos].match_weight = sum_weight/pallweight;
+            aligner.gmat_buffer[lid][alipos].del_weight = sum_weight_del/pallweight;
         }
 
         // 最後の残基以降のギャップ
@@ -837,15 +837,15 @@ impl ScoredSequence{
         let mut gapratio = 0.0;
         for (eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
             if aligner.alignment_buffer[*aidx][alilen-1] != GAP_CHAR{
-                ungapratio += aligner.weights[*ppid as usize]*aligner.pssm_buffer[lid][aacount[eii]].connected_weight;
-                gapratio +=  aligner.weights[*ppid as usize]*aligner.pssm_buffer[lid][aacount[eii]].gapped_weight;
+                ungapratio += aligner.weights[*ppid as usize]*aligner.gmat_buffer[lid][aacount[eii]].connected_weight;
+                gapratio +=  aligner.weights[*ppid as usize]*aligner.gmat_buffer[lid][aacount[eii]].gapped_weight;
             }else{
-                gapratio +=  aligner.weights[*ppid as usize]*(aligner.pssm_buffer[lid][aacount[eii]].gapped_weight
-                    +aligner.pssm_buffer[lid][aacount[eii]].connected_weight);
+                gapratio +=  aligner.weights[*ppid as usize]*(aligner.gmat_buffer[lid][aacount[eii]].gapped_weight
+                    +aligner.gmat_buffer[lid][aacount[eii]].connected_weight);
             }
         }
-        aligner.pssm_buffer[lid][alilen].connected_weight = ungapratio/all_weights;
-        aligner.pssm_buffer[lid][alilen].gapped_weight = gapratio/all_weights;
+        aligner.gmat_buffer[lid][alilen].connected_weight = ungapratio/all_weights;
+        aligner.gmat_buffer[lid][alilen].gapped_weight = gapratio/all_weights;
         self.num_sequences = self.primary_ids.len();
     }
     
