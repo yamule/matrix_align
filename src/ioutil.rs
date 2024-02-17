@@ -1,4 +1,6 @@
 use flate2::bufread::GzDecoder;
+use flate2::Compression;
+use flate2::write::GzEncoder;
 use std::io::{Read,BufWriter,Write,BufReader,BufRead};
 use std::fs::File;
 use std::collections::HashMap;
@@ -98,6 +100,21 @@ impl SeqData{
     }
 }
 
+pub fn save_lines(filename:&str,contents:Vec<String>,gzipped:bool){
+    
+    let file = File::create(filename).unwrap_or_else(|e| panic!("Save {} was failed! {:?}",filename,e));
+        
+    let mut writer: Box<dyn Write> = if gzipped {
+        Box::new(BufWriter::new(GzEncoder::new(file, Compression::default())))
+    } else {
+        Box::new(BufWriter::new(file))
+    };
+    for cc in contents.into_iter(){
+        writer.write_all(cc.as_bytes()).unwrap_or_else(|e|panic!("{:?}",e));
+        writer.write_all(b"\n").unwrap_or_else(|e|panic!("{:?}",e));
+    }
+    
+}
 pub fn load_gmat(filename:&str,gzipped:bool)-> (Vec<char>,Vec<Vec<f32>>){
     
     let mut ret_c:Vec<char> = vec![];
@@ -155,6 +172,9 @@ pub fn parse_gmat_block(lines:Vec<String>)-> (String,Vec<char>,Vec<Vec<f32>>,Opt
     let mut ret_ex:Vec<(f32,f32,f32,f32)> = vec![];
     for line in lines.into_iter(){
         let ptt:Vec<String> = line.split_ascii_whitespace().map(|m|m.to_owned()).collect();
+        if ptt.len() == 0 || ptt[0].len() == 0{
+            continue;
+        }
         let cc:Vec<char> = ptt[0].chars().into_iter().collect();
         if cc[0] == '@'{
             assert!(ptt.len() == 5);
