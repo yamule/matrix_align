@@ -97,12 +97,13 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
         }
         let sstat:VectorStats = calc_stats(&evec);
         let stdev = sstat.var.sqrt()+0.0000001;
-        element_add(&mut evec,-1.0*sstat.mean);
-        
-        if let Some(x) = aweight{// 逆方向の値との平均を取るので 2.0 で割る
-            element_multiply(&mut evec, 1.0/stdev/2.0*x[rr]);
-        }else{
-            element_multiply(&mut evec, 1.0/stdev/2.0);
+        unsafe{
+            element_add(&mut evec,-1.0*sstat.mean);
+            if let Some(x) = aweight{// 逆方向の値との平均を取るので 2.0 で割る
+                element_multiply(&mut evec, 1.0/stdev/2.0*x[rr]);
+            }else{
+                element_multiply(&mut evec, 1.0/stdev/2.0);
+            }
         }
         ret.push(evec);
     }
@@ -115,11 +116,13 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
         }
         let sstat:VectorStats = calc_stats(&evec);
         let stdev = sstat.var.sqrt()+0.0000001;
-        element_add(&mut evec,-1.0*sstat.mean);
-        if let Some(x) = bweight{
-            element_multiply(&mut evec, 1.0/stdev/2.0*x[cc]);
-        }else{
-            element_multiply(&mut evec, 1.0/stdev/2.0);
+        unsafe{
+            element_add(&mut evec,-1.0*sstat.mean);
+            if let Some(x) = bweight{
+                element_multiply(&mut evec, 1.0/stdev/2.0*x[cc]);
+            }else{
+                element_multiply(&mut evec, 1.0/stdev/2.0);
+            }
         }
         for rr in 0..alen{
             ret[rr][cc] += evec[rr];

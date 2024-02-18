@@ -294,7 +294,7 @@ impl ScoredSeqAligner {
             if ppos.1 > -1{
                 let poss = ppos.1 as usize;
                 for ap in 0..bnumaliseq{
-                    new_alignments[ap+anumaliseq].push(a.alignments[ap][poss as usize]);
+                    new_alignments[ap+anumaliseq].push(b.alignments[ap][poss as usize]);
                 }
                 gapper[1].push('X');
             }else{
@@ -370,7 +370,9 @@ impl ScoredSeqAligner {
             ret.gmat[alipos].gapped_ratio = gapratio/(ungapratio+gapratio);
 
             if sum_weight > 0.0{
-                element_multiply(&mut ret.gmat[alipos].match_vec,1.0/sum_weight);
+                unsafe{
+                    element_multiply(&mut ret.gmat[alipos].match_vec,1.0/sum_weight);
+                }
             }
             
             assert!(sum_weight+sum_weight_del > 0.0);
@@ -475,7 +477,7 @@ impl ScoredSequence{
             alignments:alignments,
             headers:headers,
             gmat:gmat,
-            seq_weights:seq_weights_.unwrap_or_else(||vec![0.0;seqnum])
+            seq_weights:seq_weights_.unwrap_or_else(||vec![1.0;seqnum])
         }
     }
 

@@ -424,9 +424,11 @@ pub fn vector_sqrt(vec: &mut[f32]){
 //一次元配列を 2 つ与えてユークリッド距離を計算する
 pub fn calc_euclid_dist(vec1: &Vec<f32>,vec2: &Vec<f32>)->f32{
     let mut mvec1:Vec<f32> = vec1.clone();//破壊するので Clone
-    element_multiply(&mut mvec1,-1.0);
-    vector_add(&mut mvec1,&vec2);
-    vector_square(&mut mvec1);
+    unsafe{
+        element_multiply(&mut mvec1,-1.0);
+        vector_add(&mut mvec1,&vec2);
+        vector_square(&mut mvec1);
+    }
     let ret:f32 = mvec1.into_iter().sum(); //まあ多分ベクトル化してくれるのでは・・・
     return ret.sqrt();
 }
@@ -442,8 +444,10 @@ pub fn calc_stats(vec1:&Vec<f32>)->VectorStats{
     let count:usize = vec1.len();
     let mmean:f32 = vec1.iter().sum::<f32>()/(count as f32);
     let mut mvec1 = vec1.clone();
-    element_add(&mut mvec1,mmean*-1.0);
-    vector_square(&mut mvec1);
+    unsafe{
+        element_add(&mut mvec1,mmean*-1.0);
+        vector_square(&mut mvec1);
+    }
     let vvar:f32 = mvec1.into_iter().sum::<f32>()/(count as f32);
     return VectorStats{
         mean:mmean,var:vvar,count:count
@@ -454,8 +458,10 @@ pub fn calc_stats(vec1:&Vec<f32>)->VectorStats{
 fn matrix_test(){
     let a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     let b = vec![8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
-    let result = dot_product(&a, &b);
-    println!("Dot Product: {}", result);
-    println!("Euclid Distance: {}", calc_euclid_dist(&a,&b));
+    unsafe{
+        let result = dot_product(&a, &b);
+        println!("Dot Product: {}", result);
+        println!("Euclid Distance: {}", calc_euclid_dist(&a,&b));
+    }
     
 }
