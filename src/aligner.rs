@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::vec;
 
+use rand::distributions::weighted::alias_method::Weight;
+
 use self::matrix_process::element_multiply;
 use self::matrix_process::vector_add;
 
@@ -63,13 +65,6 @@ pub struct ScoredSeqAligner{
     pub vec_size:usize,
     pub alen:usize,
     pub blen:usize,
-    pub weights:Vec<f32>,
-    pub alignment_buffer:Vec<Vec<char>>,//全配列がアラインメントされた状態で保持されている
-    pub gmat_buffer:Vec<Vec<GMatColumn>>,
-    pub alibuff_used:Vec<bool>,
-    pub gmat_used:Vec<bool>,
-    pub alibuff_next:usize,
-    pub gmat_next:usize,
     pub penalty_warning:bool
 }
 impl ScoredSeqAligner {
@@ -77,10 +72,6 @@ impl ScoredSeqAligner {
         let dp_matrix:Vec<Vec<Vec<f32>>> = vec![vec![vec![];1];1];
         let path_matrix:Vec<Vec<Vec<u8>>> = vec![vec![vec![];1];1];
         let mut charmap:Vec<usize> = vec![NUM_CHARTYPE;256];
-        let alignment_buffer = vec![vec!['-';buff_len];buff_seqnum];
-        let gmat_buffer:Vec<Vec<GMatColumn>> = vec![vec![GMatColumn::new(vec_size);buff_len+1];buff_seqnum];
-        let buff_used:Vec<bool> = vec![false;buff_seqnum];
-        let gmat_used:Vec<bool> = vec![false;buff_seqnum];
         let weights:Vec<f32> = vec![1.0;buff_seqnum];
         let cc:Vec<char> = ACCEPTABLE_CHARS.chars().into_iter().collect();
         for ee in cc.into_iter().enumerate(){
@@ -94,13 +85,6 @@ impl ScoredSeqAligner {
             ,vec_size:vec_size
             ,alen:0
             ,blen:0
-            ,weights:weights
-            ,alignment_buffer:alignment_buffer
-            ,alibuff_used:buff_used
-            ,gmat_buffer
-            ,gmat_used
-            ,alibuff_next:0
-            ,gmat_next:0
             ,penalty_warning:false
         };
         ret.reconstruct_matrix(buff_len, buff_len);
@@ -108,61 +92,6 @@ impl ScoredSeqAligner {
     }
     
     
-    pub fn get_unused_alibuffid(&mut self)->usize{
-        for ii in self.alibuff_next..self.alibuff_used.len(){
-            if !self.alibuff_used[ii]{
-                self.alibuff_next = ii+1;
-                return ii;
-            }
-        }
-        for ii in 0..self.alibuff_next{
-            if !self.alibuff_used[ii]{
-                self.alibuff_next = ii+1;
-                return ii;
-            }
-        }
-        let newid = self.alibuff_used.len();
-        self.alibuff_used.push(false);
-        self.alignment_buffer.push(vec!['-';self.alignment_buffer[0].len()]);
-        self.alibuff_next = self.alibuff_used.len();
-        return newid;
-    }
-    
-    pub fn register_alibuff(&mut self,id:usize,len:usize){
-        assert!(!self.alibuff_used[id]);
-        self.check_alibufflen(id, len);
-        self.alibuff_used[id] = true;
-    }
-
-    pub fn release_alibuff(&mut self,id:usize){
-        assert!(self.alibuff_used[id]);
-        self.alibuff_used[id] = false;
-    }
-
-    pub fn check_alibufflen(&mut self,id:usize,len:usize){
-        if self.alignment_buffer[id].len() < len{
-            self.alignment_buffer[id] = vec!['-';len+5];
-        }
-    }
-
-    pub fn get_unused_gmatbuffid(&mut self)->usize{
-        for ii in self.gmat_next..self.gmat_used.len(){
-            if !self.gmat_used[ii]{
-                self.gmat_next = ii+1;
-                return ii;
-            }
-        }
-        for ii in 0..self.gmat_next{
-            if !self.gmat_used[ii]{
-                self.gmat_next = ii+1;
-                return ii;
-            }
-        }
-        let newid = self.gmat_used.len();
-        self.gmat_used.push(false);
-        self.gmat_buffer.push(vec![GMatColumn::new(self.vec_size);self.gmat_buffer[0].len()]);
-        return newid;
-    }
 
     //呼び出し元から直接 dot_product に飛ばしてもいいかも
     pub fn calc_match_score(a:&Vec<f32>,b:&Vec<f32>)->f32{
@@ -171,34 +100,6 @@ impl ScoredSeqAligner {
         }
     }
     
-    pub fn gmat_colget(&self,lid:usize,pos:usize)->&GMatColumn{
-        return &self.gmat_buffer[lid][pos];
-    }
-
-    //この辺違う関数になるはず
-    /*
-    pub fn gmat_add(&mut self,lid:usize,pos:usize,c:char,num:i32){
-        self.gmat_buffer[lid][pos][self.charmap[c as usize]] += num;
-        assert!(self.gmat_buffer[lid][pos][self.charmap[c as usize]] >= 0);
-    }
-
-    pub fn gmat_add_i(&mut self,lid:usize,pos:usize,c:usize,num:i32){
-        self.gmat_buffer[lid][pos][c] += num;
-        assert!(self.gmat_buffer[lid][pos][c] >= 0);
-    }
-    */
-
-    pub fn ali_set(&mut self,aid:usize,pos:usize,c:char){
-        self.alignment_buffer[aid][pos] = c;
-    }
-
-    pub fn ali_get(&self,aid:usize,pos:usize)->char{
-        return self.alignment_buffer[aid][pos];
-    }
-    pub fn ali_get_i(&self,aid:usize,pos:usize)->usize{
-        return self.charmap[self.alignment_buffer[aid][pos] as usize];
-    }
-
     pub fn reconstruct_matrix(&mut self,amax:usize,bmax:usize){
         self.dp_matrix = vec![vec![vec![0.0;3];bmax+1];amax+1];
         self.path_matrix  = vec![vec![vec![0;3];bmax+1];amax+1];
@@ -211,15 +112,12 @@ impl ScoredSeqAligner {
             eprintln!("Gap open penalty is larger than gap extension penalty. open :{}, extension: {}",gap_open_penalty,gap_extension_penalty);
             self.penalty_warning = true;
         }
-        let aalen = a.alignment_length;
-        let bblen = b.alignment_length;
+        let aalen = a.get_alignment_length();
+        let bblen = b.get_alignment_length();
         let recflag = self.dp_matrix.len() <= aalen || self.dp_matrix[0].len() <= bblen;
         if recflag{
             self.reconstruct_matrix(aalen+25, bblen+25);
         }
-        
-        let alid = a.gmatbuff_id as usize;
-        let blid = b.gmatbuff_id as usize;
         
         let mut currentpenal:f32;
         
@@ -227,9 +125,9 @@ impl ScoredSeqAligner {
         for ii in 0..=aalen{
             if ii != 0{
                 if ii == 1{
-                    currentpenal = self.gmat_colget(alid,ii-1).connected_ratio*gap_open_penalty+self.gmat_colget(alid,ii-1).gapped_ratio*gap_extension_penalty;
+                    currentpenal = a.gmat[ii-1].connected_ratio*gap_open_penalty+a.gmat[ii-1].gapped_ratio*gap_extension_penalty;
                 }else{
-                    currentpenal = self.gmat_colget(alid,ii-1).connected_ratio*gap_extension_penalty+self.gmat_colget(alid,ii-1).gapped_ratio*gap_extension_penalty;
+                    currentpenal = a.gmat[ii-1].connected_ratio*gap_extension_penalty+a.gmat[ii-1].gapped_ratio*gap_extension_penalty;
                 }
                 self.dp_matrix[ii][0][DIREC_LEFT as usize] = self.dp_matrix[ii-1][0][DIREC_LEFT as usize] + currentpenal;
                 self.dp_matrix[ii][0][DIREC_UPLEFT as usize] = self.dp_matrix[ii][0][DIREC_LEFT as usize]-1000.0;
@@ -245,9 +143,9 @@ impl ScoredSeqAligner {
         for ii in 0..=bblen{
             if ii != 0{
                 if ii == 1{
-                    currentpenal = self.gmat_colget(blid,ii-1).connected_ratio*gap_open_penalty+self.gmat_colget(blid,ii-1).gapped_ratio*gap_extension_penalty;
+                    currentpenal = b.gmat[ii-1].connected_ratio*gap_open_penalty+b.gmat[ii-1].gapped_ratio*gap_extension_penalty;
                 }else{
-                    currentpenal = self.gmat_colget(blid,ii-1).connected_ratio*gap_extension_penalty+self.gmat_colget(blid,ii-1).gapped_ratio*gap_extension_penalty;
+                    currentpenal = b.gmat[ii-1].connected_ratio*gap_extension_penalty+b.gmat[ii-1].gapped_ratio*gap_extension_penalty;
                 }
 
                 self.dp_matrix[0][ii][DIREC_UP as usize] = self.dp_matrix[0][ii-1][DIREC_UP as usize]+currentpenal;
@@ -268,15 +166,15 @@ impl ScoredSeqAligner {
         let mut aavec:Vec<&Vec<f32>> = vec![];
         let mut aweight:Vec<f32> = vec![];
         for ii in 0..aalen{
-            aavec.push(&self.gmat_buffer[alid][ii].match_vec);
-            aweight.push(self.gmat_buffer[alid][ii].match_ratio);
+            aavec.push(&a.gmat[ii].match_vec);
+            aweight.push(a.gmat[ii].match_ratio);
         }
         
         let mut bbvec:Vec<&Vec<f32>> = vec![];
         let mut bweight:Vec<f32> = vec![];
         for ii in 0..bblen{
-            bbvec.push(&self.gmat_buffer[blid][ii].match_vec);
-            bweight.push(self.gmat_buffer[blid][ii].match_ratio);
+            bbvec.push(&b.gmat[ii].match_vec);
+            bweight.push(b.gmat[ii].match_ratio);
         }
         //バッファに入れようかと思ったが、結局新しく領域を確保していたのでやめた
         let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
@@ -284,8 +182,8 @@ impl ScoredSeqAligner {
 
         for ii in 1..=aalen{
             for jj in 1..=bblen{
-                let acol = self.gmat_colget(alid,ii-1);
-                let bcol = self.gmat_colget(blid,jj-1);
+                let acol = &a.gmat[ii-1];
+                let bcol = &b.gmat[jj-1];
                 //let sc:f32 = ScoredSeqAligner::calc_match_score(&acol.0,&bcol.0);
                 let sc:f32 = match_score[ii-1][jj-1];
                 
@@ -376,8 +274,6 @@ impl ScoredSeqAligner {
         let numallseq = anumaliseq+bnumaliseq;
         let vec_size = a.get_vec_size();
         let alignment_length = alignment.len();
-
-        let mut new_aids = vec![];
 
         let mut new_alignments:Vec<Vec<char>> = vec![vec![];numallseq];
         let mut gapper:Vec<Vec<char>> = vec![vec![],vec![]];//全体ギャップ計算
@@ -506,7 +402,6 @@ impl ScoredSeqAligner {
     }
     pub fn make_msa(&mut self,mut sequences: Vec<ScoredSequence>,gap_open_penalty:f32,gap_extension_penalty:f32,profile_only:bool)
     -> (Vec<ScoredSequence>,f32){
-        let mut next_id = sequences.iter().fold(0,|s,a| s.max(a.id)) as i32 + 10000;
         let mut final_score:f32 = 0.0;
         sequences.reverse();
         let mut center_seq = sequences.pop().unwrap();
@@ -524,28 +419,16 @@ impl ScoredSeqAligner {
                 newgroup = ScoredSeqAligner::make_alignment(self,bseq,center_seq,dpres.0,profile_only);
             };
             final_score = dpres.1;
-            newgroup.set_id(next_id);
-            next_id += 1;
+            
             center_seq = newgroup;
         }
         return (vec![center_seq],final_score);
     }
 
-    
-
-
     //配列のウェイトを計算する
     //全配列の MSA が作られている前提
-    pub fn calc_weights(&mut self,alibuff_ids:&Vec<usize>,alilen:usize){
-        for aa in alibuff_ids.iter(){
-            if alilen < self.alignment_buffer.len()+1{
-                assert!(self.alignment_buffer[*aa][alilen+1] == '-',"All sequences must have been aligned. Found {} at sequence {}.",self.alignment_buffer[*aa][alilen+1],*aa);
-            }
-        }
-        let weights = sequence_weighting::calc_henikoff_henikoff_weight(&self.alignment_buffer,alibuff_ids,alilen);
-        for aa in alibuff_ids.iter().enumerate(){
-            self.weights[*aa.1] = weights[aa.0];
-        }
+    pub fn calc_weights(alignments:&Vec<Vec<char>>)->Vec<f32>{
+        return sequence_weighting::calc_henikoff_henikoff_weight(&alignments);
     }
 
 }
@@ -558,15 +441,14 @@ pub struct ScoredSequence{
 }
 
 impl ScoredSequence{
-    pub fn new(alignments_:Vec<(String,Vec<char>)>,vec_size:usize,seq_weights_:Option<Vec<f32>>,gmat_:Option<Vec<Vec<f32>>>,gap_state_:Option<Vec<(f32,f32,f32,f32)>>)-> ScoredSequence{
+    pub fn new(alignments_:Vec<(String,Vec<char>)>,vec_size:usize,seq_weights_:Option<Vec<f32>>
+        ,gmat_:Option<Vec<Vec<f32>>>,gap_state_:Option<Vec<(f32,f32,f32,f32)>>)-> ScoredSequence{
         let seqnum = alignments_.len();
-        let alilen = alignments_[0].1.len();
-        let mut gmat:Vec<GMatColumn>;
-        let mut gap_state:Vec<(f32,f32,f32,f32)>;
-        if let Some(x) = gmat_{
+        let mut gmat:Vec<GMatColumn> = vec![];
+        if let Some(mut x) = gmat_{
             if let Some(y) = gap_state_{
                 assert!(x.len()+1 == y.len());
-                x.push(vec![0.0;vec_size]);
+                x.push(vec![0.0;vec_size]);// ギャップ情報だけあるカラムがあるので
                 for xx in x.into_iter().zip(y.into_iter()){
                     gmat.push(GMatColumn::new(vec_size,Some(xx.0),Some(xx.1)));
                 }
@@ -574,6 +456,7 @@ impl ScoredSequence{
                 for xx in x.into_iter(){
                     gmat.push(GMatColumn::new(vec_size,Some(xx),None));
                 }
+                gmat.push(GMatColumn::new(vec_size,None,None));
             }
         }else{
             for xx in 0..alignments_[0].1.len(){
@@ -594,6 +477,19 @@ impl ScoredSequence{
             gmat:gmat,
             seq_weights:seq_weights_.unwrap_or_else(||vec![0.0;seqnum])
         }
+    }
+
+    pub fn create_merged_msa(&self)->ScoredSequence{
+        let alignments:Vec<Vec<char>> = vec![vec!['X';self.alignments[0].len()]];
+        let headers:Vec<String> = vec!["dummy".to_owned()];
+        let gmat = self.gmat.clone();
+        let seq_weights = vec![self.get_weight_sum()];
+        return ScoredSequence{
+            alignments:alignments,
+            headers:headers,
+            gmat:gmat,
+            seq_weights:seq_weights
+        };
     }
 
     pub fn get_alignment_length(&self)->usize{// 使い回す方針を取るならこの辺変える
@@ -617,84 +513,5 @@ impl ScoredSequence{
         return self.split_one(targetidx, aligner);
     }
     */
-    
-    // Profile を計算する
-    pub fn calc_gmat(&mut self){
-        
-        let veclen = self.gmat[0].match_vec.len();
-
-        let all_weights:f32 = self.get_weight_sum();
-
-        let 
-        //let weights = sequence_weighting::calc_henikoff_henikoff_weight(&aligner.alignment_buffer,&self.alibuff_ids,alilen);
-        let mut aacount:Vec<usize> = vec![0;alilen]; // 配列毎の次に参照するべき位置
-        for alipos in 0..alilen{
-            (aligner.gmat_buffer[lid][alipos].match_vec).fill(0.0);
-            let mut sum_weight = 0.0;
-            let mut sum_weight_del = 0.0;
-            let mut ungapratio = 0.0;
-            let mut gapratio = 0.0;
-            for (eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
-                if *ppid < 0{
-                    panic!("???");
-                }
-                // 前後で繋がっていて GAPOPEN が必要なもののウェイトを取る
-                if alipos == 0{
-                    if aligner.ali_get(*aidx,alipos) != GAP_CHAR{
-                        ungapratio += aligner.weights[*ppid as usize]*aligner.gmat_buffer[lid][aacount[eii]].connected_weight;
-                        gapratio +=  aligner.weights[*ppid as usize]*aligner.gmat_buffer[lid][aacount[eii]].gapped_weight;
-                    }else{
-                        gapratio +=  aligner.weights[*ppid as usize]*(aligner.gmat_buffer[lid][aacount[eii]].gapped_weight
-                            +aligner.gmat_buffer[lid][aacount[eii]].connected_weight);
-                    }
-                }else{
-                    if aligner.alignment_buffer[*aidx][alipos-1] != GAP_CHAR && aligner.alignment_buffer[*aidx][alipos] != GAP_CHAR{
-                        ungapratio += aligner.weights[*ppid as usize]*aligner.gmat_buffer[lid][aacount[eii]].connected_weight;
-                        gapratio +=  aligner.weights[*ppid as usize]*aligner.gmat_buffer[lid][aacount[eii]].gapped_weight;
-                    }else{
-                        gapratio +=  aligner.weights[*ppid as usize]*(aligner.gmat_buffer[lid][aacount[eii]].gapped_weight
-                            +aligner.gmat_buffer[lid][aacount[eii]].connected_weight);
-                    }
-                }
-
-                if aligner.ali_get(*aidx,alipos) != GAP_CHAR{
-                    for vv in 0..veclen{
-                        aligner.gmat_buffer[lid][alipos].match_vec[vv] += aligner.gmat_buffer[*ppid as usize][aacount[eii]].match_vec[vv]
-                        *aligner.weights[*ppid as usize]*aligner.gmat_buffer[*ppid as usize][aacount[eii]].match_weight;
-                    }
-                    aacount[eii] += 1;
-                    sum_weight += aligner.weights[*ppid as usize]*aligner.gmat_buffer[*ppid as usize][aacount[eii]].match_weight;
-                    sum_weight_del += aligner.weights[*ppid as usize]*aligner.gmat_buffer[*ppid as usize][aacount[eii]].del_weight;
-                }else{
-                    sum_weight_del += aligner.weights[*ppid as usize];
-                }
-            }
-            aligner.gmat_buffer[lid][alipos].connected_ratio = ungapratio/all_weights;
-            aligner.gmat_buffer[lid][alipos].gapped_ratio = gapratio/all_weights;
-
-            if sum_weight > 0.0{
-                element_multiply(&mut aligner.gmat_buffer[lid][alipos].match_vec,1.0/sum_weight);
-            }
-            let pallweight = sum_weight+sum_weight_del;
-            aligner.gmat_buffer[lid][alipos].match_ratio = sum_weight/pallweight;
-            aligner.gmat_buffer[lid][alipos].del_ratio = sum_weight_del/pallweight;
-        }
-
-        // 最後の残基以降のギャップ
-        let mut ungapratio = 0.0;
-        let mut gapratio = 0.0;
-        for (eii,(aidx,ppid)) in self.alibuff_idx.iter().zip(self.primary_ids.iter()).enumerate(){
-            if aligner.alignment_buffer[*aidx][alilen-1] != GAP_CHAR{
-                ungapratio += aligner.weights[*ppid as usize]*aligner.gmat_buffer[lid][aacount[eii]].connected_weight;
-                gapratio +=  aligner.weights[*ppid as usize]*aligner.gmat_buffer[lid][aacount[eii]].gapped_weight;
-            }else{
-                gapratio +=  aligner.weights[*ppid as usize]*(aligner.gmat_buffer[lid][aacount[eii]].gapped_weight
-                    +aligner.gmat_buffer[lid][aacount[eii]].connected_weight);
-            }
-        }
-        aligner.gmat_buffer[lid][alilen].connected_ratio = ungapratio/all_weights;
-        aligner.gmat_buffer[lid][alilen].gapped_ratio = gapratio/all_weights;
-        self.num_sequences = self.primary_ids.len();
-    }
     
 }

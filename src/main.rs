@@ -22,6 +22,7 @@ fn argparse(args:Vec<String>)->HashMap<String,String>{
     return ret;
 }
 
+
 fn main(){
     let argss: HashMap<String,String> = argparse(std::env::args().collect::<Vec<String>>());
     let required_arg:Vec<&str> = vec!["--in","--out"];
@@ -34,16 +35,15 @@ fn main(){
     let outfile = argss.get("--out").unwrap().clone();
     let num_iter:usize = argss.get("--num_iter").unwrap_or(&"2".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_iter {:?}",e));
     
-    let mut primary_id_to_name:HashMap<i32,String> = HashMap::new();
-    let mut id_order:Vec<i32> = vec![];
-    let mut primary_id_to_res:HashMap<i32,String> = HashMap::new();
+    let mut name_to_res:HashMap<String,String> = HashMap::new();
     
     let gmatstats:Vec<GMatStatistics>;
-    let mut profile_seq:Option<(Vec<char>,Vec<Vec<f32>>,Vec<(f32,f32,f32,f32)>)> = None;
+    let mut profile_seq:Option<ScoredSequence> = None;
     unsafe{
         gmatstats = calc_vec_stats(& vec![infile.clone()]);
     }
     
+    let mut name_order:Vec<String> = vec![];
     let gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
     for ii in 0..num_iter{
         eprintln!("{}",ii);
@@ -51,77 +51,50 @@ fn main(){
         let veclen = gmat1_[0].2[0].len();
         let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,200,100);
         let mut seqvec:Vec<ScoredSequence> = vec![];
-        let mut head_id:i32 = -1;
+        
         if let Some(p) = profile_seq{
-            let dummy_center = ScoredSequence::new(
-                p.0,p.1, Some(p.2),&mut saligner,true
-            );
-            saligner.weights[dummy_center.primary_ids[0] as usize] = gmat1_.len() as f32;
+            seqvec.push(p);
         }
         profile_seq = None;
 
         let gmat1 = gmat1_.clone();
         for mut tt in gmat1.into_iter(){
+            if ii == 0{
+                let n = tt.0.clone();
+                if name_to_res.contains_key(&n){
+                    panic!("Duplicated name {}.",n);
+                }
+                name_to_res.insert(n.clone(),"".to_owned());
+                name_order.push(n);
+            }
             gmat::normalize_seqmatrix(&mut (tt.2), &gmatstats);
             let seq2 = ScoredSequence::new(
-                tt.1,tt.2,None,&mut saligner,true
-            );
-            if num_iter-1 == ii{
-                primary_id_to_name.insert(seq2.primary_ids[0],tt.0);
-                id_order.push(seq2.primary_ids[0]);    
-            }
+                vec![(tt.0,tt.1)],tt.2[0].len(),None,Some(tt.2),None
+            );    
             seqvec.push(seq2);
         }
-        head_id = seqvec[0].primary_ids[0];
 
-        let ans = saligner.make_msa(seqvec,-10.0,-0.5,false);
-        let alires = &ans.0[0];
+        let mut ans = saligner.make_msa(seqvec,-10.0,-0.5,false);
+        assert!(ans.0.len() == 1);
+        let alires = ans.0.pop().unwrap();
         if num_iter == ii+1{
-            for (eii,aa) in alires.alibuff_idx.iter().enumerate(){
-                let mut rres:Vec<char> = vec![];
-                for ii in 0..alires.alignment_length{
-                    rres.push(saligner.ali_get(*aa,ii))
+            for (ali,hh) in alires.alignments.into_iter().zip(alires.headers.into_iter()){
+                if name_to_res.contains_key(&hh){
+                    name_to_res.insert(
+                        hh,ali.into_iter().map(|m|m.to_string()).collect::<Vec<String>>().concat()
+                    );
                 }
-                primary_id_to_res.insert(
-                    alires.primary_ids[eii],rres.into_iter().map(|m|m.to_string()).collect::<Vec<String>>().concat()
-                );
             }
             break;
         }
-        let mut center_char:Vec<char> = vec![];
-        let mut center_gmat:Vec<Vec<f32>> = vec![];
-        let mut center_gaps:Vec<(f32,f32,f32,f32)> = vec![];
-        for (eii,_aa) in alires.alibuff_idx.iter().enumerate(){
-            if alires.primary_ids[eii] == head_id{
-                center_char = vec![];
-                center_gmat = vec![];
-                for _ in 0..alires.alignment_length{
-                    //center_char.push(saligner.ali_get(*aa,ii));
-                    center_char.push('X');
-                }
-                for ii in 0..=alires.alignment_length{
-                    let ppp = saligner.gmat_colget(alires.gmatbuff_id  as usize,ii).clone();
-                    center_gaps.push((ppp.match_ratio,ppp.del_ratio,ppp.connected_ratio,ppp.gapped_ratio));
-                    if ii < alires.alignment_length{
-                        center_gmat.push(ppp.match_vec);
-                    }
-                }
-            }
-        }
-
-        profile_seq = Some((
-            center_char,center_gmat,center_gaps
-        ));
+        profile_seq = Some(alires);
     }
     let mut results:Vec<String> = vec![];
-    for ii in id_order.iter(){
+    for ii in name_order.iter(){
         //println!(">{}",primary_id_to_name.get(ii).unwrap());
         //println!("{}",primary_id_to_res.get(ii).unwrap());
         results.push(
-            format!(">{}",primary_id_to_name.get(ii).unwrap())
-        );
-        results.push(
-            format!("{}",primary_id_to_res.get(ii).unwrap())
+            format!(">{}\n{}",ii,name_to_res.get(ii).unwrap())
         );
     }
     save_lines(&outfile, results,outfile.ends_with(".gz"));
