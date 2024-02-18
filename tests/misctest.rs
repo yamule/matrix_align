@@ -50,7 +50,7 @@ mod tests{
                 }
                 for ii in 0..=alires.alignment_length{
                     let ppp = saligner.gmat_colget(alires.gmatbuff_id  as usize,ii).clone();
-                    center_gaps.push((ppp.match_weight,ppp.del_weight,ppp.connected_weight,ppp.gapped_weight));
+                    center_gaps.push((ppp.match_ratio,ppp.del_ratio,ppp.connected_ratio,ppp.gapped_ratio));
                     if ii < alires.alignment_length{
                         center_gmat.push(ppp.match_vec);
                     }

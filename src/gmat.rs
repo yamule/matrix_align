@@ -12,6 +12,7 @@ pub struct GMatStatistics{
     pub count:usize
 }
 
+//各カラムの Max とか Min とか計算して返す
 pub unsafe fn calc_vec_stats(filenames:&Vec<String>)->Vec<GMatStatistics>{
     let mut ssum:Vec<f32> = vec![];
     let mut smax:Vec<f32> = vec![];
