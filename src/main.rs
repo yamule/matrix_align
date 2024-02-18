@@ -40,13 +40,12 @@ fn main(){
     let gmatstats:Vec<GMatStatistics>;
     let mut profile_seq:Option<ScoredSequence> = None;
     unsafe{
-        gmatstats = calc_vec_stats(& vec![infile.clone()]);
+        gmatstats = calc_vec_stats(& vec![infile.clone()]);// 統計値のために一回ファイルを読んでいるが後で変更する
     }
-    
     let mut name_order:Vec<String> = vec![];
     let gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
     for ii in 0..num_iter{
-        eprintln!("{}",ii);
+        eprintln!("iter: {}",ii);
 
         let veclen = gmat1_[0].2[0].len();
         let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,200,100);

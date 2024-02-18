@@ -218,11 +218,6 @@ pub fn parse_gmat_block(lines:Vec<String>)-> (String,Vec<char>,Vec<Vec<f32>>,Opt
     return (seqname,ret_c,ret_f,None);
 }
 pub fn load_multi_gmat(filename:&str,gzipped:bool)-> Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)>{
-    
-    let mut ret_c:Vec<char> = vec![];
-    let mut ret_f:Vec<Vec<f32>> = vec![];
-    let mut ret_ex:Vec<(f32,f32,f32,f32)> = vec![];
-    
     //名前、一文字アミノ酸、何らかのベクトル、ギャップなどの補足情報
     let mut ret:Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)> = vec![];
     let file = File::open(filename).unwrap_or_else(|e| panic!("Loading {} was failed! {:?}",filename,e));
@@ -234,8 +229,7 @@ pub fn load_multi_gmat(filename:&str,gzipped:bool)-> Vec<(String,Vec<char>,Vec<V
     };
     
     let mut linebuff:Vec<String> = vec![];
-    let mut currentname:String = "".to_owned();
-    for (lcount_,line) in reader.lines().enumerate() {
+    for (_lcount,line) in reader.lines().enumerate() {
         if let Ok(x) = line{
             if x.starts_with("#"){ //コメント行
                 continue;
@@ -247,6 +241,9 @@ pub fn load_multi_gmat(filename:&str,gzipped:bool)-> Vec<(String,Vec<char>,Vec<V
                 }
 
                 linebuff = vec![];
+            }
+            if x.starts_with("\r") || x.starts_with("\n") || x.len() == 0{
+                continue;
             }
             linebuff.push(x);
         }
