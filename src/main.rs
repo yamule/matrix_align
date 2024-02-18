@@ -44,11 +44,11 @@ fn main(){
     }
     let mut name_order:Vec<String> = vec![];
     let gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
+    let veclen = gmat1_[0].2[0].len();
+    let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,300,100);
     for ii in 0..num_iter{
         eprintln!("iter: {}",ii);
 
-        let veclen = gmat1_[0].2[0].len();
-        let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,200,100);
         let mut seqvec:Vec<ScoredSequence> = vec![];
         
         if let Some(p) = profile_seq{
@@ -65,8 +65,12 @@ fn main(){
                 }
                 name_to_res.insert(n.clone(),"".to_owned());
                 name_order.push(n);
+                gmat::normalize_seqmatrix(&mut (tt.2), &gmatstats);
+                
+                //駄目っぽい。保留。
+                //let ss_biased = gmat::ssbias(&mut tt.2,false);
+                //tt.2 = ss_biased;
             }
-            gmat::normalize_seqmatrix(&mut (tt.2), &gmatstats);
             let seq2 = ScoredSequence::new(
                 vec![(tt.0,tt.1)],tt.2[0].len(),None,Some(tt.2),None
             );    

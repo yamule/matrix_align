@@ -79,6 +79,40 @@ pub fn normalize_seqmatrix(vec:&mut Vec<Vec<f32>>, gmatstats:&Vec<GMatStatistics
     }
 }
 
+//secondary structure を表現する場所があると数残基シフトの Alternative Alignment が出来てしまうので調整する
+pub fn ssbias(vec:&mut Vec<Vec<f32>>,ignore_last:bool) -> Vec<Vec<f32>>{
+    let mut vlen = vec.len();
+    if ignore_last {
+        vlen -= 1;
+    }
+    let vec_size = vec[0].len();
+    let mut ret = vec.clone();
+    for ii in 0..vlen{
+        for kk in 0..vec_size{// 効果があるなら SIMD にする
+            let mut ccount = 0;
+            let mut ssum = 0_f32;
+            
+            for jj in -4_i32..=4{
+                if jj.abs() < 2{
+                    continue;
+                }
+                let pos = ii as i32+jj;
+                if pos < 0{
+                    continue;
+                }
+                if pos as usize > vlen-1{
+                    continue;
+                }
+                ssum += vec[pos as usize][kk];
+                ccount += 1;
+            }
+            ret[ii][kk] = vec[ii][kk]-ssum/(ccount as f32)*0.5;
+        }
+    }
+    return ret;
+}
+
+
 // Match State で加算される、スコアの行列を、(avec.len(),bvec.len()) の長さの行列として返す。
 // 要素は一方の行列のある行と他方の行列の全行のユークリッド距離を計算し、統計値を取る。
 // その統計値をもとに ZSCORE を計算し

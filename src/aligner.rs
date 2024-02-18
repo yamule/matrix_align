@@ -179,6 +179,14 @@ impl ScoredSeqAligner {
         //バッファに入れようかと思ったが、結局新しく領域を確保していたのでやめた
         let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
         //let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,None,None);
+        println!("#{:?} vs {:?}",a.headers,b.headers);
+        for ii in 0..aalen{
+            for jj in 0..bblen{
+                print!("{}\t",match_score[ii][jj]);
+            }
+            println!("");
+        }
+        println!("===");
 
         for ii in 1..=aalen{
             for jj in 1..=bblen{
