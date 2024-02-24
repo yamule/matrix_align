@@ -180,7 +180,7 @@ impl ScoredSeqAligner {
         }
         println!("===");
         */
-        
+
         for ii in 1..=aalen{
             for jj in 1..=bblen{
                 let acol = &a.gmat[ii-1];
@@ -194,14 +194,20 @@ impl ScoredSeqAligner {
                 let diag_u:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UP as usize] + sc;
 
 
-                let lef_m:f32 = self.dp_matrix[ii-1][jj][DIREC_UPLEFT as usize] + acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty;
-                let lef_l:f32 = self.dp_matrix[ii-1][jj][DIREC_LEFT as usize] + acol.connected_ratio*gap_extension_penalty + acol.gapped_ratio*gap_extension_penalty;
-                let lef_u:f32 = self.dp_matrix[ii-1][jj][DIREC_UP as usize] + acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty;
+                let lef_m:f32 = self.dp_matrix[ii-1][jj][DIREC_UPLEFT as usize]
+                    + (acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty)*(1.0-bcol.del_ratio);
+                let lef_l:f32 = self.dp_matrix[ii-1][jj][DIREC_LEFT as usize]
+                 + (acol.connected_ratio*gap_extension_penalty + acol.gapped_ratio*gap_extension_penalty)*(1.0-bcol.del_ratio);
+                let lef_u:f32 = self.dp_matrix[ii-1][jj][DIREC_UP as usize]
+                 + (acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty)*(1.0-bcol.del_ratio);
 
 
-                let up_m:f32 = self.dp_matrix[ii][jj-1][DIREC_UPLEFT as usize] + bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty;
-                let up_l:f32 = self.dp_matrix[ii][jj-1][DIREC_LEFT as usize] + bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty;
-                let up_u:f32 = self.dp_matrix[ii][jj-1][DIREC_UP as usize] + bcol.connected_ratio*gap_extension_penalty + bcol.gapped_ratio*gap_extension_penalty;
+                let up_m:f32 = self.dp_matrix[ii][jj-1][DIREC_UPLEFT as usize]
+                     + (bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty)*(1.0-acol.del_ratio);
+                let up_l:f32 = self.dp_matrix[ii][jj-1][DIREC_LEFT as usize]
+                     + (bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty)*(1.0-acol.del_ratio);
+                let up_u:f32 = self.dp_matrix[ii][jj-1][DIREC_UP as usize]
+                     + (bcol.connected_ratio*gap_extension_penalty + bcol.gapped_ratio*gap_extension_penalty)*(1.0-acol.del_ratio);
                 
 
                 let px = vec![
@@ -436,6 +442,7 @@ impl ScoredSeqAligner {
 
 }
 
+#[derive(Clone)]
 pub struct ScoredSequence{
     pub gmat:Vec<GMatColumn>,
     pub alignments:Vec<Vec<char>>,

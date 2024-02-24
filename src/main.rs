@@ -54,7 +54,8 @@ fn main(){
     let mut gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
 
     let mut column_selector:Option<Vec<usize>> = None;    
-    if true{
+    if false{
+        //精度低下につながるカラムがあることを考えていくつかフィルタリングしようとしたが
         let mut diffsum:Vec<f32> = vec![0.0;gmatstats.len()];
         for gg in gmat1_.iter(){
             let vval:Vec<Vec<f32>> = gg.2.clone();
@@ -68,9 +69,11 @@ fn main(){
         let mut sumsort:Vec<(f32,usize)> = diffsum.into_iter().enumerate().map(|m|(m.1,m.0)).collect();
         sumsort.sort_by(|a,b|a.0.partial_cmp(&b.0).unwrap());
         println!("{:?}",sumsort);
-        //sumsort.reverse();
+        sumsort.reverse();
+        //この reverse を入れても入れなくてもほとんど変わらなかった
+
         let mut sel:Vec<usize> = vec![];
-        for ii in 0..sumsort.len()/10{
+        for ii in 0..sumsort.len()/10{//適当
             sel.push(sumsort[ii].1);
         }
 
@@ -104,8 +107,52 @@ fn main(){
             }
         }           
     }
+
+
     let veclen = gmat1_[0].2[0].len();
     let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,300,100);
+    
+    let mut allseqs_:Vec<ScoredSequence> = vec![];
+    for mut gg in gmat1_.into_iter(){
+        let n = gg.0.clone();
+        if name_to_res.contains_key(&n){
+            panic!("Duplicated name {}.",n);
+        }
+        name_to_res.insert(n.clone(),"".to_owned());
+        name_order.push(n);
+        if normalize{
+            gmat::normalize_seqmatrix(&mut (gg.2), &gmatstats);
+        }
+        //駄目っぽい。保留。
+        //let ss_biased = gmat::ssbias(&mut tt.2,false);
+        //tt.2 = ss_biased;
+        
+        // ギャップまだ入って無い
+        let seq = ScoredSequence::new(
+            vec![(gg.0,gg.1)],gg.2[0].len(),None,Some(gg.2),None
+        );
+        allseqs_.push(seq);
+    }
+
+    let similarity_sort = true;
+    
+    if similarity_sort{
+        //先頭配列に近い順でアラインメントする
+        let seq1 = allseqs_.swap_remove(0);
+        let mut scoresort:Vec<(f32,ScoredSequence)> = vec![];
+        for seq2 in allseqs_.into_iter(){
+            let dpres = saligner.perform_dp(&seq1,&seq2,gap_open_penalty,gap_extension_penalty);
+            let nscore = dpres.1/(seq1.get_alignment_length().min(seq2.get_alignment_length())) as f32;
+            scoresort.push((nscore,seq2));
+        }
+        scoresort.sort_by(|a,b|a.0.partial_cmp(&b.0).unwrap());
+        scoresort.reverse();
+        allseqs_ = vec![seq1];
+        for ss in scoresort.into_iter(){
+            allseqs_.push(ss.1);
+        }
+    }
+
     for ii in 0..num_iter{
         eprintln!("iter: {}",ii);
 
@@ -115,31 +162,13 @@ fn main(){
             seqvec.push(p.create_merged_msa());
         }
         profile_seq = None;
-
-        let gmat1 = gmat1_.clone();
-        for mut tt in gmat1.into_iter(){
-            if ii == 0{
-                let n = tt.0.clone();
-                if name_to_res.contains_key(&n){
-                    panic!("Duplicated name {}.",n);
-                }
-                name_to_res.insert(n.clone(),"".to_owned());
-                name_order.push(n);
-                if normalize{
-                    gmat::normalize_seqmatrix(&mut (tt.2), &gmatstats);
-                }
-                //駄目っぽい。保留。
-                //let ss_biased = gmat::ssbias(&mut tt.2,false);
-                //tt.2 = ss_biased;
-            }
-            let seq2 = ScoredSequence::new(
-                vec![(tt.0,tt.1)],tt.2[0].len(),None,Some(tt.2),None
-            );    
-            seqvec.push(seq2);
+        for ss in allseqs_.iter(){
+            seqvec.push(ss.clone());
         }
 
         let mut ans = saligner.make_msa(seqvec,gap_open_penalty, gap_extension_penalty,false);
         assert!(ans.0.len() == 1);
+        eprintln!("score:{}",ans.1);
         let alires = ans.0.pop().unwrap();
 
         //let pstr = alires.gmat_str();
