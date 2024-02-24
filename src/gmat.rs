@@ -1,3 +1,5 @@
+use rand::distributions::weighted;
+
 use self::matrix_process::{calc_euclid_dist, calc_stats, element_add, element_multiply, VectorStats};
 
 use super::*;
@@ -11,32 +13,24 @@ pub struct GMatStatistics{
     pub var:f32,
     pub count:usize
 }
-
-//各カラムの Max とか Min とか計算して返す
-pub unsafe fn calc_vec_stats(filenames:&Vec<String>)->Vec<GMatStatistics>{
+pub unsafe fn calc_vec_stats_(allval:Vec<Vec<f32>>)->Vec<GMatStatistics>{
     let mut ssum:Vec<f32> = vec![];
     let mut smax:Vec<f32> = vec![];
     let mut smin:Vec<f32> = vec![];
     let mut counter = 0_usize;
     
-    let mut allval:Vec<Vec<f32>> = vec![];//まあ多分メモリ上に乘るだろう。。。
-    for fname in filenames.into_iter(){
-        let gmat_ = ioutil::load_multi_gmat(fname,fname.ends_with(".gz"));
-        for mut gmat1 in gmat_.into_iter(){
-            if ssum.len() == 0{
-                ssum = vec![0.0;gmat1.2[0].len()];
-                smax = gmat1.2[0].clone();
-                smin = gmat1.2[0].clone();
-            }
-            for pp in gmat1.2.iter(){
-                matrix_process::vector_add(&mut ssum, &pp);
-                matrix_process::vector_max(&mut smax, &pp);
-                matrix_process::vector_min(&mut smin, &pp);
-                counter += 1;
-            }
-            allval.append(&mut gmat1.2);
-        }
+    if ssum.len() == 0{
+        ssum = vec![0.0;allval[0].len()];
+        smax = allval[0].clone();
+        smin = allval[0].clone();
     }
+    for pp in allval.iter(){
+        matrix_process::vector_add(&mut ssum, &pp);
+        matrix_process::vector_max(&mut smax, &pp);
+        matrix_process::vector_min(&mut smin, &pp);
+        counter += 1;
+    }
+
     let mut smean = ssum.clone();
     matrix_process::element_multiply(&mut smean,1.0/(counter as f32));
 
@@ -61,6 +55,18 @@ pub unsafe fn calc_vec_stats(filenames:&Vec<String>)->Vec<GMatStatistics>{
         //println!("mean:\t{}\tmax:\t{}\tmin:\t{}\tvar:{}",smean[ii],smax[ii],smin[ii],svar[ii]/(counter as f32));
     }
     return ret;
+}
+
+//各カラムの Max とか Min とか計算して返す
+pub unsafe fn calc_vec_stats(filenames:&Vec<String>)->Vec<GMatStatistics>{
+    let mut allval:Vec<Vec<f32>> = vec![];//まあ多分メモリ上に乘るだろう。。。
+    for fname in filenames.into_iter(){
+        let gmat_ = ioutil::load_multi_gmat(fname,fname.ends_with(".gz"));
+        for mut gmat1 in gmat_.into_iter(){
+            allval.append(&mut gmat1.2);
+        }
+    }
+    return calc_vec_stats_(allval);
 }
 
 
@@ -138,6 +144,11 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
             }else{
                 element_multiply(&mut evec, 1.0/stdev/2.0);
             }
+            if let Some(x) = bweight{
+                for cc in 0..blen{
+                    evec[cc] *= x[cc];
+                }
+            }
         }
         ret.push(evec);
     }
@@ -158,6 +169,9 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
                 element_multiply(&mut evec, 1.0/stdev/2.0);
             }
         }
+        if let Some(x) = aweight{
+            matrix_process::vector_multiply(&mut evec,&x);
+        }
         for rr in 0..alen{
             ret[rr][cc] += evec[rr];
         }
@@ -165,7 +179,31 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
     return ret;
 }
 
-
+ 
+pub fn calc_dot_product_matrix(avec:&Vec<&Vec<f32>>,bvec:&Vec<&Vec<f32>>,aweight:Option<&Vec<f32>>,bweight:Option<&Vec<f32>>)->Vec<Vec<f32>>{
+    let alen = avec.len();
+    let blen = bvec.len();
+    let mut ret:Vec<Vec<f32>> = vec![];
+    for rr in 0..alen{
+        let mut evec:Vec<f32> = vec![];
+        let mut aww = 1.0;
+        if let Some(x) = aweight{
+            aww = x[rr];
+        }
+        for cc in 0..blen{
+            unsafe{
+                let mut bww = 1.0;
+                if let Some(x) = bweight{
+                    bww = x[cc];
+                }
+                let score = matrix_process::dot_product(avec[rr], bvec[cc]);
+                evec.push(score*(aww*bww));
+            }
+        }
+        ret.push(evec);
+    }
+    return ret;
+}
 #[cfg(test)]
 mod tests{
     use super::gmat::{calc_vec_stats,GMatStatistics};

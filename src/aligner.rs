@@ -48,7 +48,6 @@ impl GMatColumn{
             }
         }
     }
-    
     pub fn set(&mut self,vvec:&Vec<f32>,match_ratio:f32,del_ratio:f32,connected_weight:f32,gapped_weight:f32){
         self.match_vec = vvec.clone();
         self.match_ratio = match_ratio;
@@ -89,15 +88,6 @@ impl ScoredSeqAligner {
         };
         ret.reconstruct_matrix(buff_len, buff_len);
         return ret;
-    }
-    
-    
-
-    //呼び出し元から直接 dot_product に飛ばしてもいいかも
-    pub fn calc_match_score(a:&Vec<f32>,b:&Vec<f32>)->f32{
-        unsafe{
-            return matrix_process::dot_product(a,b);
-        }
     }
     
     pub fn reconstruct_matrix(&mut self,amax:usize,bmax:usize){
@@ -177,8 +167,10 @@ impl ScoredSeqAligner {
             bweight.push(b.gmat[ii].match_ratio);
         }
         //バッファに入れようかと思ったが、結局新しく領域を確保していたのでやめた
-        let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
-        //let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,None,None);
+        let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,None,None);
+        //let match_score:Vec<Vec<f32>> = gmat::calc_dot_product_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
+        
+        /*
         println!("#{:?} vs {:?}",a.headers,b.headers);
         for ii in 0..aalen{
             for jj in 0..bblen{
@@ -187,7 +179,8 @@ impl ScoredSeqAligner {
             println!("");
         }
         println!("===");
-
+        */
+        
         for ii in 1..=aalen{
             for jj in 1..=bblen{
                 let acol = &a.gmat[ii-1];
@@ -266,6 +259,7 @@ impl ScoredSeqAligner {
             nexpos = self.path_matrix[currentx][currenty][currentpos as usize];
             
         }
+        //println!("{:?}",self.dp_matrix);
         aligned_tuple.reverse();
         return (aligned_tuple,maxscore);
     }
@@ -321,7 +315,6 @@ impl ScoredSeqAligner {
 
         let aweight = a.get_weight_sum();
         let bweight = b.get_weight_sum();
-
         let mut ex_weights:Vec<(f32,f32,f32,f32)> = vec![(0.0,0.0,0.0,0.0);alignment_length+1];
 
         for (wei,alichar,sprof) in vec![(aweight,&gapper[0],&a),(bweight,&gapper[1],&b)]{
@@ -404,7 +397,7 @@ impl ScoredSeqAligner {
         assert!(ungapratio+gapratio > 0.0);
         ret.gmat[alignment_length].connected_ratio = ungapratio/(ungapratio+gapratio);
         ret.gmat[alignment_length].gapped_ratio = gapratio/(ungapratio+gapratio);
-        
+        ret.seq_weights.clear();
         ret.seq_weights.append(&mut a.seq_weights);
         ret.seq_weights.append(&mut b.seq_weights);
 
@@ -487,6 +480,23 @@ impl ScoredSequence{
             gmat:gmat,
             seq_weights:seq_weights_.unwrap_or_else(||vec![1.0;seqnum])
         }
+    }
+
+    pub fn gmat_str(&self)->Vec<String>{
+        let mut ret:Vec<String> = vec![];
+        for ii in 0..self.gmat.len(){
+            let gg = &self.gmat[ii];
+            ret.push(format!("@\t{}\t{}\t{}\t{}",gg.match_ratio,gg.del_ratio,gg.connected_ratio,gg.gapped_ratio));
+            let mut pret:Vec<String> = vec![];
+            if ii < self.gmat.len()-1{
+                pret.push(format!("{}",self.alignments[0][ii]));
+                for ff in self.gmat[ii].match_vec.iter(){
+                    pret.push(format!("{}",ff));
+                }
+                ret.push(pret.join("\t"));
+            }
+        }
+        return ret;
     }
 
     pub fn create_merged_msa(&self)->ScoredSequence{

@@ -264,6 +264,18 @@ pub unsafe fn vector_add(vec1:&mut [f32],vec2:& [f32]){
     }
 }
 
+#[cfg(all(not(target_feature = "avx2"),target_feature = "sse3"))]
+pub unsafe fn vector_multiply(vec1:&mut [f32],vec2:& [f32]){
+    vector_op(vec1,vec2,_mm_mul_ps);
+    // ベクタのサイズが4の倍数でない場合の処理
+    if vec1.len()%4 != 0{
+        let i = vec1.len() - vec1.len()%4;
+        for j in i..vec1.len() {
+            vec1[j] = vec1[j]*vec2[j];
+        }
+    }
+}
+
 
 #[cfg(target_feature = "avx2")]
 pub unsafe fn vector_op(vec1:&mut [f32],vec2:&[f32],op:SimdOpAvx2){
@@ -319,6 +331,20 @@ pub unsafe fn vector_add(vec1:&mut [f32],vec2:&[f32]){
 }
 
 
+#[cfg(target_feature = "avx2")]
+pub unsafe fn vector_multiply(vec1:&mut [f32],vec2:&[f32]){
+    vector_op(vec1,vec2,_mm256_mul_ps);
+    
+    // ベクタのサイズが8の倍数でない場合の処理
+    if vec1.len()%8 != 0{
+        let i = vec1.len() - vec1.len()%8;
+        for j in i..vec1.len() {
+            vec1[j] = vec1[j]*vec2[j];
+        }
+    }
+}
+
+
 #[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
 pub fn vector_max(vec1:&mut [f32],vec2:&[f32]){
     for (elem1,elem2) in vec1.iter_mut().zip(vec2.iter()) {
@@ -337,6 +363,13 @@ pub fn vector_min(vec1:&mut [f32],vec2:&[f32]){
 pub fn vector_add(vec1:&mut [f32],vec2:&[f32]){
     for (elem1,elem2) in vec1.iter_mut().zip(vec2.iter()) {
         *elem1 += *elem2;
+    }
+}
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn vector_multiply(vec1:&mut [f32],vec2:&[f32]){
+    for (elem1,elem2) in vec1.iter_mut().zip(vec2.iter()) {
+        *elem1 *= *elem2;
     }
 }
 
