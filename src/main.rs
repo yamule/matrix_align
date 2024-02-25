@@ -52,63 +52,7 @@ fn main(){
     }
 
     let mut name_order:Vec<String> = vec![];
-    let mut gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
-
-    let mut column_selector:Option<Vec<usize>> = None;    
-    if false{
-        //精度低下につながるカラムがあることを考えていくつかフィルタリングしようとしたが
-        let mut diffsum:Vec<f32> = vec![0.0;gmatstats.len()];
-        for gg in gmat1_.iter(){
-            let vval:Vec<Vec<f32>> = gg.2.clone();
-            unsafe{
-                let stats = calc_vec_stats_(vval);
-                for ss in stats.iter().enumerate(){
-                    diffsum[ss.0] += (gmatstats[ss.0].mean-ss.1.mean).abs();
-                }
-            }
-        }
-        let mut sumsort:Vec<(f32,usize)> = diffsum.into_iter().enumerate().map(|m|(m.1,m.0)).collect();
-        sumsort.sort_by(|a,b|a.0.partial_cmp(&b.0).unwrap());
-        println!("{:?}",sumsort);
-        sumsort.reverse();
-        //この reverse を入れても入れなくてもほとんど変わらなかった
-
-        let mut sel:Vec<usize> = vec![];
-        for ii in 0..sumsort.len()/10{//適当
-            sel.push(sumsort[ii].1);
-        }
-
-        column_selector = Some(sel);
-    }
-
-
-    if let Some(x) = column_selector{
-        
-        let hs:HashSet<usize> = x.iter().map(|x|*x).collect();
-        let mut newgmat:Vec<GMatStatistics> = vec![];
-        for gg in gmatstats.into_iter().enumerate(){
-            if !hs.contains(&gg.0){
-                newgmat.push(gg.1);
-            }
-        }
-        gmatstats = newgmat;
-
-        for gg in gmat1_.iter_mut(){
-            for ff in gg.2.iter_mut(){
-                let lnum = ff.len()-hs.len();
-                let mut newg:Vec<f32> = vec![0.0;lnum];
-                let mut counter  = 0;
-                for vv in ff.iter().enumerate(){
-                    if !hs.contains(&vv.0){
-                        newg[counter] = *vv.1;
-                        counter += 1;
-                    }
-                }
-                *ff = newg;
-            }
-        }           
-    }
-
+    let gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
 
     let veclen = gmat1_[0].2[0].len();
     let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,300,100);
@@ -135,7 +79,7 @@ fn main(){
         allseqs_.push(seq);
     }
 
-    let similarity_sort = true;
+    let similarity_sort = false;
     
     if similarity_sort{
         //先頭配列に近い順でアラインメントする
