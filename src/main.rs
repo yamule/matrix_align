@@ -26,6 +26,7 @@ fn argparse(args:Vec<String>)->HashMap<String,String>{
     return ret;
 }
 
+//ToDo argparser 作る
 
 fn main(){
     let argss: HashMap<String,String> = argparse(std::env::args().collect::<Vec<String>>());
@@ -142,13 +143,17 @@ fn main(){
         let mut scoresort:Vec<(f32,ScoredSequence)> = vec![];
         for seq2 in allseqs_.into_iter(){
             let dpres = saligner.perform_dp(&seq1,&seq2,gap_open_penalty,gap_extension_penalty);
-            let nscore = dpres.1/(seq1.get_alignment_length().min(seq2.get_alignment_length())) as f32;
-            scoresort.push((nscore,seq2));
+            //let nscore = dpres.1/(seq1.get_alignment_length().min(seq2.get_alignment_length())) as f32;
+            //needleman wunsh の合計だと normalize する必要はない気がするが・・・
+            //うーん
+            //scoresort.push((nscore,seq2));
+            scoresort.push((dpres.1,seq2));
         }
         scoresort.sort_by(|a,b|a.0.partial_cmp(&b.0).unwrap());
         scoresort.reverse();
         allseqs_ = vec![seq1];
         for ss in scoresort.into_iter(){
+            eprintln!("{} {:?}",ss.0,ss.1.headers);
             allseqs_.push(ss.1);
         }
     }

@@ -43,3 +43,33 @@ pub fn query_a3m_to_ali(a:&[char],b:&[char])->Vec<String>{
     }
     return ret;
 }
+
+
+
+pub struct UnionFind{
+    node_to_group:Vec<usize>
+}
+impl UnionFind{
+    pub fn new(num_elements:usize)->UnionFind{
+        return UnionFind{
+            node_to_group:(0..num_elements).collect()
+        };
+    }
+    pub fn union(&mut self,a_:usize,b_:usize)-> usize{
+        let a = self.find(a_);
+        let b = self.find(b_);
+        let mn = a.min(b);
+        let mx = a.max(b);
+        self.node_to_group[mx] = mn;
+        return mn;
+    }
+    pub fn find(&mut self,focus_index:usize) -> usize{
+        let pret = self.node_to_group[focus_index];
+        if pret == focus_index{
+            return pret;
+        }
+        let pret = self.find(pret);
+        self.node_to_group[focus_index] = pret;
+        return pret;
+    }
+}

@@ -1,11 +1,9 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::vec;
-
-use rand::distributions::weighted::alias_method::Weight;
 
 use self::matrix_process::element_multiply;
 use self::matrix_process::vector_add;
+
+use self::misc::UnionFind;
 
 use super::*;
 
@@ -114,11 +112,8 @@ impl ScoredSeqAligner {
         // B 側 N 末にギャップを入れる
         for ii in 0..=aalen{
             if ii != 0{
-                if ii == 1{
-                    currentpenal = a.gmat[ii-1].connected_ratio*gap_open_penalty+a.gmat[ii-1].gapped_ratio*gap_extension_penalty;
-                }else{
-                    currentpenal = a.gmat[ii-1].connected_ratio*gap_extension_penalty+a.gmat[ii-1].gapped_ratio*gap_extension_penalty;
-                }
+                currentpenal = b.gmat[0].connected_ratio*gap_open_penalty+b.gmat[0].gapped_ratio*gap_extension_penalty*(ii as f32 - 1.0);
+                
                 self.dp_matrix[ii][0][DIREC_LEFT as usize] = self.dp_matrix[ii-1][0][DIREC_LEFT as usize] + currentpenal;
                 self.dp_matrix[ii][0][DIREC_UPLEFT as usize] = self.dp_matrix[ii][0][DIREC_LEFT as usize]-1000.0;
                 self.dp_matrix[ii][0][DIREC_UP as usize] = self.dp_matrix[ii][0][DIREC_LEFT as usize]-1000.0;
@@ -132,12 +127,8 @@ impl ScoredSeqAligner {
         let mut currentpenal;
         for ii in 0..=bblen{
             if ii != 0{
-                if ii == 1{
-                    currentpenal = b.gmat[ii-1].connected_ratio*gap_open_penalty+b.gmat[ii-1].gapped_ratio*gap_extension_penalty;
-                }else{
-                    currentpenal = b.gmat[ii-1].connected_ratio*gap_extension_penalty+b.gmat[ii-1].gapped_ratio*gap_extension_penalty;
-                }
-
+                currentpenal = a.gmat[0].connected_ratio*gap_open_penalty+a.gmat[0].gapped_ratio*gap_extension_penalty*(ii as f32 - 1.0);
+                
                 self.dp_matrix[0][ii][DIREC_UP as usize] = self.dp_matrix[0][ii-1][DIREC_UP as usize]+currentpenal;
                 self.dp_matrix[0][ii][DIREC_UPLEFT as usize] = self.dp_matrix[0][ii][DIREC_UP as usize]-1000.0;
                 self.dp_matrix[0][ii][DIREC_LEFT as usize] = self.dp_matrix[0][ii][DIREC_UP as usize]-1000.0;
@@ -157,14 +148,16 @@ impl ScoredSeqAligner {
         let mut aweight:Vec<f32> = vec![];
         for ii in 0..aalen{
             aavec.push(&a.gmat[ii].match_vec);
-            aweight.push(a.gmat[ii].match_ratio);
+            //aweight.push(a.gmat[ii].match_ratio);
+            aweight.push(1.0);
         }
         
         let mut bbvec:Vec<&Vec<f32>> = vec![];
         let mut bweight:Vec<f32> = vec![];
         for ii in 0..bblen{
             bbvec.push(&b.gmat[ii].match_vec);
-            bweight.push(b.gmat[ii].match_ratio);
+            //bweight.push(b.gmat[ii].match_ratio);
+            bweight.push(1.0);
         }
         //バッファに入れようかと思ったが、結局新しく領域を確保していたのでやめた
         let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,None,None);
@@ -188,26 +181,24 @@ impl ScoredSeqAligner {
                 //let sc:f32 = ScoredSeqAligner::calc_match_score(&acol.0,&bcol.0);
                 let sc:f32 = match_score[ii-1][jj-1];
                 
-
                 let diag_m:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UPLEFT as usize] + sc;
                 let diag_l:f32 = self.dp_matrix[ii-1][jj-1][DIREC_LEFT as usize] + sc;
                 let diag_u:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UP as usize] + sc;
 
-
                 let lef_m:f32 = self.dp_matrix[ii-1][jj][DIREC_UPLEFT as usize]
-                    + (acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty)*(1.0-bcol.del_ratio);
+                + (bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty)*(1.0-acol.del_ratio);
                 let lef_l:f32 = self.dp_matrix[ii-1][jj][DIREC_LEFT as usize]
-                 + (acol.connected_ratio*gap_extension_penalty + acol.gapped_ratio*gap_extension_penalty)*(1.0-bcol.del_ratio);
+                + (bcol.connected_ratio*gap_extension_penalty + bcol.gapped_ratio*gap_extension_penalty)*(1.0-acol.del_ratio);
                 let lef_u:f32 = self.dp_matrix[ii-1][jj][DIREC_UP as usize]
-                 + (acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty)*(1.0-bcol.del_ratio);
+                + (bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty)*(1.0-acol.del_ratio);
 
 
                 let up_m:f32 = self.dp_matrix[ii][jj-1][DIREC_UPLEFT as usize]
-                     + (bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty)*(1.0-acol.del_ratio);
+                + (acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty)*(1.0-bcol.del_ratio);
                 let up_l:f32 = self.dp_matrix[ii][jj-1][DIREC_LEFT as usize]
-                     + (bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty)*(1.0-acol.del_ratio);
+                + (acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty)*(1.0-bcol.del_ratio);
                 let up_u:f32 = self.dp_matrix[ii][jj-1][DIREC_UP as usize]
-                     + (bcol.connected_ratio*gap_extension_penalty + bcol.gapped_ratio*gap_extension_penalty)*(1.0-acol.del_ratio);
+                + (acol.connected_ratio*gap_extension_penalty + acol.gapped_ratio*gap_extension_penalty)*(1.0-bcol.del_ratio);
                 
 
                 let px = vec![
@@ -265,7 +256,7 @@ impl ScoredSeqAligner {
             nexpos = self.path_matrix[currentx][currenty][currentpos as usize];
             
         }
-        //println!("{:?}",self.dp_matrix);
+        eprintln!("{:?} vs {:?}:{}",a.headers,b.headers,maxscore);
         aligned_tuple.reverse();
         return (aligned_tuple,maxscore);
     }
@@ -409,6 +400,52 @@ impl ScoredSeqAligner {
 
         return ret;
     }
+
+
+    pub fn make_msa_with_edge(&mut self,mut sequences: Vec<ScoredSequence>,gap_open_penalty:f32,gap_extension_penalty:f32,profile_only:bool,mut edges:Vec<(usize,usize)>,merge_all:bool)
+    -> Vec<(Vec<ScoredSequence>,f32)>{
+        let mut uff:UnionFind = UnionFind::new(sequences.len());
+        let mut bags:Vec<Option<(ScoredSequence,f32)>> = sequences.into_iter().map(|m|Some((m,0.0))).collect();
+        let mut ret:Vec<(Vec<ScoredSequence>,f32)>=vec![];
+
+        edges.reverse();//pop なので Reverse
+        while edges.len() > 0{
+            let e_ = edges.pop().unwrap();
+            let a = uff.find(e_.0);
+            let b = uff.find(e_.1);
+            if a == b{
+                continue;
+            }
+            bags.push(None);
+            let aseq:(ScoredSequence,f32) = bags.swap_remove(a).unwrap_or_else(||panic!("???"));
+            bags.push(None);
+            let bseq:(ScoredSequence,f32) = bags.swap_remove(b).unwrap_or_else(||panic!("???"));
+            let mut r = self.make_msa(vec![aseq.0,bseq.0], gap_open_penalty, gap_extension_penalty, profile_only);
+            assert!(r.0.len() == 1);
+            uff.union(a,b);
+            bags[a] = Some((r.0.pop().unwrap(),r.1));
+        }
+
+        if merge_all{
+            let mut allseq:Vec<ScoredSequence> = vec![];
+            let mut scores:Vec<f32> = vec![];
+            for bb in bags.into_iter(){
+                if let Some(x) = bb{
+                    allseq.push(x.0);
+                    scores.push(x.1);
+                }
+            }
+            if allseq.len()  > 1{
+                let res = self.make_msa(allseq, gap_open_penalty, gap_extension_penalty, profile_only);
+                return vec![res];
+            }else{
+                return vec![(allseq,scores[0])];
+            }
+        }
+        return bags.into_iter().filter(
+                |m| if let Some(x) =  m{true}else{false}
+                ).map(|m|  if let Some(x) = m{(vec![x.0],x.1)}else{panic!("???");}).collect();
+    }
     pub fn make_msa(&mut self,mut sequences: Vec<ScoredSequence>,gap_open_penalty:f32,gap_extension_penalty:f32,profile_only:bool)
     -> (Vec<ScoredSequence>,f32){
         let mut final_score:f32 = 0.0;
@@ -431,6 +468,7 @@ impl ScoredSeqAligner {
             
             center_seq = newgroup;
         }
+        // 今のところ全部マージする
         return (vec![center_seq],final_score);
     }
 
