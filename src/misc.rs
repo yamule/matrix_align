@@ -73,3 +73,19 @@ impl UnionFind{
         return pret;
     }
 }
+
+
+//BinaryHeap とかに使う
+//BinaryHeap は数値の大きい順ということを忘れない
+//https://qiita.com/hatoo@github/items/fa14ad36a1b568d14f3e
+// Partial orderなものをTotal orderにする
+#[derive(PartialEq, PartialOrd,Debug)]
+pub struct FloatWrap<T>(pub T);
+
+impl<T: PartialEq> Eq for FloatWrap<T> {}
+
+impl<T: PartialOrd> Ord for FloatWrap<T> {
+    fn cmp(&self, other: &FloatWrap<T>) -> std::cmp::Ordering {
+        self.0.partial_cmp(&other.0).unwrap()
+    }
+}

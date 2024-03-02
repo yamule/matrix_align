@@ -13,6 +13,20 @@ pub struct GMatStatistics{
     pub var:f32,
     pub count:usize
 }
+
+//calc_vec_stats_ と一部重複しているが、これだけ使うこともあるので
+pub unsafe fn calc_mean(allval:&Vec<&Vec<f32>>)->Vec<f32>{
+    let mut ssum:Vec<f32> = vec![];
+    if ssum.len() == 0{
+        ssum = vec![0.0;allval[0].len()];
+    }
+    for pp in allval.iter(){
+        matrix_process::vector_add(&mut ssum, pp);
+    }
+    matrix_process::element_multiply(&mut ssum,1.0/(allval.len() as f32));
+    return ssum;
+}
+
 pub unsafe fn calc_vec_stats_(allval:Vec<Vec<f32>>)->Vec<GMatStatistics>{
     let mut ssum:Vec<f32> = vec![];
     let mut smax:Vec<f32> = vec![];

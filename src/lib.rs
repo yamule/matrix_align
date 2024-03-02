@@ -4,3 +4,5 @@ pub mod ioutil;
 pub mod gmat;
 pub mod aligner;
 pub mod misc;
+pub mod neighbor_joining;
+pub mod guide_tree;
