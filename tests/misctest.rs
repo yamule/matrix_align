@@ -33,7 +33,7 @@ mod tests{
             eprintln!("{}",ii);
 
             let veclen = gmat1_[0].2[0].len();
-            let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,200,100);
+            let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,200,100,-10.0,-0.5);
             let mut seqvec:Vec<ScoredSequence> = vec![];
             
             if let Some(p) = profile_seq{
@@ -58,7 +58,7 @@ mod tests{
                 seqvec.push(seq2);
             }
 
-            let mut ans = saligner.make_msa(seqvec,-10.0,-0.5,false);
+            let mut ans = saligner.make_msa(seqvec,false);
             assert!(ans.0.len() == 1);
             let alires = ans.0.pop().unwrap();
             if num_iter == ii+1{

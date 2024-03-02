@@ -63,7 +63,7 @@ pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>)->((usize,f32),(usize
             let dist_ij = dist[calc_pos(ii,jj)] as f64;
             gsum /= n as f64-2.0;
             let ksum = ssum/2.0+gsum+dist_ij/2.0;
-            println!("{:?} {} ",(ii,jj),dist[calc_pos(ii,jj)]);
+            //println!("{:?} {} ",(ii,jj),dist[calc_pos(ii,jj)]);
             if ksum < kmin{
                 kmin = ksum;
                 pair = ((ii,((dist_ij+ssum_i-ssum_j)/2.0) as f32)

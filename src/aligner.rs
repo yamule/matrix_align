@@ -62,10 +62,12 @@ pub struct ScoredSeqAligner{
     pub vec_size:usize,
     pub alen:usize,
     pub blen:usize,
+    pub gap_open_penalty:f32,
+    pub gap_extension_penalty:f32,
     pub penalty_warning:bool
 }
 impl ScoredSeqAligner {
-    pub fn new(vec_size:usize,buff_len:usize,buff_seqnum:usize)->ScoredSeqAligner{
+    pub fn new(vec_size:usize,buff_len:usize,buff_seqnum:usize,gap_open_penalty:f32,gap_extension_penalty:f32)->ScoredSeqAligner{
         let dp_matrix:Vec<Vec<Vec<f32>>> = vec![vec![vec![];1];1];
         let path_matrix:Vec<Vec<Vec<u8>>> = vec![vec![vec![];1];1];
         let mut charmap:Vec<usize> = vec![NUM_CHARTYPE;256];
@@ -82,6 +84,8 @@ impl ScoredSeqAligner {
             ,vec_size:vec_size
             ,alen:0
             ,blen:0
+            ,gap_open_penalty
+            ,gap_extension_penalty
             ,penalty_warning:false
         };
         ret.reconstruct_matrix(buff_len, buff_len);
@@ -148,19 +152,17 @@ impl ScoredSeqAligner {
         let mut aweight:Vec<f32> = vec![];
         for ii in 0..aalen{
             aavec.push(&a.gmat[ii].match_vec);
-            //aweight.push(a.gmat[ii].match_ratio);
-            aweight.push(1.0);
+            aweight.push(a.gmat[ii].match_ratio);
         }
         
         let mut bbvec:Vec<&Vec<f32>> = vec![];
         let mut bweight:Vec<f32> = vec![];
         for ii in 0..bblen{
             bbvec.push(&b.gmat[ii].match_vec);
-            //bweight.push(b.gmat[ii].match_ratio);
-            bweight.push(1.0);
+            bweight.push(b.gmat[ii].match_ratio);
         }
         //バッファに入れようかと思ったが、結局新しく領域を確保していたのでやめた
-        let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,None,None);
+        let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
         //let match_score:Vec<Vec<f32>> = gmat::calc_dot_product_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
         
         /*
@@ -266,7 +268,7 @@ impl ScoredSeqAligner {
         ,mut b:ScoredSequence
         ,alignment:Vec<(i32,i32)>
         ,profile_only:bool // true にすると alignment の文字は a に関してのみ保持する
-    )->ScoredSequence{
+    ,weight:Option<(f32,f32)>)->ScoredSequence{
         assert!(!profile_only);//後で追加する
         let anumaliseq = a.get_num_seq();
         let bnumaliseq = b.get_num_seq();
@@ -310,8 +312,9 @@ impl ScoredSeqAligner {
         let mut ret:ScoredSequence = ScoredSequence::new(headers.into_iter().zip(new_alignments.into_iter()).collect()
         , vec_size,None,None,None);
 
-        let aweight = a.get_weight_sum();
-        let bweight = b.get_weight_sum();
+        let aweight = if let Some(x) = weight{x.0}else{a.get_weight_sum()};
+        let bweight = if let Some(x) = weight{x.1}else{b.get_weight_sum()};
+        
         let mut ex_weights:Vec<(f32,f32,f32,f32)> = vec![(0.0,0.0,0.0,0.0);alignment_length+1];
 
         for (wei,alichar,sprof) in vec![(aweight,&gapper[0],&a),(bweight,&gapper[1],&b)]{
@@ -402,7 +405,7 @@ impl ScoredSeqAligner {
     }
 
 
-    pub fn make_msa_with_edge(&mut self,mut sequences: Vec<ScoredSequence>,gap_open_penalty:f32,gap_extension_penalty:f32,profile_only:bool,mut edges:Vec<(usize,usize)>,merge_all:bool)
+    pub fn make_msa_with_edge(&mut self,mut sequences: Vec<ScoredSequence>,profile_only:bool,mut edges:Vec<(usize,usize)>,merge_all:bool)
     -> Vec<(Vec<ScoredSequence>,f32)>{
         let mut uff:UnionFind = UnionFind::new(sequences.len());
         let mut bags:Vec<Option<(ScoredSequence,f32)>> = sequences.into_iter().map(|m|Some((m,0.0))).collect();
@@ -420,7 +423,7 @@ impl ScoredSeqAligner {
             let aseq:(ScoredSequence,f32) = bags.swap_remove(a).unwrap_or_else(||panic!("???"));
             bags.push(None);
             let bseq:(ScoredSequence,f32) = bags.swap_remove(b).unwrap_or_else(||panic!("???"));
-            let mut r = self.make_msa(vec![aseq.0,bseq.0], gap_open_penalty, gap_extension_penalty, profile_only);
+            let mut r = self.make_msa(vec![aseq.0,bseq.0], profile_only);
             assert!(r.0.len() == 1);
             uff.union(a,b);
             bags[a] = Some((r.0.pop().unwrap(),r.1));
@@ -436,7 +439,7 @@ impl ScoredSeqAligner {
                 }
             }
             if allseq.len()  > 1{
-                let res = self.make_msa(allseq, gap_open_penalty, gap_extension_penalty, profile_only);
+                let res = self.make_msa(allseq, profile_only);
                 return vec![res];
             }else{
                 return vec![(allseq,scores[0])];
@@ -446,7 +449,7 @@ impl ScoredSeqAligner {
                 |m| if let Some(x) =  m{true}else{false}
                 ).map(|m|  if let Some(x) = m{(vec![x.0],x.1)}else{panic!("???");}).collect();
     }
-    pub fn make_msa(&mut self,mut sequences: Vec<ScoredSequence>,gap_open_penalty:f32,gap_extension_penalty:f32,profile_only:bool)
+    pub fn make_msa(&mut self,mut sequences: Vec<ScoredSequence>,profile_only:bool)
     -> (Vec<ScoredSequence>,f32){
         let mut final_score:f32 = 0.0;
         sequences.reverse();
@@ -457,12 +460,12 @@ impl ScoredSeqAligner {
             let dpres;
             let mut newgroup;
             if firstrun{
-                dpres = self.perform_dp(&center_seq,&bseq,gap_open_penalty,gap_extension_penalty);
-                newgroup = ScoredSeqAligner::make_alignment(self,center_seq,bseq,dpres.0,profile_only);
+                dpres = self.perform_dp(&center_seq,&bseq,self.gap_open_penalty,self.gap_extension_penalty);
+                newgroup = ScoredSeqAligner::make_alignment(self,center_seq,bseq,dpres.0,profile_only,None);
                 firstrun = false;
             }else{
-                dpres = self.perform_dp(&bseq,&center_seq,gap_open_penalty,gap_extension_penalty);
-                newgroup = ScoredSeqAligner::make_alignment(self,bseq,center_seq,dpres.0,profile_only);
+                dpres = self.perform_dp(&bseq,&center_seq,self.gap_open_penalty,self.gap_extension_penalty);
+                newgroup = ScoredSeqAligner::make_alignment(self,bseq,center_seq,dpres.0,profile_only,None);
             };
             final_score = dpres.1;
             

@@ -3,7 +3,7 @@ use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_, GMatStatistics};
 use matrix_align::aligner::{ScoredSeqAligner,ScoredSequence};
 use matrix_align::ioutil::{load_multi_gmat, save_lines};
 use matrix_align::matrix_process;
-use matrix_align::misc::FloatWrap;
+use matrix_align::guide_tree;
 
 fn argparse(args:Vec<String>)->HashMap<String,String>{
     let mut ret:HashMap<String,String> = HashMap::new();
@@ -57,7 +57,7 @@ fn main(){
     let gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
 
     let veclen = gmat1_[0].2[0].len();
-    let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,300,100);
+    let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,300,100,gap_open_penalty,gap_extension_penalty);
     
     let mut allseqs_:Vec<ScoredSequence> = vec![];
     for mut gg in gmat1_.into_iter(){
@@ -120,42 +120,9 @@ fn main(){
         let softtree = true;
         
         let mut ans = if softtree{
-            let numseq = seqvec.len();
-            let mut meanval:Vec<Vec<f32>> = vec![];
-            for jj in 0..numseq{
-                unsafe{
-                    let mut vv:Vec<Vec<f32>> = vec![];
-                    for gg in seqvec[jj].gmat.iter(){
-                        vv.push(gg.match_vec.clone());
-                    }
-                    let vstat = calc_vec_stats_(vv);
-                    let mut mm:Vec<f32> = vec![];
-                    for ss in vstat.into_iter(){
-                        mm.push(ss.mean);
-                    }
-                    meanval.push(mm);
-                }
-            }
-            
-            let mut ssorter:Vec<(f32,usize,usize)> = vec![];
-            for rr in 0..numseq{
-                for cc in (rr+1)..numseq{
-                    let distt = matrix_process::calc_euclid_dist(&meanval[rr],& meanval[cc]);
-                    ssorter.push((distt,rr,cc));
-                }
-            }
-            ssorter.sort_by(|a,b| a.partial_cmp(&b).unwrap_or_else(||panic!("???")));
-            let mut edges:Vec<(usize,usize)> = vec![];
-            for ii in 0..ssorter.len()/2{
-                edges.push((ssorter[ii].1,ssorter[ii].2));
-            }
-            println!("{:?}",ssorter);
-            println!("{:?}",edges);
-            let mut ress = saligner.make_msa_with_edge(seqvec,gap_open_penalty, gap_extension_penalty,false,edges,true);
-            assert!(ress.len() == 1);
-            ress.pop().unwrap()
+            guide_tree::tree_guided_alignment(seqvec, &mut saligner)
         }else{
-            saligner.make_msa(seqvec,gap_open_penalty, gap_extension_penalty,false)
+            saligner.make_msa(seqvec,false)
         };
 
         assert!(ans.0.len() == 1);
