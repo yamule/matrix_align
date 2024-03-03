@@ -5,7 +5,10 @@ use matrix_align::ioutil::{load_multi_gmat, save_lines};
 use matrix_align::matrix_process;
 use matrix_align::guide_tree;
 
-fn argparse(args:Vec<String>)->HashMap<String,String>{
+fn argparse(mut args:Vec<String>)->HashMap<String,String>{
+    assert!(args.len() > 0);
+    let fst = args.remove(0);
+    assert!(fst.contains("matrix_align"));
     let mut ret:HashMap<String,String> = HashMap::new();
     let mut non_key_count:usize = 0;
     let mut ii:usize = 0;
