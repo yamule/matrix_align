@@ -11,7 +11,6 @@ fn argparse(args:Vec<String>)->HashMap<String,String>{
     let mut ii:usize = 0;
     while(ii < args.len()){
         if args[ii].starts_with("--"){
-            assert!(ii < args.len()-1,"{} does not have a value.",args[ii]);
             assert!(!ret.contains_key(&args[ii]),"{} has already been assigned.",args[ii]);
             if ii == args.len()-1 || args[ii+1].starts_with("--"){
                 ret.insert(args[ii].clone(),"true".to_owned());
@@ -20,7 +19,7 @@ fn argparse(args:Vec<String>)->HashMap<String,String>{
                 ii += 1;
             }
         }else{
-            ret.insert(format!("nokey_{}",non_key_count),args[ii].clone());
+            ret.insert(format!("--nokey_{}",non_key_count),args[ii].clone());
             non_key_count += 1;
         }
         ii += 1;
@@ -28,22 +27,74 @@ fn argparse(args:Vec<String>)->HashMap<String,String>{
     return ret;
 }
 
-//ToDo argparser 作る
+fn check_bool(a:&str,argkey:&str)-> bool{
+    if a.to_lowercase() == "true" || a == "1" {
+        return true;
+    }
+    if a.to_lowercase() == "false" || a == "0" {
+        return false;
+    }
+    panic!("Boolean value must be true, false, 1, or 0. {}:{}",argkey,a);
+}
 
 fn main(){
     let argss: HashMap<String,String> = argparse(std::env::args().collect::<Vec<String>>());
     let required_arg:Vec<&str> = vec!["--in","--out"];
+    let allowed_arg_:Vec<(&str,&str)> = vec![
+        ("--in","<input file path> : Text based file which contains general profile matrices for multiple sequences. Something like as follows. \n>seq1\n[amino acid letter at position 1]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 2]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 3]\t[value1]\t[value2]\t[value3]...\n...\n>seq2\n[amino acid letter at position 1]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 2]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 3]\t[value1]\t[value2]\t[value3]...\n...\n..."),
+        ("--out","<output file path> : Multi-fasta file. Required."),
+        ("--num_iter","<int> : Number of alignment iterations. Construct global profile with -1 times with this number. Default 2."),
+        ("--gap_open_penalty","<float> : Gap open penalty for DP. Must be negative. Default -10.0"),
+        ("--gap_extension_penalty","<float> : Gap extension penalty for DP. Must be negative. Default -0.5."),
+        ("--normalize","<bool or novalue=true> : Normalize profile values before alignment. Default false."),
+        ("--help","<bool or novalue=true> : Print this message."),
+    ];
+    let allowed_arg:HashSet<&str> = allowed_arg_.clone().into_iter().map(|m|m.0).collect();
+
+    let mut error_message:Vec<String> = vec![];
     for rr in required_arg.iter(){
         if !argss.contains_key(*rr){
-            panic!("{} is required.",rr);
+            error_message.push(format!("{} is required.",rr));
         }
     }
+    let mut argcheck:Vec<String> = vec![];
+    for aa in argss.iter(){
+        if !allowed_arg.contains(&(aa.0).as_str()){
+            if aa.0.starts_with("--nokey"){
+                argcheck.push(format!("{}",aa.1));
+            }else{
+                argcheck.push(format!("{} {}",aa.0,aa.1));
+            }
+        }
+    }
+    if argcheck.len() > 0{
+        argcheck.sort();
+        error_message.push(format!("Unknown arg: {:?}",argcheck));
+    }
+    if argss.contains_key("--help"){
+        for aa in allowed_arg_.iter(){
+            eprintln!("{} {}",aa.0,aa.1);
+        }
+        std::process::exit(0);
+    }
+    if error_message.len() > 0{
+        for aa in allowed_arg_.iter(){
+            eprintln!("{} {}",aa.0,aa.1);
+        }
+        eprintln!("Error:");
+        for aa in error_message.iter(){
+            eprintln!("{}",aa);
+        }
+        
+        panic!();
+    }
+
     let infile = argss.get("--in").unwrap().clone();
     let outfile = argss.get("--out").unwrap().clone();
     let num_iter:usize = argss.get("--num_iter").unwrap_or(&"2".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_iter {:?}",e));
     let gap_open_penalty:f32 = argss.get("--gap_open_penalty").unwrap_or(&"-10.0".to_owned()).parse::<f32>().unwrap_or_else(|e|panic!("in --gap_open_penalty {:?}",e));
     let gap_extension_penalty:f32 = argss.get("--gap_extension_penalty").unwrap_or(&"-0.5".to_owned()).parse::<f32>().unwrap_or_else(|e|panic!("in --gap_extension_penalty {:?}",e));
-    let normalize:bool = argss.contains_key("--normalize");
+    let normalize:bool = check_bool(argss.get("--normalize").unwrap_or(&"false".to_owned()).as_str(),"--normalize");
     
     let mut name_to_res:HashMap<String,String> = HashMap::new();
     
