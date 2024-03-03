@@ -24,6 +24,11 @@ pub fn merge_with_weight(aligner:&mut ScoredSeqAligner,aseq:ScoredSequence,bseq:
 }
 
 pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner)-> (Vec<ScoredSequence>,f32){
+    
+    assert!(sequences.len() > 1);
+    if sequences.len() == 2{
+        return aligner.make_msa(sequences,false);
+    }
     let mut averaged_value:Vec<Vec<f32>> = vec![];
     for ss in sequences.iter(){
         unsafe{
