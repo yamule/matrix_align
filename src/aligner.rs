@@ -18,6 +18,12 @@ const DIREC_UPLEFT:u8 = 0;
 const DIREC_UP:u8 = 1;
 const DIREC_LEFT:u8 = 2;
 
+
+pub enum AlignmentType {
+    Local,
+    Global,
+}
+
 #[derive(Debug,Clone)]
 pub struct GMatColumn{
     pub match_vec:Vec<f32>,//match 時に使用されるベクトル
@@ -64,14 +70,15 @@ pub struct ScoredSeqAligner{
     pub blen:usize,
     pub gap_open_penalty:f32,
     pub gap_extension_penalty:f32,
-    pub penalty_warning:bool
+    pub penalty_warning:bool,
+    pub alignment_type:AlignmentType
 }
 impl ScoredSeqAligner {
-    pub fn new(vec_size:usize,buff_len:usize,buff_seqnum:usize,gap_open_penalty:f32,gap_extension_penalty:f32)->ScoredSeqAligner{
+    pub fn new(vec_size:usize,buff_len:usize,gap_open_penalty:f32,gap_extension_penalty:f32,alignment_type:AlignmentType)->ScoredSeqAligner{
         let dp_matrix:Vec<Vec<Vec<f32>>> = vec![vec![vec![];1];1];
         let path_matrix:Vec<Vec<Vec<u8>>> = vec![vec![vec![];1];1];
         let mut charmap:Vec<usize> = vec![NUM_CHARTYPE;256];
-        let weights:Vec<f32> = vec![1.0;buff_seqnum];
+        
         let cc:Vec<char> = ACCEPTABLE_CHARS.chars().into_iter().collect();
         for ee in cc.into_iter().enumerate(){
             charmap[ee.1 as usize] = ee.0;
@@ -87,6 +94,7 @@ impl ScoredSeqAligner {
             ,gap_open_penalty
             ,gap_extension_penalty
             ,penalty_warning:false
+            ,alignment_type:alignment_type
         };
         ret.reconstruct_matrix(buff_len, buff_len);
         return ret;
@@ -116,9 +124,17 @@ impl ScoredSeqAligner {
         // B 側 N 末にギャップを入れる
         for ii in 0..=aalen{
             if ii != 0{
-                currentpenal = b.gmat[0].connected_ratio*gap_open_penalty+b.gmat[0].gapped_ratio*gap_extension_penalty*(ii as f32 - 1.0);
                 
-                self.dp_matrix[ii][0][DIREC_LEFT as usize] = self.dp_matrix[ii-1][0][DIREC_LEFT as usize] + currentpenal;
+                match self.alignment_type{
+                    AlignmentType::Global => {
+                        currentpenal = b.gmat[0].connected_ratio*gap_open_penalty+b.gmat[0].gapped_ratio*gap_extension_penalty*(ii as f32 - 1.0);
+                    },
+                    AlignmentType::Local => {
+                        currentpenal = 0.0;
+                    }
+                }
+                self.dp_matrix[ii][0][DIREC_LEFT as usize] = self.dp_matrix[ii-1][0][DIREC_LEFT as usize] + currentpenal*(1.0-a.gmat[ii-1].del_ratio);
+
                 self.dp_matrix[ii][0][DIREC_UPLEFT as usize] = self.dp_matrix[ii][0][DIREC_LEFT as usize]-1000.0;
                 self.dp_matrix[ii][0][DIREC_UP as usize] = self.dp_matrix[ii][0][DIREC_LEFT as usize]-1000.0;
             }
@@ -131,9 +147,16 @@ impl ScoredSeqAligner {
         let mut currentpenal;
         for ii in 0..=bblen{
             if ii != 0{
-                currentpenal = a.gmat[0].connected_ratio*gap_open_penalty+a.gmat[0].gapped_ratio*gap_extension_penalty*(ii as f32 - 1.0);
-                
-                self.dp_matrix[0][ii][DIREC_UP as usize] = self.dp_matrix[0][ii-1][DIREC_UP as usize]+currentpenal;
+                match self.alignment_type{
+                    AlignmentType::Global => {
+                        currentpenal = a.gmat[0].connected_ratio*gap_open_penalty+a.gmat[0].gapped_ratio*gap_extension_penalty*(ii as f32 - 1.0);
+                    },
+                    AlignmentType::Local => {
+                        currentpenal = 0.0;
+                    }
+                }
+
+                self.dp_matrix[0][ii][DIREC_UP as usize] = self.dp_matrix[0][ii-1][DIREC_UP as usize]+currentpenal*(1.0-b.gmat[ii-1].del_ratio);
                 self.dp_matrix[0][ii][DIREC_UPLEFT as usize] = self.dp_matrix[0][ii][DIREC_UP as usize]-1000.0;
                 self.dp_matrix[0][ii][DIREC_LEFT as usize] = self.dp_matrix[0][ii][DIREC_UP as usize]-1000.0;
             }
@@ -211,7 +234,12 @@ impl ScoredSeqAligner {
                 //println!("{} {} {}",diag,leff,upp);
                 for pp in px.iter(){
                     let poss = pp.0;
-                    let (_m,_l,_u) = pp.1;
+                    let (mut _m,mut _l,mut _u) = pp.1;
+                    if let AlignmentType::Local = self.alignment_type{
+                        _m = _m.max(0.0);
+                        _l = _l.max(0.0);
+                        _u = _u.max(0.0);
+                    }
                     if _m >= _l && _m >= _u{
                         self.dp_matrix[ii][jj][poss as usize] = _m;
                         self.path_matrix[ii][jj][poss as usize] = DIREC_UPLEFT;
@@ -232,34 +260,101 @@ impl ScoredSeqAligner {
         let mut currenty = bblen;
         let mut currentpos = DIREC_UPLEFT;
         let mut maxscore = self.dp_matrix[currentx][currenty][currentpos as usize];
-        for ii in 0..3{
-            if maxscore < self.dp_matrix[currentx][currenty][ii]{
-                currentpos = ii as u8;
-                maxscore = self.dp_matrix[currentx][currenty][ii];
+        match self.alignment_type{
+            AlignmentType::Global =>{
+                for ii in 0..3{
+                    if maxscore < self.dp_matrix[currentx][currenty][ii]{
+                        currentpos = ii as u8;
+                        maxscore = self.dp_matrix[currentx][currenty][ii];
+                    }
+                }
+            },
+            AlignmentType::Local => {
+                for xx in 0..=aalen{
+                    for yy in 0..=bblen{
+                        for ii in 0..3{
+                            if maxscore < self.dp_matrix[xx][yy][ii]{
+                                currentpos = ii as u8;
+                                currentx = xx;
+                                currenty = yy;
+                                maxscore = self.dp_matrix[xx][yy][ii];
+                            }
+                        }
+                    }
+                }
             }
         }
-        let mut nexpos = self.path_matrix[currentx][currenty][currentpos as usize];
+        let mut startingx = currentx;
+        let mut startingy = currenty;
+        let mut nexpos = self.path_matrix[currentx][currenty][currentpos as usize];//前のセルのどこから来たか
         let mut aligned_tuple:Vec<(i32,i32)> = vec![];
         while currentx > 0 || currenty > 0{
             if currentpos == DIREC_UPLEFT{
+                aligned_tuple.push((currentx as i32 -1 ,currenty as i32 -1));
                 currentx -= 1;
                 currenty -= 1;
-                aligned_tuple.push((currentx as i32,currenty as i32));
+                
+                if let AlignmentType::Local = self.alignment_type{
+                    if self.dp_matrix[currentx][currentx][nexpos as usize] <= 0.0{
+                        break;
+                    }
+                }
+
             }else if currentpos == DIREC_UP{
+                aligned_tuple.push((-1,currenty as i32 -1));
                 currenty -= 1;
-                aligned_tuple.push((-1,currenty as i32));
+
+                if let AlignmentType::Local = self.alignment_type{
+                    if self.dp_matrix[currentx][currentx][nexpos as usize] <= 0.0{
+                        break;
+                    }
+                }
+
             }else if currentpos == DIREC_LEFT{
+                aligned_tuple.push((currentx as i32 -1,-1));
                 currentx -= 1;
-                aligned_tuple.push((currentx as i32,-1));
+
+                if let AlignmentType::Local = self.alignment_type{
+                    if self.dp_matrix[currentx][currentx][nexpos as usize] <= 0.0{
+                        break;
+                    }
+                }
+
             }else{
                 panic!("???");
             }
             currentpos = nexpos;
-            nexpos = self.path_matrix[currentx][currenty][currentpos as usize];
+            nexpos = self.path_matrix[currentx][currenty][currentpos as usize];//前のセルのどこから来たかを示す
             
         }
+
+
         eprintln!("{:?} vs {:?}:{}",a.headers,b.headers,maxscore);
+        
+        if let AlignmentType::Local = self.alignment_type{
+            while currentx > 0{
+                aligned_tuple.push((currentx as i32 -1,-1));
+                currentx -= 1;
+            }
+            while currenty > 0{
+                aligned_tuple.push((-1, currenty as i32 -1));
+                currenty -= 1;
+            }
+        }
         aligned_tuple.reverse();
+        
+        if let AlignmentType::Local = self.alignment_type{
+            startingx += 1;
+            while startingx <= aalen {
+                aligned_tuple.push((startingx as i32 -1,-1));
+                startingx += 1;
+            }
+            startingy += 1;
+            while startingy <= bblen{
+                aligned_tuple.push((-1, startingy as i32 -1));
+                startingy += 1;
+            }
+        }
         return (aligned_tuple,maxscore);
     }
 

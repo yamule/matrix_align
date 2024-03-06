@@ -1,6 +1,6 @@
 use std::collections::*;
 use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_, GMatStatistics};
-use matrix_align::aligner::{ScoredSeqAligner,ScoredSequence};
+use matrix_align::aligner::{AlignmentType, ScoredSeqAligner, ScoredSequence};
 use matrix_align::ioutil::{load_multi_gmat, save_lines};
 use matrix_align::matrix_process;
 use matrix_align::guide_tree;
@@ -40,16 +40,26 @@ fn check_bool(a:&str,argkey:&str)-> bool{
     panic!("Boolean value must be true, false, 1, or 0. {}:{}",argkey,a);
 }
 
+fn check_acceptable(a:&str,acceptable:Vec<&str>)-> bool{ // 10 もないだろうので
+    for vv in acceptable.iter(){
+        if *vv == a{
+            return true;
+        }
+    }
+    panic!("{} is not an acceptable value. {:?}",a,acceptable);
+}
+
 fn main(){
     let argss: HashMap<String,String> = argparse(std::env::args().collect::<Vec<String>>());
     let required_arg:Vec<&str> = vec!["--in","--out"];
     let allowed_arg_:Vec<(&str,&str)> = vec![
         ("--in","<input file path> : Text based file which contains general profile matrices for multiple sequences. Something like as follows. \n>seq1\n[amino acid letter at position 1]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 2]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 3]\t[value1]\t[value2]\t[value3]...\n...\n>seq2\n[amino acid letter at position 1]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 2]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 3]\t[value1]\t[value2]\t[value3]...\n...\n..."),
         ("--out","<output file path> : Multi-fasta file. Required."),
-        ("--num_iter","<int> : Number of alignment iterations. Construct global profile with -1 times with this number. Default 2."),
-        ("--gap_open_penalty","<float> : Gap open penalty for DP. Must be negative. Default -10.0"),
-        ("--gap_extension_penalty","<float> : Gap extension penalty for DP. Must be negative. Default -0.5."),
-        ("--normalize","<bool or novalue=true> : Normalize profile values before alignment. Default false."),
+        ("--num_iter","<int> : Number of alignment iterations. Construct global profile with -1 times with this number. Default '2'."),
+        ("--gap_open_penalty","<float> : Gap open penalty for DP. Must be negative. Default '-10.0'"),
+        ("--gap_extension_penalty","<float> : Gap extension penalty for DP. Must be negative. Default '-0.5'."),
+        ("--normalize","<bool or novalue=true> : Normalize profile values before alignment. Default 'false'."),
+        ("--alignment_type","<global or local> : Alignment type. Default 'global'"),
         ("--help","<bool or novalue=true> : Print this message."),
     ];
     let allowed_arg:HashSet<&str> = allowed_arg_.clone().into_iter().map(|m|m.0).collect();
@@ -80,6 +90,23 @@ fn main(){
         }
         std::process::exit(0);
     }
+
+    let mut alignment_type = AlignmentType::Global;
+    if argss.contains_key("--alignment_type"){
+        let typ = argss.get("--alignment_type").unwrap().to_lowercase();
+        check_acceptable(typ.as_str(),vec!["global","local"] );
+        if typ.as_str() == "global"{
+            alignment_type = AlignmentType::Global;
+        }else if typ.as_str() == "local"{
+            alignment_type = AlignmentType::Local;
+        }else{
+            panic!("???");
+        }
+
+    }
+
+
+
     if error_message.len() > 0{
         for aa in allowed_arg_.iter(){
             eprintln!("{} {}",aa.0,aa.1);
@@ -111,7 +138,7 @@ fn main(){
     let gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
 
     let veclen = gmat1_[0].2[0].len();
-    let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,300,100,gap_open_penalty,gap_extension_penalty);
+    let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,300,gap_open_penalty,gap_extension_penalty,alignment_type);
     
     let mut allseqs_:Vec<ScoredSequence> = vec![];
     for mut gg in gmat1_.into_iter(){

@@ -8,7 +8,7 @@ mod tests{
 
     //extern crate matrix_align;
     use matrix_align::gmat::{self, calc_vec_stats, GMatStatistics};
-    use matrix_align::aligner::{ScoredSeqAligner,ScoredSequence};
+    use matrix_align::aligner::{AlignmentType, ScoredSeqAligner, ScoredSequence};
     use matrix_align::ioutil::{load_gmat, load_multi_gmat,save_lines};
     use matrix_align::misc::*;
 
@@ -33,7 +33,7 @@ mod tests{
             eprintln!("{}",ii);
 
             let veclen = gmat1_[0].2[0].len();
-            let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,200,100,-10.0,-0.5);
+            let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,200,-10.0,-0.5,AlignmentType::Global);
             let mut seqvec:Vec<ScoredSequence> = vec![];
             
             if let Some(p) = profile_seq{
