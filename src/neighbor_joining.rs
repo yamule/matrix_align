@@ -71,7 +71,7 @@ pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>)->((usize,f32),(usize
             }
         }
     }
-    println!("{}",kmin);
+    //println!("{}",kmin);
     return pair;
 }
 

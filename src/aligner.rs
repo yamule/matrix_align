@@ -296,7 +296,7 @@ impl ScoredSeqAligner {
                 currenty -= 1;
                 
                 if let AlignmentType::Local = self.alignment_type{
-                    if self.dp_matrix[currentx][currentx][nexpos as usize] <= 0.0{
+                    if self.dp_matrix[currentx][currenty][nexpos as usize] <= 0.0{
                         break;
                     }
                 }
@@ -306,7 +306,7 @@ impl ScoredSeqAligner {
                 currenty -= 1;
 
                 if let AlignmentType::Local = self.alignment_type{
-                    if self.dp_matrix[currentx][currentx][nexpos as usize] <= 0.0{
+                    if self.dp_matrix[currentx][currenty][nexpos as usize] <= 0.0{
                         break;
                     }
                 }
@@ -316,7 +316,7 @@ impl ScoredSeqAligner {
                 currentx -= 1;
 
                 if let AlignmentType::Local = self.alignment_type{
-                    if self.dp_matrix[currentx][currentx][nexpos as usize] <= 0.0{
+                    if self.dp_matrix[currentx][currenty][nexpos as usize] <= 0.0{
                         break;
                     }
                 }

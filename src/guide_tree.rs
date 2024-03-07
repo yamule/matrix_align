@@ -65,8 +65,9 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         profiles[ss.0] = Some(ss.1);
     }
     let mut updated:Vec<usize> = vec![];
-    for ff in 0..flagcounter.len(){
-        if flagcounter[ff] == 0{
+    let leaves = flagcounter.clone();
+    for ff in 0..leaves.len(){
+        if leaves[ff] == 0{
             if parents[ff] > -1{
                 let p = parents[ff] as usize;
                 flagcounter[p] += 1;
@@ -87,13 +88,13 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     //最終的に 3 つノードが残る
     while updated.len() > 0{
         let mut handles = vec![];
-        let mut results_:Arc<Mutex<Vec<(usize,ScoredSequence,ScoredSeqAligner)>>> = Arc::new(Mutex::new(vec![]));
+        let results_:Arc<Mutex<Vec<(usize,ScoredSequence,ScoredSeqAligner)>>> = Arc::new(Mutex::new(vec![]));
         while updated.len() > 0{
 
             let uu = updated.pop().unwrap();
-            
             let aa = treenodes[uu].0 as usize;
             let bb = treenodes[uu].1 as usize;
+            println!("{}>>>> {} {}",uu,aa,bb);
             let adist = treenodes[aa].2;
             let bdist = treenodes[bb].2;
 
