@@ -1,4 +1,6 @@
-use crate::aligner::{ScoredSequence};
+use crate::aligner::ScoredSequence;
+use std::sync::{Mutex,Arc};
+use std::thread;
 use super::matrix_process::calc_euclid_dist;
 use super::neighbor_joining::generate_unrooted_tree;
 use super::gmat::calc_mean;
@@ -57,6 +59,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         }
     }
     let mut profiles:Vec<Option<ScoredSequence>> = vec![None;treenodes.len()];
+    let numseq:usize = sequences.len();
 
     for ss in sequences.into_iter().enumerate(){
         profiles[ss.0] = Some(ss.1);
@@ -74,33 +77,63 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         }
     }
 
+    let mut aligners:Vec<ScoredSeqAligner> = vec![];
+    let num_threads = (numseq-2).min(12);
+    for ii in 0..num_threads{
+        aligners.push(aligner.clone());
+    }
+
     //println!("{:?}",treenodes);
     //最終的に 3 つノードが残る
     while updated.len() > 0{
-        // そのうち並列化する
-        let uu = updated.pop().unwrap();
-        
-        let aa = treenodes[uu].0 as usize;
-        let bb = treenodes[uu].1 as usize;
-        let adist = treenodes[aa].2;
-        let bdist = treenodes[bb].2;
+        let mut handles = vec![];
+        let mut results_:Arc<Mutex<Vec<(usize,ScoredSequence,ScoredSeqAligner)>>> = Arc::new(Mutex::new(vec![]));
+        while updated.len() > 0{
 
-        profiles.push(None);
-        let ap = profiles.swap_remove(aa).unwrap();
-        profiles.push(None);
-        let bp = profiles.swap_remove(bb).unwrap();
-        let res = merge_with_weight(aligner,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
-        profiles.push(Some(res.0));
-        profiles.swap_remove(uu);
-        if parents[uu] > -1{
-            let p = parents[uu] as usize;
-            flagcounter[p] += 1;
-            if flagcounter[p] == 0{
-                updated.push(p);
+            let uu = updated.pop().unwrap();
+            
+            let aa = treenodes[uu].0 as usize;
+            let bb = treenodes[uu].1 as usize;
+            let adist = treenodes[aa].2;
+            let bdist = treenodes[bb].2;
+
+            profiles.push(None);
+            let ap = profiles.swap_remove(aa).unwrap();
+            profiles.push(None);
+            let bp = profiles.swap_remove(bb).unwrap();
+            let mut ali = aligners.pop().unwrap();
+            let results = Arc::clone(&results_);
+            let handle = thread::spawn(move || {
+                let res = merge_with_weight(&mut ali,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
+                results.lock().unwrap_or_else(|e| panic!("multithreaderr1 {:?}",e)).push((
+                    uu,res.0,ali
+                ));
+            });
+            handles.push(handle);
+            if aligners.len() == 0{
+                break;
             }
         }
-    }
+        
+        for handle in handles {
+            handle.join().unwrap_or_else(|e| panic!("multithreadingerror ???{:?}",e));
+        }
+        let results = Arc::try_unwrap(results_).unwrap_or_else(
+                |e| panic!("multithreaderr2")).into_inner().unwrap_or_else(|e| panic!("multithreaderr3 {:?}",e));
+        for rr in results.into_iter(){
+            profiles.push(Some(rr.1));
+            profiles.swap_remove(rr.0);
+            if parents[rr.0] > -1{
+                let p = parents[rr.0] as usize;
+                flagcounter[p] += 1;
+                if flagcounter[p] == 0{
+                    updated.push(p);
+                }
+            }
+            aligners.push(rr.2);
+        }
 
+    }
     let mut remained:Vec<(f32,usize)> = vec![];
     for ii in 0..profiles.len(){
         if let Some(x) = & profiles[ii]{

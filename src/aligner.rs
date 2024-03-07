@@ -18,7 +18,7 @@ const DIREC_UPLEFT:u8 = 0;
 const DIREC_UP:u8 = 1;
 const DIREC_LEFT:u8 = 2;
 
-
+#[derive(Clone,Debug)]
 pub enum AlignmentType {
     Local,
     Global,
@@ -61,6 +61,7 @@ impl GMatColumn{
     }
 }
 
+#[derive(Clone,Debug)]
 pub struct ScoredSeqAligner{
     pub dp_matrix:Vec<Vec<Vec<f32>>>,
     pub path_matrix:Vec<Vec<Vec<u8>>>,
@@ -578,7 +579,7 @@ impl ScoredSeqAligner {
 
 }
 
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 pub struct ScoredSequence{
     pub gmat:Vec<GMatColumn>,
     pub alignments:Vec<Vec<char>>,
