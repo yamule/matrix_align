@@ -1,4 +1,5 @@
 use std::collections::*;
+use rayon;
 use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_, GMatStatistics};
 use matrix_align::aligner::{AlignmentType, ScoredSeqAligner, ScoredSequence};
 use matrix_align::ioutil::{load_multi_gmat, save_lines};
@@ -200,10 +201,13 @@ fn main(){
             seqvec.push(ss.clone());
         }
         
+        assert!(num_threads > 0);
+        rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global().unwrap();
+
         let softtree = true;
         
         let mut ans = if softtree{
-            guide_tree::tree_guided_alignment(seqvec, &mut saligner,num_threads)
+            guide_tree::tree_guided_alignment(seqvec, &mut saligner)
         }else{
             saligner.make_msa(seqvec,false)
         };

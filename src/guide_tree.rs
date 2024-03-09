@@ -5,7 +5,8 @@ use super::matrix_process::calc_euclid_dist;
 use super::neighbor_joining::generate_unrooted_tree;
 use super::gmat::calc_mean;
 use super::aligner::ScoredSeqAligner;
-
+use rayon::prelude::*;
+use rayon;
 
 pub fn create_distence_tree(val:&Vec<&Vec<f32>>)-> Vec<(i64,i64,f32)>{
     let vsiz:usize = val.len();
@@ -27,7 +28,7 @@ pub fn merge_with_weight(aligner:&mut ScoredSeqAligner,aseq:ScoredSequence,bseq:
     return (res,dpres.1);
 }
 
-pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner,num_threads:usize)-> (Vec<ScoredSequence>,f32){
+pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner)-> (Vec<ScoredSequence>,f32){
     
     assert!(sequences.len() > 1);
     if sequences.len() == 2{
@@ -66,7 +67,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     for ss in sequences.into_iter().enumerate(){
         profiles[ss.0] = Some(ss.1);
     }
-    let mut updated:Vec<usize> = vec![];
+    let mut updated_pool:Vec<usize> = vec![];
     let leaves = flagcounter.clone();
     for ff in 0..leaves.len(){
         if leaves[ff] == 0{
@@ -74,29 +75,30 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
                 let p = parents[ff] as usize;
                 flagcounter[p] += 1;
                 if flagcounter[p] == 0{
-                    updated.push(p);
+                    updated_pool.push(p);
                 }
             }
         }
     }
 
     let mut aligners:Vec<ScoredSeqAligner> = vec![];
+    let num_threads = rayon::current_num_threads().max(1);
 
-    for ii in 0..num_threads{
+    for _ in 0..num_threads{
         aligners.push(aligner.clone());
     }
 
     //println!("{:?}",treenodes);
     //最終的に 3 つノードが残る
-    while updated.len() > 0{
-        let mut handles = vec![];
-        let results_:Arc<Mutex<Vec<(usize,ScoredSequence,ScoredSeqAligner)>>> = Arc::new(Mutex::new(vec![]));
-        while updated.len() > 0{
+    while updated_pool.len() > 0{
 
-            let uu = updated.pop().unwrap();
+        let mut updated_minibatch:Vec<(usize,ScoredSequence,ScoredSequence,f32,f32,ScoredSeqAligner)> = vec![];
+        while updated_pool.len() > 0{
+            
+            let uu = updated_pool.pop().unwrap();
             let aa = treenodes[uu].0 as usize;
             let bb = treenodes[uu].1 as usize;
-            println!("{}>>>> {} {}",uu,aa,bb);
+            //println!("{}>>>> {} {}",uu,aa,bb);
             let adist = treenodes[aa].2;
             let bdist = treenodes[bb].2;
 
@@ -104,36 +106,35 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
             let ap = profiles.swap_remove(aa).unwrap();
             profiles.push(None);
             let bp = profiles.swap_remove(bb).unwrap();
-            let mut ali = aligners.pop().unwrap();
-            let results = Arc::clone(&results_);
-            let handle = thread::spawn(move || {
-                let res = merge_with_weight(&mut ali,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
-                results.lock().unwrap_or_else(|e| panic!("multithreaderr1 {:?}",e)).push((
-                    uu,res.0,ali
-                ));
-            });
-            handles.push(handle);
+            let ali = aligners.pop().unwrap();
+            updated_minibatch.push((uu,ap,bp,adist,bdist,ali));
             if aligners.len() == 0{
                 break;
             }
         }
+        let results:Vec<(ScoredSeqAligner,usize,ScoredSequence,f32)> = updated_minibatch.into_par_iter().map(|v|{
+            let uu = v.0;
+            let ap = v.1;
+            let bp = v.2;
+            let adist = v.3;
+            let bdist = v.4;
+            let mut ali = v.5;
+
+            let res = merge_with_weight(&mut ali,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
+            (ali,uu,res.0,res.1)            
+        }).collect();
         
-        for handle in handles {
-            handle.join().unwrap_or_else(|e| panic!("multithreadingerror ???{:?}",e));
-        }
-        let results = Arc::try_unwrap(results_).unwrap_or_else(
-                |e| panic!("multithreaderr2")).into_inner().unwrap_or_else(|e| panic!("multithreaderr3 {:?}",e));
         for rr in results.into_iter(){
-            profiles.push(Some(rr.1));
-            profiles.swap_remove(rr.0);
-            if parents[rr.0] > -1{
-                let p = parents[rr.0] as usize;
+            profiles.push(Some(rr.2));
+            profiles.swap_remove(rr.1);
+            if parents[rr.1] > -1{
+                let p = parents[rr.1] as usize;
                 flagcounter[p] += 1;
                 if flagcounter[p] == 0{
-                    updated.push(p);
+                    updated_pool.push(p);
                 }
             }
-            aligners.push(rr.2);
+            aligners.push(rr.0);
         }
 
     }
@@ -143,7 +144,8 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
             remained.push((treenodes[ii].2,ii));
         }
     }
-    //近いペアを並べる
+
+    //残りのうち近いペアを並べる
     remained.sort_by(|a,b| a.0.partial_cmp(&b.0).unwrap());
     let aa = remained[0].1;
     let bb = remained[1].1;
