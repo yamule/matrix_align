@@ -1,15 +1,20 @@
 use std::arch::x86_64::*;
 
 
+pub fn dot_product_native(a: &[f32], b: &[f32]) -> f32 {
+    assert_eq!(a.len(), b.len());
+    //eprintln!("running native");
+    return a.iter().zip(b.iter()).map(|(x,y)|x*y).sum();
+}
+
 //二つの一次元配列の内積を取る
 #[cfg(all(not(target_feature = "avx2"),target_feature = "sse3"))]
 pub unsafe fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len());
-    assert!(a.len() % 4 == 0);
-
     //eprintln!("running sse3");
     let mut sum = 0.0;
-    for i in (0..a.len()).step_by(4) {
+    let mut i = 0;
+    while i + 4 < a.len() {
         // SIMD型にデータをロード
         let a_chunk = _mm_loadu_ps(a[i..].as_ptr());
         let b_chunk = _mm_loadu_ps(b[i..].as_ptr());
@@ -24,7 +29,12 @@ pub unsafe fn dot_product(a: &[f32], b: &[f32]) -> f32 {
         
         sum += _mm_cvtss_f32(sum_chunk) + 
         _mm_cvtss_f32(_mm_shuffle_ps(sum_chunk, sum_chunk, 0x55));//0x55 は 01010101 と展開されつまり結果の配列については a[1],a[1],b[1],b[1] となる。
+        i += 4;
+    }
     
+    if a.len() % 4 != 0{
+        let i = a.len() - a.len()%4;
+        sum += dot_product_native(&a[i..],&b[i..]);
     }
     sum
 }
@@ -33,15 +43,17 @@ pub unsafe fn dot_product(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(target_feature = "avx2")]
 pub unsafe fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len());
-    assert!(a.len() % 8 == 0);
+
     //eprintln!("running avx2");
     let mut sum = 0.0;
     let mut sum_vec = _mm256_setzero_ps();
-    for i in (0..a.len()).step_by(8) {
+    let mut i = 0;
+    while i + 8 < a.len() {
         let a_chunk = _mm256_loadu_ps(a[i..].as_ptr());
         let b_chunk = _mm256_loadu_ps(b[i..].as_ptr());
         let mul_chunk = _mm256_mul_ps(a_chunk, b_chunk);
         sum_vec = _mm256_add_ps(sum_vec, mul_chunk);
+        i += 8;
     }
     // 水平加算
     sum_vec = _mm256_hadd_ps(sum_vec, sum_vec);
@@ -49,18 +61,21 @@ pub unsafe fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     let mut temp = [0.0; 8];
     _mm256_storeu_ps(temp.as_mut_ptr(), sum_vec);
     sum = temp[0] + temp[4];
+
+    if a.len() % 8 != 0{
+        let i = a.len() - a.len()%8;
+        sum += dot_product_native(&a[i..],&b[i..]);
+    }
+
     sum
 }
-
 
 #[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
 pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len());
     //eprintln!("running native");
-    return a.iter().zip(b.iter()).map(|(x,y)|x*y).sum();
+    return dot_product_native(a, b);
 }
-
-
 
 
 

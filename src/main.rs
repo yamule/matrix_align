@@ -60,6 +60,7 @@ fn main(){
         ("--gap_extension_penalty","<float> : Gap extension penalty for DP. Must be negative. Default '-0.5'."),
         ("--normalize","<bool or novalue=true> : Normalize profile values before alignment. Default 'false'."),
         ("--alignment_type","<global or local> : Alignment type. Default 'global'"),
+        ("--num_threads","<int> : Number of threads. Default 4."),
         ("--help","<bool or novalue=true> : Print this message."),
     ];
     let allowed_arg:HashSet<&str> = allowed_arg_.clone().into_iter().map(|m|m.0).collect();
@@ -124,6 +125,7 @@ fn main(){
     let num_iter:usize = argss.get("--num_iter").unwrap_or(&"2".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_iter {:?}",e));
     let gap_open_penalty:f32 = argss.get("--gap_open_penalty").unwrap_or(&"-10.0".to_owned()).parse::<f32>().unwrap_or_else(|e|panic!("in --gap_open_penalty {:?}",e));
     let gap_extension_penalty:f32 = argss.get("--gap_extension_penalty").unwrap_or(&"-0.5".to_owned()).parse::<f32>().unwrap_or_else(|e|panic!("in --gap_extension_penalty {:?}",e));
+    let num_threads:usize = argss.get("--num_threads").unwrap_or(&"4".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_threads {:?}",e));
     let normalize:bool = check_bool(argss.get("--normalize").unwrap_or(&"false".to_owned()).as_str(),"--normalize");
     
     let mut name_to_res:HashMap<String,String> = HashMap::new();
@@ -201,7 +203,7 @@ fn main(){
         let softtree = true;
         
         let mut ans = if softtree{
-            guide_tree::tree_guided_alignment(seqvec, &mut saligner)
+            guide_tree::tree_guided_alignment(seqvec, &mut saligner,num_threads)
         }else{
             saligner.make_msa(seqvec,false)
         };

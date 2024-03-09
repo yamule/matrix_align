@@ -5,6 +5,8 @@ use super::matrix_process::calc_euclid_dist;
 use super::neighbor_joining::generate_unrooted_tree;
 use super::gmat::calc_mean;
 use super::aligner::ScoredSeqAligner;
+
+
 pub fn create_distence_tree(val:&Vec<&Vec<f32>>)-> Vec<(i64,i64,f32)>{
     let vsiz:usize = val.len();
     let mut dist:Vec<f32> = vec![];
@@ -25,7 +27,7 @@ pub fn merge_with_weight(aligner:&mut ScoredSeqAligner,aseq:ScoredSequence,bseq:
     return (res,dpres.1);
 }
 
-pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner)-> (Vec<ScoredSequence>,f32){
+pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner,num_threads:usize)-> (Vec<ScoredSequence>,f32){
     
     assert!(sequences.len() > 1);
     if sequences.len() == 2{
@@ -79,7 +81,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     }
 
     let mut aligners:Vec<ScoredSeqAligner> = vec![];
-    let num_threads = (numseq-2).min(12);
+
     for ii in 0..num_threads{
         aligners.push(aligner.clone());
     }
