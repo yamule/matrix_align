@@ -95,19 +95,19 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         let mut updated_minibatch:Vec<(usize,ScoredSequence,ScoredSequence,f32,f32,ScoredSeqAligner)> = vec![];
         while updated_pool.len() > 0{
             
-            let uu = updated_pool.pop().unwrap();
-            let aa = treenodes[uu].0 as usize;
-            let bb = treenodes[uu].1 as usize;
+            let idx_target = updated_pool.pop().unwrap();
+            let idx_child_a = treenodes[idx_target].0 as usize;
+            let idx_child_b = treenodes[idx_target].1 as usize;
             //println!("{}>>>> {} {}",uu,aa,bb);
-            let adist = treenodes[aa].2;
-            let bdist = treenodes[bb].2;
+            let adist = treenodes[idx_child_a].2;
+            let bdist = treenodes[idx_child_b].2;
 
             profiles.push(None);
-            let ap = profiles.swap_remove(aa).unwrap();
+            let profile_child_a = profiles.swap_remove(idx_child_a).unwrap();
             profiles.push(None);
-            let bp = profiles.swap_remove(bb).unwrap();
+            let profile_child_b = profiles.swap_remove(idx_child_b).unwrap();
             let ali = aligners.pop().unwrap();
-            updated_minibatch.push((uu,ap,bp,adist,bdist,ali));
+            updated_minibatch.push((idx_target,profile_child_a,profile_child_b,adist,bdist,ali));
             if aligners.len() == 0{
                 break;
             }
