@@ -6,6 +6,8 @@ use matrix_align::aligner::{AlignmentType, ScoredSeqAligner, ScoredSequence};
 use matrix_align::ioutil::{load_multi_gmat, save_lines};
 use matrix_align::matrix_process;
 use matrix_align::guide_tree;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 fn argparse(mut args:Vec<String>)->HashMap<String,String>{
     assert!(args.len() > 0);
@@ -63,6 +65,8 @@ fn main(){
         ("--normalize","<bool or novalue=true> : Normalize profile values before alignment. Default 'false'."),
         ("--alignment_type","<global or local> : Alignment type. Default 'global'"),
         ("--num_threads","<int> : Number of threads. Default 4."),
+        ("--maximum_cluster_size","<int> : Limit all-vs-all comparison with this many number of profiles and align hierarchically. Must be > 10. Default -1."),
+        ("--random_seed","<int> : Seed for random number generator."),
         ("--help","<bool or novalue=true> : Print this message."),
     ];
     let allowed_arg:HashSet<&str> = allowed_arg_.clone().into_iter().map(|m|m.0).collect();
@@ -94,6 +98,27 @@ fn main(){
         std::process::exit(0);
     }
 
+    let mut rngg:StdRng = if let Some(x) = argss.get("--random_seed"){
+        let i = x.parse::<i64>().unwrap_or(-1);
+        assert!(i >  0,"--random_seed must be a positive integer. {}",x);
+        StdRng::seed_from_u64(i as u64)
+    }else{
+        StdRng::from_entropy()
+    };// -1 の場合シードを使わない
+
+    let maximum_cluster_size:i64  = if let Some(x) = argss.get("--maximum_cluster_size"){
+        let i = x.parse::<i64>().unwrap_or(-1);
+        if i == -1{
+            i
+        }else{
+            assert!(i <=  10,"--maximum_cluster_size must be > 10. {}",x);
+            i
+        }
+    }else{
+        -1
+    };// -1 の場合 hierarcical align を行わない
+
+
     let mut alignment_type = AlignmentType::Global;
     if argss.contains_key("--alignment_type"){
         let typ = argss.get("--alignment_type").unwrap().to_lowercase();
@@ -105,10 +130,7 @@ fn main(){
         }else{
             panic!("???");
         }
-
     }
-
-
 
     if error_message.len() > 0{
         for aa in allowed_arg_.iter(){
@@ -130,6 +152,7 @@ fn main(){
     let num_threads:usize = argss.get("--num_threads").unwrap_or(&"4".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_threads {:?}",e));
     let normalize:bool = check_bool(argss.get("--normalize").unwrap_or(&"false".to_owned()).as_str(),"--normalize");
     
+
     let mut name_to_res:HashMap<String,String> = HashMap::new();
     
     let gmatstats:Vec<GMatStatistics>;
@@ -209,7 +232,8 @@ fn main(){
         let softtree = true;
         
         let mut ans = if softtree{
-            guide_tree::tree_guided_alignment(seqvec, &mut saligner)
+
+            guide_tree::tree_guided_alignment(seqvec, &mut saligner,maximum_cluster_size,&mut rngg)
         }else{
             saligner.make_msa(seqvec,false)
         };
