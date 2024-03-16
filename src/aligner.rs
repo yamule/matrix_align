@@ -59,6 +59,7 @@ impl GMatColumn{
         self.connected_ratio = connected_weight;
         self.gapped_ratio = gapped_weight;
     }
+
 }
 
 #[derive(Clone,Debug)]
@@ -372,32 +373,64 @@ impl ScoredSeqAligner {
         let vec_size = a.get_vec_size();
         let alignment_length = alignment.len();
 
-        let mut new_alignments:Vec<Vec<char>> = vec![vec![];numallseq];
+        //アラインメント情報をマージ
+        let mut new_alignments:Vec<Vec<char>> = vec![];
+        new_alignments.append(&mut a.alignments);
+        new_alignments.append(&mut b.alignments);
+
+        let mut new_alignment_mapping:Vec<Vec<(i32,i32)>> = vec![];
+        new_alignment_mapping.append(&mut a.alignment_mapping);
+        new_alignment_mapping.append(&mut b.alignment_mapping);
+
+        let mut new_alignment_mapping_ids:Vec<Vec<usize>> = vec![];
+        new_alignment_mapping_ids.append(&mut a.alignment_mapping_ids);
+
+        let boffset = new_alignment_mapping_ids.len(); //b に属していた配列の開始インデクス
+        for bb in b.alignment_mapping_ids.iter_mut(){
+            for bbb in bb.iter_mut(){
+                *bbb += boffset;
+            }
+        }
+
+        new_alignment_mapping_ids.append(&mut b.alignment_mapping_ids);
+
+        let mut seqmap_a:Vec<(i32,i32)> = vec![];
+        let mut seqmap_b:Vec<(i32,i32)> = vec![];
+
+        for aa in 0..alignment.len(){
+            let ppos = alignment[aa];
+            if ppos.0 > -1{
+                seqmap_a.push((ppos.0,aa as i32));
+            }
+            if ppos.1 > -1{
+                seqmap_b.push((ppos.1,aa as i32));
+            }
+        }
+
+        let alid_a = new_alignments.len();//新しく追加されたアラインメント情報のインデクス
+        new_alignment_mapping.push(seqmap_a);
+        new_alignment_mapping.push(seqmap_b);
+        for ii in 0..new_alignment_mapping_ids.len(){
+            for aa in new_alignment_mapping_ids.iter_mut(){
+                if ii < boffset{
+                    aa.push(alid_a);
+                }else{
+                    aa.push(alid_a+1);
+                }
+            }
+        }
+
         let mut gapper:Vec<Vec<char>> = vec![vec![],vec![]];//全体ギャップ計算
         for aa in 0..alignment.len(){
             let ppos = alignment[aa];
             if ppos.0 > -1{
-                let poss = ppos.0 as usize;
-                for ap in 0..anumaliseq{
-                    new_alignments[ap].push(a.alignments[ap][poss as usize]);
-                }
                 gapper[0].push('X');
             }else{
-                for ap in 0..anumaliseq{
-                    new_alignments[ap].push('-');
-                }
                 gapper[0].push('-');
             }
             if ppos.1 > -1{
-                let poss = ppos.1 as usize;
-                for ap in 0..bnumaliseq{
-                    new_alignments[ap+anumaliseq].push(b.alignments[ap][poss as usize]);
-                }
                 gapper[1].push('X');
             }else{
-                for ap in 0..bnumaliseq{
-                    new_alignments[ap+anumaliseq].push('-');
-                }
                 gapper[1].push('-');
             }
         }
@@ -407,6 +440,9 @@ impl ScoredSeqAligner {
 
         let mut ret:ScoredSequence = ScoredSequence::new(headers.into_iter().zip(new_alignments.into_iter()).collect()
         , vec_size,None,None,None);
+
+        ret.alignment_mapping = new_alignment_mapping;
+        ret.alignment_mapping_ids = new_alignment_mapping_ids;
 
         let aweight = if let Some(x) = weight{x.0}else{a.get_weight_sum()};
         let bweight = if let Some(x) = weight{x.1}else{b.get_weight_sum()};
@@ -583,8 +619,11 @@ impl ScoredSeqAligner {
 pub struct ScoredSequence{
     pub gmat:Vec<GMatColumn>,
     pub alignments:Vec<Vec<char>>,
+    pub alignment_mapping:Vec<Vec<(i32,i32)>>, // 現在の配列の場所は次のアラインメントが行われた場合どこに移動するか
+    pub alignment_mapping_ids:Vec<Vec<usize>>, //alignments の配列は alignment_mapping のどの mapping をどの順番で使うか
     pub headers:Vec<String>,//Fasta Header 行
-    pub seq_weights:Vec<f32>
+    pub seq_weights:Vec<f32>,
+    pub is_dummy:bool
 }
 
 impl ScoredSequence{
@@ -620,6 +659,9 @@ impl ScoredSequence{
         }
         return ScoredSequence{
             alignments:alignments,
+            alignment_mapping:vec![],
+            alignment_mapping_ids:vec![],
+            is_dummy:false,
             headers:headers,
             gmat:gmat,
             seq_weights:seq_weights_.unwrap_or_else(||vec![1.0;seqnum])
@@ -643,16 +685,19 @@ impl ScoredSequence{
         return ret;
     }
 
-    pub fn create_merged_msa(&self)->ScoredSequence{
+    pub fn create_merged_dummy(&self)->ScoredSequence{
         let alignments:Vec<Vec<char>> = vec![vec!['X';self.alignments[0].len()]];
         let headers:Vec<String> = vec!["dummy".to_owned()];
         let gmat = self.gmat.clone();
         let seq_weights = vec![self.get_weight_sum()];
         return ScoredSequence{
             alignments:alignments,
+            alignment_mapping:vec![],
+            alignment_mapping_ids:vec![],
             headers:headers,
             gmat:gmat,
-            seq_weights:seq_weights
+            seq_weights:seq_weights,
+            is_dummy:true
         };
     }
 
@@ -677,5 +722,43 @@ impl ScoredSequence{
         return self.split_one(targetidx, aligner);
     }
     */
-    
+
+    //アラインされた文字列をマッピング情報から作成して返す。
+    pub fn get_aligned_seq(&self,idx:usize)->Vec<char>{//a3m にし易いように char で返す。
+        if self.alignment_mapping_ids[idx].len() == 0{
+            return self.alignments[idx].clone();
+        }
+        let mut mmax = self.alignments[idx].len() as i32;
+        for mapp in self.alignment_mapping_ids[idx].iter(){
+            for jj in self.alignment_mapping[*mapp].iter(){
+                mmax = mmax.max(jj.1);
+            }
+        }
+        mmax += 1;
+
+        let mut current_pos:Vec<i32> = vec![-1;mmax as usize];
+        let mut next_pos:Vec<i32> = vec![-1;mmax as usize];
+        let mut updated_step:Vec<i32> = vec![-1;mmax as usize];
+        for ii in 0..self.alignments[idx].len(){
+            current_pos[ii] = ii as i32;
+        }
+        for (eii,mapp) in self.alignment_mapping_ids[idx].iter().enumerate(){
+            for jj in self.alignment_mapping[*mapp].iter(){
+                next_pos[jj.1 as usize] = current_pos[jj.0 as usize];
+                updated_step[jj.1 as usize] = eii as i32;
+            }
+            let t = current_pos;
+            current_pos = next_pos;
+            next_pos = t;
+        }
+        let mstep = self.alignment_mapping_ids[idx].len() -1;
+        let mut ret:Vec<char> = vec!['-';mmax as usize];
+        for (eii,uu) in updated_step.into_iter().enumerate(){
+            if uu == mstep as i32{
+                ret[eii] = self.alignments[idx][next_pos[eii] as usize];
+            }
+        }
+        
+        return ret;
+    }    
 }

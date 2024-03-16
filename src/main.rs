@@ -194,7 +194,7 @@ fn main(){
         let mut seqvec:Vec<ScoredSequence> = vec![];
         
         if let Some(p) = profile_seq{
-            seqvec.push(p.create_merged_msa());
+            seqvec.push(p.create_merged_dummy());
         }
         profile_seq = None;
         for ss in allseqs_.iter(){
@@ -222,11 +222,25 @@ fn main(){
         //}
 
         if num_iter == ii+1{
-            for (ali,hh) in alires.alignments.into_iter().zip(alires.headers.into_iter()){
-                if name_to_res.contains_key(&hh){
-                    assert!(name_to_res.get(&hh).unwrap().len() == 0,"{}",name_to_res.get(&hh).unwrap());
+            let mut maxpos:usize = 0;
+            for mm in alires.alignment_mapping_ids.iter(){
+                for mmm in mm.iter(){
+                    maxpos = maxpos.max(*mmm);
+                }
+            }
+            maxpos += 1;
+
+            for seqidx in 0..alires.alignments.len(){
+                let mut aseq = alires.get_aligned_seq(seqidx);
+                assert!(aseq.len() <= maxpos);
+                while aseq.len() < maxpos{
+                    aseq.push('-');
+                }
+                let hh = &alires.headers[seqidx];
+                if name_to_res.contains_key(hh){
+                    assert!(name_to_res.get(hh).unwrap().len() == 0,"{}",name_to_res.get(hh).unwrap());
                     name_to_res.insert(
-                        hh,ali.into_iter().map(|m|m.to_string()).collect::<Vec<String>>().concat()
+                        hh.clone(),aseq.into_iter().map(|m|m.to_string()).collect::<Vec<String>>().concat()
                     );
                 }
             }
