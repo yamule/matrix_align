@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::*;
 use rayon;
 use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_, GMatStatistics};
@@ -13,7 +14,7 @@ fn argparse(mut args:Vec<String>)->HashMap<String,String>{
     let mut ret:HashMap<String,String> = HashMap::new();
     let mut non_key_count:usize = 0;
     let mut ii:usize = 0;
-    while(ii < args.len()){
+    while ii < args.len(){
         if args[ii].starts_with("--"){
             assert!(!ret.contains_key(&args[ii]),"{} has already been assigned.",args[ii]);
             if ii == args.len()-1 || args[ii+1].starts_with("--"){
@@ -158,9 +159,10 @@ fn main(){
         //let ss_biased = gmat::ssbias(&mut tt.2,false);
         //tt.2 = ss_biased;
         
+        let alen = gg.1.len();
         // ギャップまだ入って無い
         let seq = ScoredSequence::new(
-            vec![(gg.0,gg.1)],gg.2[0].len(),None,Some(gg.2),None
+            vec![(gg.0,gg.1)],alen,gg.2[0].len(),None,Some(gg.2),None
         );
         allseqs_.push(seq);
     }
@@ -223,16 +225,18 @@ fn main(){
 
         if num_iter == ii+1{
             let mut maxpos:usize = 0;
-            for mm in alires.alignment_mapping_ids.iter(){
+            for mm in alires.alignment_mapping.iter(){
                 for mmm in mm.iter(){
-                    maxpos = maxpos.max(*mmm);
+                    if mmm.1 > -1{
+                        maxpos = maxpos.max(mmm.1 as usize);
+                    }
                 }
             }
             maxpos += 1;
 
             for seqidx in 0..alires.alignments.len(){
                 let mut aseq = alires.get_aligned_seq(seqidx);
-                assert!(aseq.len() <= maxpos);
+                assert!(aseq.len() <= maxpos,"{} {}",aseq.len(),maxpos);
                 while aseq.len() < maxpos{
                     aseq.push('-');
                 }

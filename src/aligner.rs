@@ -369,7 +369,7 @@ impl ScoredSeqAligner {
         assert!(!profile_only);//後で追加する
         let anumaliseq = a.get_num_seq();
         let bnumaliseq = b.get_num_seq();
-        let numallseq = anumaliseq+bnumaliseq;
+        let _numallseq = anumaliseq+bnumaliseq;
         let vec_size = a.get_vec_size();
         let alignment_length = alignment.len();
 
@@ -378,6 +378,9 @@ impl ScoredSeqAligner {
         new_alignments.append(&mut a.alignments);
         new_alignments.append(&mut b.alignments);
 
+        
+        let boffset = a.alignment_mapping.len(); //b に属していたアラインメントの開始インデクス
+
         let mut new_alignment_mapping:Vec<Vec<(i32,i32)>> = vec![];
         new_alignment_mapping.append(&mut a.alignment_mapping);
         new_alignment_mapping.append(&mut b.alignment_mapping);
@@ -385,7 +388,6 @@ impl ScoredSeqAligner {
         let mut new_alignment_mapping_ids:Vec<Vec<usize>> = vec![];
         new_alignment_mapping_ids.append(&mut a.alignment_mapping_ids);
 
-        let boffset = new_alignment_mapping_ids.len(); //b に属していた配列の開始インデクス
         for bb in b.alignment_mapping_ids.iter_mut(){
             for bbb in bb.iter_mut(){
                 *bbb += boffset;
@@ -407,16 +409,14 @@ impl ScoredSeqAligner {
             }
         }
 
-        let alid_a = new_alignments.len();//新しく追加されたアラインメント情報のインデクス
+        let alid_a: usize = new_alignment_mapping.len();//新しく追加されたアラインメント情報のインデクス
         new_alignment_mapping.push(seqmap_a);
         new_alignment_mapping.push(seqmap_b);
         for ii in 0..new_alignment_mapping_ids.len(){
-            for aa in new_alignment_mapping_ids.iter_mut(){
-                if ii < boffset{
-                    aa.push(alid_a);
-                }else{
-                    aa.push(alid_a+1);
-                }
+            if ii < anumaliseq{
+                new_alignment_mapping_ids[ii].push(alid_a);
+            }else{
+                new_alignment_mapping_ids[ii].push(alid_a+1);
             }
         }
 
@@ -439,7 +439,7 @@ impl ScoredSeqAligner {
         headers.append(&mut b.headers);
 
         let mut ret:ScoredSequence = ScoredSequence::new(headers.into_iter().zip(new_alignments.into_iter()).collect()
-        , vec_size,None,None,None);
+        , gapper[0].len(), vec_size,None,None,None);
 
         ret.alignment_mapping = new_alignment_mapping;
         ret.alignment_mapping_ids = new_alignment_mapping_ids;
@@ -541,8 +541,7 @@ impl ScoredSeqAligner {
     -> Vec<(Vec<ScoredSequence>,f32)>{
         let mut uff:UnionFind = UnionFind::new(sequences.len());
         let mut bags:Vec<Option<(ScoredSequence,f32)>> = sequences.into_iter().map(|m|Some((m,0.0))).collect();
-        let mut ret:Vec<(Vec<ScoredSequence>,f32)>=vec![];
-
+        
         edges.reverse();//pop なので Reverse
         while edges.len() > 0{
             let e_ = edges.pop().unwrap();
@@ -590,7 +589,7 @@ impl ScoredSeqAligner {
         while sequences.len() > 0{
             let bseq = sequences.pop().unwrap();
             let dpres;
-            let mut newgroup;
+            let newgroup;
             if firstrun{
                 dpres = self.perform_dp(&center_seq,&bseq,self.gap_open_penalty,self.gap_extension_penalty);
                 newgroup = ScoredSeqAligner::make_alignment(self,center_seq,bseq,dpres.0,profile_only,None);
@@ -627,7 +626,7 @@ pub struct ScoredSequence{
 }
 
 impl ScoredSequence{
-    pub fn new(alignments_:Vec<(String,Vec<char>)>,vec_size:usize,seq_weights_:Option<Vec<f32>>
+    pub fn new(alignments_:Vec<(String,Vec<char>)>,alignment_length:usize,vec_size:usize,seq_weights_:Option<Vec<f32>>
         ,gmat_:Option<Vec<Vec<f32>>>,gap_state_:Option<Vec<(f32,f32,f32,f32)>>)-> ScoredSequence{
         let seqnum = alignments_.len();
         let mut gmat:Vec<GMatColumn> = vec![];
@@ -645,7 +644,7 @@ impl ScoredSequence{
                 gmat.push(GMatColumn::new(vec_size,None,None));
             }
         }else{
-            for xx in 0..alignments_[0].1.len(){
+            for xx in 0..alignment_length{
                 gmat.push(GMatColumn::new(vec_size,None,None));
             }
             gmat.push(GMatColumn::new(vec_size,None,None));// ギャップ情報だけあるカラム
@@ -653,14 +652,16 @@ impl ScoredSequence{
 
         let mut alignments:Vec<Vec<char>> = vec![];
         let mut headers:Vec<String> = vec![];
+        let mut alimap_ids:Vec<Vec<usize>> = vec![];
         for aa in alignments_.into_iter(){
             alignments.push(aa.1);
             headers.push(aa.0);
+            alimap_ids.push(vec![]);
         }
         return ScoredSequence{
             alignments:alignments,
             alignment_mapping:vec![],
-            alignment_mapping_ids:vec![],
+            alignment_mapping_ids:alimap_ids,
             is_dummy:false,
             headers:headers,
             gmat:gmat,
@@ -670,12 +671,14 @@ impl ScoredSequence{
 
     pub fn gmat_str(&self)->Vec<String>{
         let mut ret:Vec<String> = vec![];
+        let achar = self.get_aligned_seq(0);
+        assert_eq!(achar.len(),self.gmat.len()-1);
         for ii in 0..self.gmat.len(){
             let gg = &self.gmat[ii];
             ret.push(format!("@\t{}\t{}\t{}\t{}",gg.match_ratio,gg.del_ratio,gg.connected_ratio,gg.gapped_ratio));
             let mut pret:Vec<String> = vec![];
             if ii < self.gmat.len()-1{
-                pret.push(format!("{}",self.alignments[0][ii]));
+                pret.push(format!("{}",achar[ii]));
                 for ff in self.gmat[ii].match_vec.iter(){
                     pret.push(format!("{}",ff));
                 }
@@ -702,7 +705,7 @@ impl ScoredSequence{
     }
 
     pub fn get_alignment_length(&self)->usize{// 使い回す方針を取るならこの辺変える
-        return self.alignments[0].len();
+        return self.gmat.len()-1;
     }
 
     pub fn get_num_seq(&self)-> usize{
@@ -737,25 +740,38 @@ impl ScoredSequence{
         mmax += 1;
 
         let mut current_pos:Vec<i32> = vec![-1;mmax as usize];
+        let mut updated_step_current:Vec<i32> = vec![-1;mmax as usize];
         let mut next_pos:Vec<i32> = vec![-1;mmax as usize];
-        let mut updated_step:Vec<i32> = vec![-1;mmax as usize];
+        let mut updated_step_next:Vec<i32> = vec![-1;mmax as usize];
         for ii in 0..self.alignments[idx].len(){
             current_pos[ii] = ii as i32;
         }
+        //println!("{:?}",self.alignment_mapping_ids[idx]);
         for (eii,mapp) in self.alignment_mapping_ids[idx].iter().enumerate(){
+            //println!("{} {:?}",mapp,self.alignment_mapping[*mapp]);    
             for jj in self.alignment_mapping[*mapp].iter(){
-                next_pos[jj.1 as usize] = current_pos[jj.0 as usize];
-                updated_step[jj.1 as usize] = eii as i32;
+                if updated_step_current[jj.0 as usize] == eii as i32 -1{
+                    next_pos[jj.1 as usize] = current_pos[jj.0 as usize];
+                    updated_step_next[jj.1 as usize] = eii as i32;
+                }else{
+                    next_pos[jj.1 as usize] = -1;
+                }
             }
             let t = current_pos;
             current_pos = next_pos;
             next_pos = t;
+
+            let t = updated_step_current;
+            updated_step_current = updated_step_next;
+            updated_step_next = t;
         }
         let mstep = self.alignment_mapping_ids[idx].len() -1;
         let mut ret:Vec<char> = vec!['-';mmax as usize];
-        for (eii,uu) in updated_step.into_iter().enumerate(){
+        for (eii,uu) in updated_step_current.into_iter().enumerate(){
             if uu == mstep as i32{
-                ret[eii] = self.alignments[idx][next_pos[eii] as usize];
+                if current_pos[eii] > -1{
+                    ret[eii] = self.alignments[idx][current_pos[eii] as usize];
+                }
             }
         }
         
