@@ -538,7 +538,7 @@ impl ScoredSeqAligner {
 
 
     pub fn make_msa_with_edge(&mut self,mut sequences: Vec<ScoredSequence>,profile_only:bool,mut edges:Vec<(usize,usize)>,merge_all:bool)
-    -> Vec<(Vec<ScoredSequence>,f32)>{
+    -> Vec<Vec<(ScoredSequence,f32)>>{
         let mut uff:UnionFind = UnionFind::new(sequences.len());
         let mut bags:Vec<Option<(ScoredSequence,f32)>> = sequences.into_iter().map(|m|Some((m,0.0))).collect();
         
@@ -555,9 +555,10 @@ impl ScoredSeqAligner {
             bags.push(None);
             let bseq:(ScoredSequence,f32) = bags.swap_remove(b).unwrap_or_else(||panic!("???"));
             let mut r = self.make_msa(vec![aseq.0,bseq.0], profile_only);
-            assert!(r.0.len() == 1);
+            assert!(r.len() == 1);
             uff.union(a,b);
-            bags[a] = Some((r.0.pop().unwrap(),r.1));
+            let rres = r.pop().unwrap();
+            bags[a] = Some((rres.0,rres.1));
         }
 
         if merge_all{
@@ -573,15 +574,15 @@ impl ScoredSeqAligner {
                 let res = self.make_msa(allseq, profile_only);
                 return vec![res];
             }else{
-                return vec![(allseq,scores[0])];
+                return vec![vec![(allseq.pop().unwrap(),scores[0])]];
             }
         }
         return bags.into_iter().filter(
                 |m| if let Some(x) =  m{true}else{false}
-                ).map(|m|  if let Some(x) = m{(vec![x.0],x.1)}else{panic!("???");}).collect();
+                ).map(|m|  if let Some(x) = m{vec![(x.0,x.1)]}else{panic!("???");}).collect();
     }
     pub fn make_msa(&mut self,mut sequences: Vec<ScoredSequence>,profile_only:bool)
-    -> (Vec<ScoredSequence>,f32){
+    -> Vec<(ScoredSequence,f32)>{
         let mut final_score:f32 = 0.0;
         sequences.reverse();
         let mut center_seq = sequences.pop().unwrap();
@@ -603,7 +604,7 @@ impl ScoredSeqAligner {
             center_seq = newgroup;
         }
         // 今のところ全部マージする
-        return (vec![center_seq],final_score);
+        return vec![(center_seq,final_score)];
     }
 
     //配列のウェイトを計算する

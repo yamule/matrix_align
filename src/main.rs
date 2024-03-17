@@ -233,15 +233,16 @@ fn main(){
         
         let mut ans = if softtree{
 
-            guide_tree::tree_guided_alignment(seqvec, &mut saligner,maximum_cluster_size,&mut rngg)
+            guide_tree::tree_guided_alignment(seqvec, &mut saligner,maximum_cluster_size,&mut rngg,false)
         }else{
             saligner.make_msa(seqvec,false)
         };
 
-        assert!(ans.0.len() == 1);
-        eprintln!("score:{}",ans.1);
-        let alires = ans.0.pop().unwrap();
-
+        assert!(ans.len() == 1);
+        eprintln!("score:{}",ans[0].1);
+        
+        let (alires,_alisc) = ans.pop().unwrap();
+        
         //let pstr = alires.gmat_str();
         //for pp in pstr{ //profile 表示
         //    println!("{}",pp);

@@ -6,3 +6,4 @@ pub mod aligner;
 pub mod misc;
 pub mod neighbor_joining;
 pub mod guide_tree;
+pub mod bisecting_kmeans;

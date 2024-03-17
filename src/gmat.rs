@@ -27,6 +27,24 @@ pub unsafe fn calc_mean(allval:&Vec<&Vec<f32>>)->Vec<f32>{
     return ssum;
 }
 
+pub unsafe fn calc_weighted_mean(allval:&Vec<&Vec<f32>>,allweight:&Vec<f32>)->Vec<f32>{
+    assert_eq!(allval.len(),allweight.len());
+    let mut ssum:Vec<f32> = vec![];
+    if ssum.len() == 0{
+        ssum = vec![0.0;allval[0].len()];
+    }
+    let mut wsum = 0.0_f32;
+    for pp in allval.iter().zip(allweight.iter()){
+        let mut vp = (*pp.0).clone();
+        wsum += *pp.1;
+        matrix_process::element_multiply(&mut vp, *pp.1);
+        matrix_process::vector_add(&mut ssum, & vp);
+    }
+    assert!(wsum > 0.0);
+    matrix_process::element_multiply(&mut ssum,1.0/wsum);
+    return ssum;
+}
+
 pub unsafe fn calc_vec_stats_(allval:Vec<Vec<f32>>)->Vec<GMatStatistics>{
     let mut ssum:Vec<f32> = vec![];
     let mut smax:Vec<f32> = vec![];

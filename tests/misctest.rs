@@ -52,15 +52,16 @@ mod tests{
                     name_order.push(n);
                 }
                 gmat::normalize_seqmatrix(&mut (tt.2), &gmatstats);
+                let tlen = tt.1.len();
                 let seq2 = ScoredSequence::new(
-                    vec![(tt.0,tt.1)],tt.2[0].len(),None,Some(tt.2),None
+                    vec![(tt.0,tt.1)],tlen,tt.2[0].len(),None,Some(tt.2),None
                 );    
                 seqvec.push(seq2);
             }
 
             let mut ans = saligner.make_msa(seqvec,false);
-            assert!(ans.0.len() == 1);
-            let alires = ans.0.pop().unwrap();
+            assert!(ans.len() == 1);
+            let (alires,_alisc) = ans.pop().unwrap();
             if num_iter == ii+1{
                 for (ali,hh) in alires.alignments.into_iter().zip(alires.headers.into_iter()){
                     if name_to_res.contains_key(&hh){

@@ -5,7 +5,7 @@ use std::sync::{Mutex,Arc};
 use std::thread;
 use super::matrix_process::calc_euclid_dist;
 use super::neighbor_joining::generate_unrooted_tree;
-use super::gmat::calc_mean;
+use super::gmat::calc_weighted_mean;
 use super::aligner::ScoredSeqAligner;
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -82,7 +82,7 @@ pub fn merge_with_weight(aligner:&mut ScoredSeqAligner,aseq:ScoredSequence,bseq:
     return (res,dpres.1);
 }
 
-pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner, max_cluster_size:i64, rngg:&mut StdRng)-> ((Vec<ScoredSequence>,f32),Option()){
+pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner, max_cluster_size:i64, rngg:&mut StdRng,leave_one:bool)-> Vec<(ScoredSequence,f32)>{
     assert!(sequences.len() > 1);
     if sequences.len() == 2{
         return aligner.make_msa(sequences,false);
@@ -90,15 +90,17 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     let mut averaged_value:Vec<Vec<f32>> = vec![];
     for ss in sequences.iter(){
         unsafe{
-            // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! gmat は最後のカラムの値が 0 なので間違い
-            // すぐ直す
-            let vv:Vec<&Vec<f32>> = ss.gmat.iter().map(|m|&m.match_vec).collect();
-            averaged_value.push(calc_mean(&vv));
+            let mut vv:Vec<&Vec<f32>> = ss.gmat.iter().map(|m|&m.match_vec).collect();
+            let mut ww:Vec<f32> = ss.gmat.iter().map(|m|m.match_ratio).collect();
+            assert!(ww[ww.len()-1] == 0.0);
+            vv.pop();
+            ww.pop();
+            averaged_value.push(calc_weighted_mean(&vv,&ww));
         }
         //ToDo 外に出す
-        
+
     }
-    
+    /*
     if max_cluster_size > 0{
         if sequences.len() as i64 > max_cluster_size{
             let clusterids = soft_cluster(&averaged_value.iter().map(|m|m).collect(), rngg);
@@ -106,7 +108,10 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
 
         }
         return 
-    }
+    }*/
+
+
+    //ToDo: 最も長いエッジをとって、その両端から親子関係を作っていくべき
     let treenodes = create_distence_tree(&averaged_value.iter().map(|m|m).collect());
     let mut flagcounter:Vec<i64> = vec![0;treenodes.len()]; //0 は子ノードが全て計算されたもの
     let mut parents:Vec<i64> = vec![-1;treenodes.len()];
@@ -223,11 +228,11 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     let bp = profiles.swap_remove(bb).unwrap();
     let res = merge_with_weight(aligner,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
     if remained.len() == 2{
-        return (vec![res.0],res.1);
+        return vec![(res.0,res.1)];
     }
     assert_eq!(remained.len(),3);
     profiles.push(None);
     let cp = profiles.swap_remove(remained[2].1).unwrap();
     let res = merge_with_weight(aligner,res.0,cp,0.5,0.5);
-    return (vec![res.0],res.1);
+    return vec![(res.0,res.1)];
 }
