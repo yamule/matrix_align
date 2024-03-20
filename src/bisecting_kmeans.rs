@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use rand::rngs::StdRng;
-use rand::Rng;
+use rand::{Rng, SeedableRng};
 use super::matrix_process::*;
 
 static  CLUSTER_LEFT:i8 = 0;
@@ -145,4 +145,42 @@ pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdR
     }
 
     return Ok((lloss,rloss));
+}
+
+#[test]
+fn kmeantest(){
+    let clustercenter:Vec<Vec<f32>> = vec![
+        vec![0.0,0.0,0.0],
+        vec![100.0,0.0,100.0],
+        vec![-100.0,-100.0,0.0],
+        vec![50.0,0.0,-100.0],
+    ];
+    
+    let mut rng = StdRng::from_entropy();
+    let mut points:Vec<Vec<f32>> = vec![];
+    let mut ans:Vec<usize> = vec![];
+    for ii in 0..clustercenter.len(){
+        for _jj in 0..100{
+            let a:f32 = rng.gen_range(0.0..1.0)*20.0-10.0+clustercenter[ii][0];
+            let b:f32 = rng.gen_range(0.0..1.0)*20.0-10.0+clustercenter[ii][1];
+            let c:f32 = rng.gen_range(0.0..1.0)*20.0-10.0+clustercenter[ii][2];
+            points.push(vec![a,b,c]);
+            ans.push(ii);
+        }
+    }
+    let mut val:Vec<&Vec<f32>> = points.iter().collect(); 
+    let res_ = bisecting_kmeans(&val,110,&mut rng);
+    let mut res = res_.unwrap();
+    let mut processed:HashSet<usize> = HashSet::new();
+    for rr in res.0.iter_mut(){
+        let cid = ans[rr[0]];
+        for rrr in rr.iter(){
+            assert_eq!(ans[*rrr],cid,"{} in {} vs {} in {}",rr[0],cid,*rrr,ans[*rrr]);
+            processed.insert(*rrr);
+            //eprintln!("{:?}",val[*rrr]);
+        }
+        rr.sort();
+        eprintln!("{:?}",rr);
+    }
+    assert_eq!(processed.len(),points.len());
 }
