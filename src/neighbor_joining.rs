@@ -264,6 +264,7 @@ pub fn change_center_branch(centerbranch:usize,branches:&Vec<(i64,i64,f32)>,node
     }
 
     if parent_branch[centerbranch] == -1{
+        println!("Already center.");
         let mp:Option<HashMap<usize,String>> = if let Some(x) = node_name_map{
             Some(x.clone())
         }else{

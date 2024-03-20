@@ -124,8 +124,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     
 
     let mut node_to_seq:HashMap<usize,usize> = HashMap::new();
-    let mut flagcounter:Vec<i64> = vec![0;treenodes.len()]; //0 は子ノードが全て計算されたもの
-    let mut parents:Vec<i64> = vec![-1;treenodes.len()];
+    let parents:Vec<i64> = neighbor_joining::get_parent_branch(&treenodes);
     let mut maxnode = 0;// 最も長い枝は最後まで残す
     let mut is_leaf = false;
     for ii in 0..treenodes.len(){
@@ -135,21 +134,13 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         if treenodes[ii].0 > -1{
             if treenodes[ii].0 as usize == ii{
                 node_to_seq.insert(ii,treenodes[ii].0 as usize);//Node (branch)には配列順に入っている
+                is_leaf = true;
                 assert!(treenodes[ii].1 == -1);
                 continue;
             }
-            assert!(parents[treenodes[ii].0 as usize] == -1);
-            parents[treenodes[ii].0 as usize] = ii as i64;
-            flagcounter[ii] -= 1;
-        }
-        if treenodes[ii].1 > -1{
-            assert!(parents[treenodes[ii].1 as usize] == -1);
-            parents[treenodes[ii].1 as usize] = ii as i64;
-            flagcounter[ii] -= 1;
         }
     }
 
-    let mut is_leaf = false;
     let mut noparent = false;
     if parents[maxnode] == -1{
         noparent = true;
@@ -158,13 +149,15 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         is_leaf = true;
     }
 
-    if !noparent {
-        //元から最終ノードである場合はなにもしない
-        
+    if noparent {
+        //元から最終ノードである場合はなにもしない      
+        //println!("nochange");
     }else{
         let (outree,oldmap, _) = if is_leaf{
+            //println!("leaf");
             neighbor_joining::set_outgroup(maxnode, &treenodes,None)
         }else{
+            //println!("internal");
             neighbor_joining::change_center_branch(maxnode, &treenodes,None)
         };
 
@@ -176,10 +169,25 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
             }
         }
         assert_eq!(node_to_seq.len(), newseqmap.len());
+        println!("{:?} {:?} {:?}",oldmap,node_to_seq,newseqmap);
         node_to_seq = newseqmap;
     }
 
-
+    let mut flagcounter:Vec<i64> = vec![0;treenodes.len()]; //0 は子ノードが全て計算されたもの
+    let parents:Vec<i64> = neighbor_joining::get_parent_branch(&treenodes);
+    for ii in 0..treenodes.len(){
+        if treenodes[ii].0 > -1{
+            if treenodes[ii].0 == ii as i64{
+                assert!(treenodes[ii].1 == -1);
+                continue;
+            }else{
+                flagcounter[ii] -= 1;
+            }
+        }
+        if treenodes[ii].1 > -1{
+            flagcounter[ii] -= 1;
+        }
+    }
     
     let mut profiles:Vec<Option<ScoredSequence>> = vec![None;treenodes.len()];
     let _numseq:usize = sequences.len();
