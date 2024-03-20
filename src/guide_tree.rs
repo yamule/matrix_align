@@ -1,8 +1,9 @@
 use crate::aligner::ScoredSequence;
+use crate::neighbor_joining;
 use core::num;
 use std::collections::HashMap;
 use std::sync::{Mutex,Arc};
-use std::thread;
+use std::thread::{self, panicking};
 use super::matrix_process::calc_euclid_dist;
 use super::neighbor_joining::generate_unrooted_tree;
 use super::gmat::calc_weighted_mean;
@@ -92,7 +93,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         unsafe{
             let mut vv:Vec<&Vec<f32>> = ss.gmat.iter().map(|m|&m.match_vec).collect();
             let mut ww:Vec<f32> = ss.gmat.iter().map(|m|m.match_ratio).collect();
-            assert!(ww[ww.len()-1] == 0.0);
+            assert_eq!(vv[vv.len()-1].iter().sum::<f32>(), 0.0,"???{:?}",ss.gmat[ss.gmat.len()-1]);
             vv.pop();
             ww.pop();
             averaged_value.push(calc_weighted_mean(&vv,&ww));
@@ -111,13 +112,29 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     }*/
 
 
-    //ToDo: 最も長いエッジをとって、その両端から親子関係を作っていくべき
-    let treenodes = create_distence_tree(&averaged_value.iter().map(|m|m).collect());
+    /*
+    ToDo: 最も長いエッジをとって、その両端から親子関係を作っていくべき
+    そうすると最後に二つノードが残ることになると思う
+    ・ルートからの三本のうちの一つである場合なのもしないで良い
+    ・リーフノードである場合 Outgroup にする
+    ・それ以外の場合親を探して親から逆方向に Leaf へパスを作っていく、自分からも Leaf へパスを作っていく
+    */
+    let mut treenodes = create_distence_tree(&averaged_value.iter().map(|m|m).collect());
+    eprintln!("{:?}",treenodes);
+    
+
+    let mut node_to_seq:HashMap<usize,usize> = HashMap::new();
     let mut flagcounter:Vec<i64> = vec![0;treenodes.len()]; //0 は子ノードが全て計算されたもの
     let mut parents:Vec<i64> = vec![-1;treenodes.len()];
+    let mut maxnode = 0;// 最も長い枝は最後まで残す
+    let mut is_leaf = false;
     for ii in 0..treenodes.len(){
+        if treenodes[ii].2 < treenodes[maxnode].2{
+            maxnode = ii;
+        }
         if treenodes[ii].0 > -1{
             if treenodes[ii].0 as usize == ii{
+                node_to_seq.insert(ii,treenodes[ii].0 as usize);
                 assert!(treenodes[ii].1 == -1);
                 continue;
             }
@@ -131,6 +148,35 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
             flagcounter[ii] -= 1;
         }
     }
+
+    let mut is_leaf = false;
+    let mut noparent = false;
+    if parents[maxnode] == -1{
+        noparent = true;
+    }
+    if treenodes[maxnode].0 == -1 || treenodes[maxnode].1 == -1{
+        is_leaf = true;
+    }
+    if is_leaf{
+        let (outree,oldmap, _) = neighbor_joining::set_outgroup(maxnode, &treenodes,None);
+        treenodes = outree;
+        let mut newseqmap:HashMap<usize,usize> = HashMap::new();
+        for ii in 0..oldmap.len(){
+            if node_to_seq.contains_key(&ii){
+                newseqmap.insert(oldmap[ii] as usize,*node_to_seq.get(&ii).unwrap());
+            }
+        }
+
+    }else if !noparent {
+        //元から最終ノードである場合はなにもしない
+        
+    }else{
+
+        
+    }
+
+
+    
     let mut profiles:Vec<Option<ScoredSequence>> = vec![None;treenodes.len()];
     let _numseq:usize = sequences.len();
 
@@ -164,8 +210,10 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
 
         let mut updated_minibatch:Vec<(usize,ScoredSequence,ScoredSequence,f32,f32,ScoredSeqAligner)> = vec![];
         while updated_pool.len() > 0{
-            
             let idx_target = updated_pool.pop().unwrap();
+            if idx_target == maxnode{//最も長い枝は処理しない
+                continue;
+            }
             let idx_child_a = treenodes[idx_target].0 as usize;
             let idx_child_b = treenodes[idx_target].1 as usize;
             //println!("{}>>>> {} {}",uu,aa,bb);
