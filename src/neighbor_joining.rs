@@ -15,6 +15,8 @@ pub fn calc_pos(aa:usize,bb:usize) -> usize{
     return (a*a/2.0+a/2.0+b +0.000001) as usize;
 }
 
+
+ここから nj tree の計算が遅い
 //子ノード 1 のインデクス、新しいノードから 1 への枝の長さ、子ノード 2 のインデクス以下同じ
 pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>)->((usize,f32),(usize,f32)){
     let vlen = is_dead.len();

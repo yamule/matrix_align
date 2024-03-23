@@ -54,7 +54,10 @@ fn check_acceptable(a:&str,acceptable:Vec<&str>)-> bool{ // 10 もないだろ�
 }
 
 fn main(){
-    let argss: HashMap<String,String> = argparse(std::env::args().collect::<Vec<String>>());
+    main_(std::env::args().collect::<Vec<String>>());
+}
+fn main_(args:Vec<String>){
+    let argss: HashMap<String,String> = argparse(args);
     let required_arg:Vec<&str> = vec!["--in","--out"];
     let allowed_arg_:Vec<(&str,&str)> = vec![
         ("--in","<input file path> : Text based file which contains general profile matrices for multiple sequences. Something like as follows. \n>seq1\n[amino acid letter at position 1]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 2]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 3]\t[value1]\t[value2]\t[value3]...\n...\n>seq2\n[amino acid letter at position 1]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 2]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 3]\t[value1]\t[value2]\t[value3]...\n...\n..."),
@@ -65,7 +68,8 @@ fn main(){
         ("--normalize","<bool or novalue=true> : Normalize profile values before alignment. Default 'false'."),
         ("--alignment_type","<global or local> : Alignment type. Default 'global'"),
         ("--num_threads","<int> : Number of threads. Default 4."),
-        ("--maximum_cluster_size","<int> : Limit all-vs-all comparison with this many number of profiles and align hierarchically. Must be > 10. Default -1."),
+        ("--tree_guided","<bool or novalue=true> : Use guide-tree based alignment."),
+        ("--max_cluster_size","<int> : Limit all-vs-all comparison with this many number of profiles and align hierarchically. Must be > 10. Default -1."),
         ("--random_seed","<int> : Seed for random number generator."),
         ("--help","<bool or novalue=true> : Print this message."),
     ];
@@ -91,7 +95,21 @@ fn main(){
         argcheck.sort();
         error_message.push(format!("Unknown arg: {:?}",argcheck));
     }
-    if argss.contains_key("--help"){
+
+    
+    let infile = argss.get("--in").unwrap().clone();
+    let outfile = argss.get("--out").unwrap().clone();
+    let num_iter:usize = argss.get("--num_iter").unwrap_or(&"2".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_iter {:?}",e));
+    let gap_open_penalty:f32 = argss.get("--gap_open_penalty").unwrap_or(&"-10.0".to_owned()).parse::<f32>().unwrap_or_else(|e|panic!("in --gap_open_penalty {:?}",e));
+    let gap_extension_penalty:f32 = argss.get("--gap_extension_penalty").unwrap_or(&"-0.5".to_owned()).parse::<f32>().unwrap_or_else(|e|panic!("in --gap_extension_penalty {:?}",e));
+    let num_threads:usize = argss.get("--num_threads").unwrap_or(&"4".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_threads {:?}",e));
+    let normalize:bool = check_bool(argss.get("--normalize").unwrap_or(&"false".to_owned()).as_str(),"--normalize");
+    let print_help:bool = check_bool(argss.get("--help").unwrap_or(&"false".to_owned()).as_str(),"--help");
+    let tree_guided:bool = check_bool(argss.get("--tree_guided").unwrap_or(&"true".to_owned()).as_str(),"--tree_guided");
+    let max_cluster_size:i64 = argss.get("--max_cluster_size").unwrap_or(&"-1".to_owned()).parse::<i64>().unwrap_or_else(|e|panic!("in --maximum_cluster_size {:?}",e));
+    
+
+    if print_help{
         for aa in allowed_arg_.iter(){
             eprintln!("{} {}",aa.0,aa.1);
         }
@@ -106,17 +124,9 @@ fn main(){
         StdRng::from_entropy()
     };// -1 の場合シードを使わない
 
-    let maximum_cluster_size:i64  = if let Some(x) = argss.get("--maximum_cluster_size"){
-        let i = x.parse::<i64>().unwrap_or(-1);
-        if i == -1{
-            i
-        }else{
-            assert!(i <=  10,"--maximum_cluster_size must be > 10. {}",x);
-            i
-        }
-    }else{
-        -1
-    };// -1 の場合 hierarcical align を行わない
+    if max_cluster_size > -1 {
+        assert!(max_cluster_size >  10,"--max_cluster_size must be > 10 or -1. {}",max_cluster_size);
+    }// -1 の場合 hierarcical align を行わない
 
 
     let mut alignment_type = AlignmentType::Global;
@@ -144,14 +154,6 @@ fn main(){
         panic!();
     }
 
-    let infile = argss.get("--in").unwrap().clone();
-    let outfile = argss.get("--out").unwrap().clone();
-    let num_iter:usize = argss.get("--num_iter").unwrap_or(&"2".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_iter {:?}",e));
-    let gap_open_penalty:f32 = argss.get("--gap_open_penalty").unwrap_or(&"-10.0".to_owned()).parse::<f32>().unwrap_or_else(|e|panic!("in --gap_open_penalty {:?}",e));
-    let gap_extension_penalty:f32 = argss.get("--gap_extension_penalty").unwrap_or(&"-0.5".to_owned()).parse::<f32>().unwrap_or_else(|e|panic!("in --gap_extension_penalty {:?}",e));
-    let num_threads:usize = argss.get("--num_threads").unwrap_or(&"4".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_threads {:?}",e));
-    let normalize:bool = check_bool(argss.get("--normalize").unwrap_or(&"false".to_owned()).as_str(),"--normalize");
-    
 
     let mut name_to_res:HashMap<String,String> = HashMap::new();
     
@@ -229,11 +231,13 @@ fn main(){
         assert!(num_threads > 0);
         rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global().unwrap();
 
-        let softtree = true;
         
-        let mut ans = if softtree{
-
-            guide_tree::tree_guided_alignment(seqvec, &mut saligner,maximum_cluster_size,&mut rngg,false)
+        let mut ans = if tree_guided{
+            if max_cluster_size == -1{
+                guide_tree::tree_guided_alignment(seqvec, &mut saligner,false,num_threads)
+            }else{
+                guide_tree::hieralchical_alignment(seqvec, &mut saligner,max_cluster_size, &mut rngg,num_threads)
+            }
         }else{
             saligner.make_msa(seqvec,false)
         };

@@ -331,7 +331,7 @@ impl ScoredSeqAligner {
         }
 
 
-        eprintln!("{:?} vs {:?}:{}",a.headers,b.headers,maxscore);
+        //println!("{:?} vs {:?}:{}",a.headers,b.headers,maxscore);
         
         if let AlignmentType::Local = self.alignment_type{
             while currentx > 0{

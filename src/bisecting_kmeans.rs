@@ -12,7 +12,7 @@ static  CLUSTER_NONE:i8 = -1;
 pub fn bisecting_kmeans(val:&Vec<&Vec<f32>>,max_member_num:usize,rng:&mut StdRng, num_threads_:usize) -> Result<(Vec<Vec<usize>>,f32),()>{
     let mut sample_bag:Vec<(Vec<usize>,f32)> = vec![((0..val.len()).into_iter().collect(),1000.0)];
     let mut cluster_mapping_buff:Vec<(Vec<i8>,u64)> = vec![];
-    let mut cluster_mapping_best:(Vec<i8>,(f32,f32)) = (vec![0;val.len()],(-1.0,-1.0));
+    let mut cluster_mapping_best:(Vec<i8>,(f32,f32)) = (vec![-1;val.len()],(-1.0,-1.0));
     assert!(num_threads_ > 0);
     
     let mut num_threads = 1;
@@ -36,6 +36,7 @@ pub fn bisecting_kmeans(val:&Vec<&Vec<f32>>,max_member_num:usize,rng:&mut StdRng
             final_clusters.push((idd,currentloss));
             continue;
         }
+        cluster_mapping_best.1 = (-1.0,-1.0);
         for _ in 0..num_trial{
             //rayon による並列処理
             let results:Vec<Result<(f32,f32,Vec<i8>),Vec<i8>>> = cluster_mapping_buff.into_par_iter().map(|v|{
@@ -67,6 +68,18 @@ pub fn bisecting_kmeans(val:&Vec<&Vec<f32>>,max_member_num:usize,rng:&mut StdRng
                 cluster_mapping_buff.push((cluster_mapping_best.0,rng.gen::<u64>()));
                 let b = cluster_mapping_buff.swap_remove(minidx as usize);
                 cluster_mapping_best = (b.0,minloss_lr);
+                let mut lcount = 0;
+                let mut rcount = 0;
+                
+                for ii in idd.iter(){
+                    if cluster_mapping_best.0[*ii] == CLUSTER_LEFT{
+                        lcount += 1;
+                    }
+                    if cluster_mapping_best.0[*ii] == CLUSTER_RIGHT{
+                        rcount += 1;
+                    }
+                }
+                //println!("split_tmp:{} {}",lcount,rcount);
             }
         }
         if (cluster_mapping_best.1).0 >= 0.0{
@@ -81,6 +94,7 @@ pub fn bisecting_kmeans(val:&Vec<&Vec<f32>>,max_member_num:usize,rng:&mut StdRng
                     panic!("Error in code.");
                 }
             }
+            //println!("split: {} {} {:?}",sample_left.len(),sample_right.len(),cluster_mapping_best.1);
             sample_bag.push((sample_left,(cluster_mapping_best.1).0));
             sample_bag.push((sample_right,(cluster_mapping_best.1).1));
         }else{
