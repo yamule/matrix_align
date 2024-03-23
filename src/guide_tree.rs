@@ -1,17 +1,17 @@
+
 use crate::aligner::ScoredSequence;
 use crate::neighbor_joining;
 use core::num;
 use std::collections::HashMap;
-use std::sync::{Mutex,Arc};
-use std::thread::{self, panicking};
 use super::matrix_process::calc_euclid_dist;
 use super::neighbor_joining::generate_unrooted_tree;
 use super::gmat::calc_weighted_mean;
 use super::aligner::ScoredSeqAligner;
-use rand::rngs::StdRng;
-use rand::Rng;
-use rayon::prelude::*;
 use rayon;
+use rayon::prelude::*;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use super::bisecting_kmeans;
 
 pub fn create_distence_tree(val:&Vec<&Vec<f32>>)-> Vec<(i64,i64,f32)>{
     let vsiz:usize = val.len();
@@ -77,13 +77,122 @@ pub fn soft_cluster(val:&Vec<&Vec<f32>>, rngg:&mut StdRng)->Vec<Vec<usize>>{
     return ret;
 }
 
-pub fn merge_with_weight(aligner:&mut ScoredSeqAligner,aseq:ScoredSequence,bseq:ScoredSequence,aweight:f32,bweight:f32)->(ScoredSequence,f32){
+pub fn align_and_merge_with_weight(aligner:&mut ScoredSeqAligner,aseq:ScoredSequence,bseq:ScoredSequence,aweight:f32,bweight:f32)->(ScoredSequence,f32){
     let dpres = aligner.perform_dp(&aseq,&bseq,aligner.gap_open_penalty,aligner.gap_extension_penalty);
     let res = ScoredSeqAligner::make_alignment(aligner,aseq,bseq,dpres.0,false,Some((aweight,bweight)));
     return (res,dpres.1);
 }
 
-pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner, max_cluster_size:i64, rngg:&mut StdRng,leave_one:bool)-> Vec<(ScoredSequence,f32)>{
+pub fn calc_distance_from(anchors:&Vec<usize>,val:&Vec<Vec<f32>>) -> Vec<Vec<f32>>{
+    let mut ret:Vec<Vec<f32>> = vec![];
+    let mut anchorpoint:Vec<&Vec<f32>> = vec![];
+    for ii in 0..anchors.len(){
+        anchorpoint.push(&val[ii]);
+    }
+    for vv in 0..val.len(){
+        let mut xv:Vec<f32> = vec![];
+        for ii in 0..anchorpoint.len(){
+            let d = calc_euclid_dist(&val[vv],anchorpoint[ii]);
+            xv.push(d);
+        }
+        ret.push(xv);
+    }
+    return ret;
+}
+
+pub fn hieralchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner, max_cluster_member_size:i64, rngg:&mut StdRng)-> Vec<(ScoredSequence,f32)>{
+    assert!(sequences.len() > 1);
+
+    if sequences.len() as i64 <= max_cluster_member_size {
+        return tree_guided_alignment(sequences, aligner, false);
+    }
+    
+    let mut averaged_value:Vec<Vec<f32>> = vec![];
+    for ss in sequences.iter(){
+        unsafe{
+            let mut vv:Vec<&Vec<f32>> = ss.gmat.iter().map(|m|&m.match_vec).collect();
+            let mut ww:Vec<f32> = ss.gmat.iter().map(|m|m.match_ratio).collect();
+            assert_eq!(vv[vv.len()-1].iter().sum::<f32>(), 0.0,"???{:?}",ss.gmat[ss.gmat.len()-1]);
+            vv.pop();
+            ww.pop();
+            averaged_value.push(calc_weighted_mean(&vv,&ww));
+        }
+    }
+
+    let num_threads_ = 40;
+    let num_threads = num_threads_/20+1;
+    let num_mini_threads = num_threads_.min(20);
+
+    let num_anchors = 5;
+    let num_trial = 10;// 何回 anchor の選び直しをするか。
+    let mut trial_buff:Vec<Vec<usize>>= vec![];
+    let mut minloss = -1.0;
+    let mut mincluster:Vec<Vec<usize>> = vec![];
+    for _ in 0..num_trial{
+        let mut mbuff:Vec<usize> = vec![];
+        for _ in 0..num_anchors{
+            mbuff.push(rngg.gen_range(0..averaged_value.len()));
+        } 
+        trial_buff.push(
+            mbuff
+        );
+    }
+
+    while trial_buff.len() > 0{
+        let mut trial_minibatch:Vec<(Vec<Vec<f32>>,u64)> = vec![];
+        for _ in 0..num_threads{
+            let p = trial_buff.pop().unwrap();
+            trial_minibatch.push((
+                calc_distance_from(&p,&averaged_value),
+                rngg.gen::<u64>())
+            );
+            if trial_buff.len() == 0{
+                break;
+            }
+        }
+        let res:Vec<Result<(Vec<Vec<usize>>,f32),()>> = trial_minibatch.into_par_iter().map(|m|
+        bisecting_kmeans::bisecting_kmeans(&m.0.iter().collect(),100,&mut StdRng::seed_from_u64(m.1),num_mini_threads)
+        ).collect();
+        for rr in res.into_iter(){
+            if let Ok(x) = rr{
+                let vres = x.0;
+                let lloss = x.1;
+                if minloss < 0.0 || minloss > lloss{
+                    mincluster = vres;
+                    minloss = lloss;
+                }
+            }
+        }
+    }
+    let mut sequences_hm:HashMap<usize,ScoredSequence> = sequences.into_iter().enumerate().collect();
+    let mut clustered:Vec<Vec<ScoredSequence>> = vec![];
+    for cluster in mincluster.into_iter(){
+        let mut cc:Vec<ScoredSequence> = vec![];
+        for clustermem in cluster.into_iter(){
+            if !sequences_hm.contains_key(&clustermem){
+                panic!("Error in code ???");
+            }
+            cc.push(sequences_hm.remove(&clustermem).unwrap());
+        }
+        clustered.push(cc);
+    }
+    assert!(sequences_hm.len() == 0);
+    let mut subres:Vec<ScoredSequence> = vec![];
+    for cc in clustered.into_iter(){
+        let alires = tree_guided_alignment(cc, aligner, true);
+        for aa in alires.into_iter(){
+            subres.push(aa.0);
+        }
+    }
+
+    if subres.len() as i64 > max_cluster_member_size{
+        return hieralchical_alignment(subres, aligner, max_cluster_member_size, rngg);
+    }
+    return tree_guided_alignment(subres, aligner, false);
+
+}
+
+pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner,skip_last_merge:bool)-> Vec<(ScoredSequence,f32)>{
     assert!(sequences.len() > 1);
     if sequences.len() == 2{
         return aligner.make_msa(sequences,false);
@@ -98,8 +207,6 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
             ww.pop();
             averaged_value.push(calc_weighted_mean(&vv,&ww));
         }
-        //ToDo 外に出す
-
     }
     /*
     if max_cluster_size > 0{
@@ -241,6 +348,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
                 break;
             }
         }
+        //rayon による並列処理
         let results:Vec<(ScoredSeqAligner,usize,ScoredSequence,f32)> = updated_minibatch.into_par_iter().map(|v|{
             let uu = v.0;
             let ap = v.1;
@@ -249,7 +357,8 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
             let bdist = v.4;
             let mut ali = v.5;
 
-            let res = merge_with_weight(&mut ali,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
+            //スコア情報は全部捨ててしまっているが持っておいた方が良いだろうか
+            let res = align_and_merge_with_weight(&mut ali,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
             (ali,uu,res.0,res.1)            
         }).collect();
         
@@ -267,6 +376,8 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         }
 
     }
+    
+    
     let mut remained:Vec<(f32,usize)> = vec![];
     for ii in 0..profiles.len(){
         if let Some(x) = & profiles[ii]{
@@ -285,13 +396,19 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     let ap = profiles.swap_remove(aa).unwrap();
     profiles.push(None);
     let bp = profiles.swap_remove(bb).unwrap();
-    let res = merge_with_weight(aligner,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
+    let res = align_and_merge_with_weight(aligner,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
     if remained.len() == 2{
         return vec![(res.0,res.1)];
     }
+    
     assert_eq!(remained.len(),3);
     profiles.push(None);
     let cp = profiles.swap_remove(remained[2].1).unwrap();
-    let res = merge_with_weight(aligner,res.0,cp,0.5,0.5);
+    
+    if skip_last_merge{
+        return vec![(res.0,-1.0),(cp,-1.0)];
+    }
+
+    let res = align_and_merge_with_weight(aligner,res.0,cp,0.5,0.5);
     return vec![(res.0,res.1)];
 }

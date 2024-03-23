@@ -1,17 +1,34 @@
-use std::collections::HashSet;
-
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use rayon;
+use rayon::prelude::*;
 use super::matrix_process::*;
 
 static  CLUSTER_LEFT:i8 = 0;
 static  CLUSTER_RIGHT:i8 = 1;
 static  CLUSTER_NONE:i8 = -1;
 
-
-pub fn bisecting_kmeans(val:&Vec<&Vec<f32>>,max_member_num:usize,rng:&mut StdRng) -> Result<(Vec<Vec<usize>>,f32),()>{
+//座標にあたるベクトル、クラスタ内の最大メンバ数、乱数生成器を与えて、クラスタに含まれる ID の Vec とスコアを返す
+pub fn bisecting_kmeans(val:&Vec<&Vec<f32>>,max_member_num:usize,rng:&mut StdRng, num_threads_:usize) -> Result<(Vec<Vec<usize>>,f32),()>{
     let mut sample_bag:Vec<(Vec<usize>,f32)> = vec![((0..val.len()).into_iter().collect(),1000.0)];
-    let mut cluster_mapping_buff:Vec<i8> = vec![0;val.len()];
+    let mut cluster_mapping_buff:Vec<(Vec<i8>,u64)> = vec![];
+    let mut cluster_mapping_best:(Vec<i8>,(f32,f32)) = (vec![0;val.len()],(-1.0,-1.0));
+    assert!(num_threads_ > 0);
+    
+    let mut num_threads = 1;
+    for ii in vec![40,20,10,8,4,2,1]{
+        if ii <= num_threads_{
+            num_threads = ii;
+            break;
+        } 
+    }
+    
+    for _ in 0..num_threads{
+        cluster_mapping_buff.push((vec![0;val.len()],rng.gen::<u64>()));
+    }
+    let num_trial = 40/num_threads;
+
+    assert!(num_trial >= 1,"Error in code." );
     let mut final_clusters:Vec<(Vec<usize>,f32)> = vec![];
     while sample_bag.len() > 0{
         let (idd,currentloss) = sample_bag.pop().unwrap();
@@ -19,35 +36,55 @@ pub fn bisecting_kmeans(val:&Vec<&Vec<f32>>,max_member_num:usize,rng:&mut StdRng
             final_clusters.push((idd,currentloss));
             continue;
         }
-        let mut minloss:f32 = -100.0;
-        let mut minloss_lr:(f32,f32) =  (1000.0,1000.0);
-        let mut minright:HashSet<usize> = HashSet::new();
-        for _ii in 0..4{
-            let res = split(val,&idd,rng,&mut cluster_mapping_buff);
-            if let Ok((lloss,rloss)) = res{
-                let loss = lloss+rloss;
-                if minloss < -1.0 || minloss > loss{
-                    minloss = loss;
-                    minloss_lr = (lloss,rloss);
-                    minright.clear();
-                    for ss in idd.iter(){
-                        if cluster_mapping_buff[*ss] == CLUSTER_RIGHT{
-                            minright.insert(*ss);
+        for _ in 0..num_trial{
+            //rayon による並列処理
+            let results:Vec<Result<(f32,f32,Vec<i8>),Vec<i8>>> = cluster_mapping_buff.into_par_iter().map(|v|{
+                split(val,&idd,&mut StdRng::seed_from_u64(v.1),v.0)
+            }).collect();
+            let mut minloss_lr:(f32,f32) = (-1.0,-1.0);
+            let mut minloss = -1.0;
+            cluster_mapping_buff = vec![];
+            let mut minidx:i32 = -1;
+            for (eii,res) in results.into_iter().enumerate(){
+                match res{
+                    Ok((lloss,rloss,buff)) =>{
+                        let loss = lloss+rloss;
+                        if minloss < 0.0 || minloss > loss{
+                            minloss = loss;
+                            minloss_lr = (lloss,rloss);
+                            minidx = eii as i32;
                         }
+                        cluster_mapping_buff.push((buff,rng.gen::<u64>()));
+                    },
+                    Err(x) => {
+                        cluster_mapping_buff.push((x,rng.gen::<u64>()));
                     }
                 }
             }
+
+            let currentbest = (cluster_mapping_best.1).0+(cluster_mapping_best.1).1;
+            if minidx > -1 && (currentbest < 0.0 || minloss < currentbest){
+                cluster_mapping_buff.push((cluster_mapping_best.0,rng.gen::<u64>()));
+                let b = cluster_mapping_buff.swap_remove(minidx as usize);
+                cluster_mapping_best = (b.0,minloss_lr);
+            }
         }
-        if minloss > -1.0{
+        if (cluster_mapping_best.1).0 >= 0.0{
             let mut sample_left:Vec<usize> = vec![];
+            let mut sample_right:Vec<usize> = vec![];
             for ss in idd.iter(){
-                if !minright.contains(ss){
+                if cluster_mapping_best.0[*ss] == CLUSTER_LEFT{
                     sample_left.push(*ss);
+                }else if  cluster_mapping_best.0[*ss] == CLUSTER_RIGHT{
+                    sample_right.push(*ss);
+                }else{
+                    panic!("Error in code.");
                 }
             }
-            sample_bag.push((sample_left,minloss_lr.0));
-            sample_bag.push((minright.into_iter().collect(),minloss_lr.1));
+            sample_bag.push((sample_left,(cluster_mapping_best.1).0));
+            sample_bag.push((sample_right,(cluster_mapping_best.1).1));
         }else{
+            eprintln!("Can't find any split in {} trial.",num_threads*num_trial);
             return Err(());
         }
     }
@@ -61,7 +98,7 @@ pub fn bisecting_kmeans(val:&Vec<&Vec<f32>>,max_member_num:usize,rng:&mut StdRng
 }
 
 //dist_to_anchor と名前が付いているが、Kalign のアルゴリズム上の話であり、単なる座標と考えて OK。
-pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdRng,cluster_result:&mut Vec<i8>)-> Result<(f32,f32),()>{
+pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdRng,mut cluster_result:Vec<i8>)-> Result<(f32,f32,Vec<i8>),(Vec<i8>)>{
     let _num_seqs:usize = dist_to_anchor.len();
     let num_anchors:usize = dist_to_anchor[0].len();
     let num_samples:usize = sample_ids.len();
@@ -92,7 +129,7 @@ pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdR
     }
 
     if !has_diff{
-        return Err(());
+        return Err(cluster_result);
     }
 
     let mut lloss = 1000000000.0_f32;
@@ -104,7 +141,8 @@ pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdR
             for ss in sample_ids.iter(){
                 cluster_result[*ss] = CLUSTER_NONE;
             }
-            return Err(());
+            eprintln!("Split was not converged.");
+            return Err(cluster_result);
         }
         let mut left_current:Vec<f32> = vec![0.0;num_anchors];
         let mut right_current:Vec<f32> = vec![0.0;num_anchors];
@@ -132,7 +170,7 @@ pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdR
             for ss in sample_ids.iter(){
                 cluster_result[*ss] = CLUSTER_NONE;
             }
-            return Err(());
+            return Err(cluster_result);
         }
 
         element_multiply(&mut left_current, 1.0/(num_left as f32));
@@ -144,11 +182,13 @@ pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdR
         rightcenter = right_current;
     }
 
-    return Ok((lloss,rloss));
+    return Ok((lloss,rloss,cluster_result));
 }
 
 #[test]
 fn kmeantest(){
+    use rand::SeedableRng;
+    use std::collections::HashSet;
     let clustercenter:Vec<Vec<f32>> = vec![
         vec![0.0,0.0,0.0],
         vec![100.0,0.0,100.0],
@@ -168,8 +208,8 @@ fn kmeantest(){
             ans.push(ii);
         }
     }
-    let mut val:Vec<&Vec<f32>> = points.iter().collect(); 
-    let res_ = bisecting_kmeans(&val,110,&mut rng);
+    let val:Vec<&Vec<f32>> = points.iter().collect(); 
+    let res_ = bisecting_kmeans(&val,110,&mut rng, 4);
     let mut res = res_.unwrap();
     let mut processed:HashSet<usize> = HashSet::new();
     for rr in res.0.iter_mut(){
