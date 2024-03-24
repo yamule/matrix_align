@@ -247,7 +247,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     let mut maxnode = 0;// 最も長い枝は最後まで残す
     let mut is_leaf = false;
     for ii in 0..treenodes.len(){
-        if treenodes[ii].2 < treenodes[maxnode].2{
+        if treenodes[ii].2 > treenodes[maxnode].2{
             maxnode = ii;
         }
         if treenodes[ii].0 > -1{
@@ -259,6 +259,12 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
             }
         }
     }
+
+    //if sequences.len() <= 40{
+        //println!("{}",maxnode);
+        //println!("{:?}",treenodes);
+        //println!("{:?}",parents);
+    //}
 
     let mut noparent = false;
     if parents[maxnode] == -1{
@@ -335,7 +341,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     for _ in 0..num_threads{
         aligners.push(aligner.clone());
     }
-
+    println!("align");
     //println!("{:?}",treenodes);
     //最終的に 3 つノードが残る
     while updated_pool.len() > 0{
@@ -343,9 +349,13 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         let mut updated_minibatch:Vec<(usize,ScoredSequence,ScoredSequence,f32,f32,ScoredSeqAligner)> = vec![];
         while updated_pool.len() > 0{
             let idx_target = updated_pool.pop().unwrap();
+            if let Some(x) = &profiles[idx_target]{
+                assert!(idx_target == 0); //root は merge しない
+                continue;
+            }
             let idx_child_a = treenodes[idx_target].0 as usize;
             let idx_child_b = treenodes[idx_target].1 as usize;
-            //println!("{}>>>> {} {}",uu,aa,bb);
+            //println!("{}<< {} {}",idx_target,idx_child_a,idx_child_b);
             let adist = treenodes[idx_child_a].2;
             let bdist = treenodes[idx_child_b].2;
 
@@ -376,7 +386,10 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         
         for rr in results.into_iter(){
             profiles.push(Some(rr.2));
-            profiles.swap_remove(rr.1);
+            let pst = profiles.swap_remove(rr.1);
+            if let Some(x) = pst{
+                
+            }
             if parents[rr.1] > -1{
                 let p = parents[rr.1] as usize;
                 flagcounter[p] += 1;

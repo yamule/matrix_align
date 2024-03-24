@@ -20,7 +20,6 @@ pub fn calc_pos(aa:usize,bb:usize) -> usize{
 
 //子ノード 1 のインデクス、新しいノードから 1 への枝の長さ、子ノード 2 のインデクス以下同じ
 pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>,num_threads:usize)->((usize,f32),(usize,f32)){
-    
     assert!(num_threads > 0);
     let vlen = is_dead.len();
     let mut n:usize = 0;
@@ -53,7 +52,7 @@ pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>,num_threads:usize)->(
                 break;
             }
         }
-        
+
         let res:Vec<(f64,((usize,f32),(usize,f32)))> = checkpair.into_par_iter().map(|m|
             {
                 let ii = m.0;
