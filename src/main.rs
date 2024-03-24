@@ -236,7 +236,7 @@ fn main_(args:Vec<String>){
             if max_cluster_size == -1{
                 guide_tree::tree_guided_alignment(seqvec, &mut saligner,false,num_threads)
             }else{
-                guide_tree::hieralchical_alignment(seqvec, &mut saligner,max_cluster_size, &mut rngg,num_threads)
+                guide_tree::hierarchical_alignment(seqvec, &mut saligner,max_cluster_size, &mut rngg,num_threads)
             }
         }else{
             saligner.make_msa(seqvec,false)

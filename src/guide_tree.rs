@@ -7,13 +7,13 @@ use super::matrix_process::calc_euclid_dist;
 use super::neighbor_joining::generate_unrooted_tree;
 use super::gmat::calc_weighted_mean;
 use super::aligner::ScoredSeqAligner;
-use rayon;
+use rayon::{self, max_num_threads};
 use rayon::prelude::*;
 use rand::rngs::StdRng;
 use rand::{seq, Rng, SeedableRng};
 use super::bisecting_kmeans;
 
-pub fn create_distence_tree(val:&Vec<&Vec<f32>>)-> Vec<(i64,i64,f32)>{
+pub fn create_distence_tree(val:&Vec<&Vec<f32>>,num_threads:usize)-> Vec<(i64,i64,f32)>{
     let vsiz:usize = val.len();
     let mut dist:Vec<f32> = vec![];
     println!("calc_distance...");
@@ -26,7 +26,7 @@ pub fn create_distence_tree(val:&Vec<&Vec<f32>>)-> Vec<(i64,i64,f32)>{
     }
     println!("calc_nj_tree...");
     //println!("{:?}",dist);
-    return generate_unrooted_tree(&mut dist);
+    return generate_unrooted_tree(&mut dist,num_threads);
 }
 
 //与えられたベクトルの集合を 4 つのクラスタに分割する
@@ -102,7 +102,7 @@ pub fn calc_distance_from(anchors:&Vec<usize>,val:&Vec<Vec<f32>>) -> Vec<Vec<f32
     return ret;
 }
 
-pub fn hieralchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner, max_cluster_member_size:i64, rngg:&mut StdRng,num_threads_:usize)-> Vec<(ScoredSequence,f32)>{
+pub fn hierarchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner, max_cluster_member_size:i64, rngg:&mut StdRng,num_threads_:usize)-> Vec<(ScoredSequence,f32)>{
     assert!(sequences.len() > 1);
 
     if sequences.len() as i64 <= max_cluster_member_size {
@@ -198,7 +198,7 @@ pub fn hieralchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredS
     }
 
     if subres.len() as i64 > max_cluster_member_size{
-        return hieralchical_alignment(subres, aligner, max_cluster_member_size, rngg, num_threads_);
+        return hierarchical_alignment(subres, aligner, max_cluster_member_size, rngg, num_threads_);
     }
     return tree_guided_alignment(subres, aligner, false,num_threads_);
 
@@ -209,6 +209,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     if sequences.len() == 2{
         return aligner.make_msa(sequences,false);
     }
+    println!("align {} sequences.",sequences.len());
     let mut averaged_value:Vec<Vec<f32>> = vec![];
     for ss in sequences.iter(){
         unsafe{
@@ -238,7 +239,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     ・リーフノードである場合 Outgroup にする
     ・それ以外の場合親を探して親から逆方向に Leaf へパスを作っていく、自分の子は自分へのパスを削除する（最後まで残る）
     */
-    let mut treenodes = create_distence_tree(&averaged_value.iter().map(|m|m).collect());
+    let mut treenodes = create_distence_tree(&averaged_value.iter().map(|m|m).collect(),num_threads);
     //println!("{:?}",treenodes);
     
     let mut node_to_seq:HashMap<usize,usize> = HashMap::new();
@@ -358,7 +359,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
                 break;
             }
         }
-        println!("multi_align_minibatch:{}",updated_minibatch.len());
+        //println!("multi_align_minibatch:{}",updated_minibatch.len());
         //rayon による並列処理
         let results:Vec<(ScoredSeqAligner,usize,ScoredSequence,f32)> = updated_minibatch.into_par_iter().map(|v|{
             let uu = v.0;

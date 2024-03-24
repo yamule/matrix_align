@@ -1,4 +1,6 @@
 use std::{collections::HashMap, sync::Barrier, thread::panicking};
+use rayon;
+use rayon::prelude::*;
 
 //neighbor joining tree 作成コード
 //距離行列は calc_pos でアクセスできるような 45度 三角形の一次元行列。
@@ -16,9 +18,10 @@ pub fn calc_pos(aa:usize,bb:usize) -> usize{
 }
 
 
-ここから nj tree の計算が遅い
 //子ノード 1 のインデクス、新しいノードから 1 への枝の長さ、子ノード 2 のインデクス以下同じ
-pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>)->((usize,f32),(usize,f32)){
+pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>,num_threads:usize)->((usize,f32),(usize,f32)){
+    
+    assert!(num_threads > 0);
     let vlen = is_dead.len();
     let mut n:usize = 0;
     let mut kmin:f64 = std::f64::MAX;
@@ -29,6 +32,8 @@ pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>)->((usize,f32),(usize
         }
         n+=1;
     }
+
+    let mut checkpair_:Vec<(usize,usize)> = vec![];
     for ii in 0..vlen{
         if is_dead[ii]{
             continue;
@@ -37,42 +42,63 @@ pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>)->((usize,f32),(usize
             if is_dead[jj]{
                 continue;
             }
-            let mut ssum_i:f64 = 0.0;
-            let mut ssum_j:f64 = 0.0;
-            let mut gsum:f64 = 0.0;
-            for kk in 0..vlen{
-                if is_dead[kk]{
-                    continue;
-                }
-                if (kk as i64 -ii as i64)*(kk as i64 -jj as i64 ) == 0{
-                    continue;
-                }
-                ssum_i += dist[calc_pos(ii,kk)] as f64;
-                ssum_j += dist[calc_pos(jj,kk)] as f64;
-                for ll in (kk+1)..vlen{
-                    if is_dead[ll]{
-                        continue;
-                    }
-                    if (ll as i64 -ii as i64)*(ll as i64 -jj as i64 ) == 0{
-                        continue;
-                    }
-                    gsum += dist[calc_pos(kk,ll)] as f64;
-                }
+            checkpair_.push((ii,jj));
+        }
+    }
+    while checkpair_.len() > 0{
+        let mut checkpair:Vec<(usize,usize)> = vec![];
+        for _ in 0..num_threads{
+            checkpair.push(checkpair_.pop().unwrap());
+            if checkpair_.len() == 0{
+                break;
             }
-            ssum_i /= n as f64-2.0;
-            ssum_j /= n as f64-2.0;
-            let ssum = ssum_i+ssum_j;
-            let dist_ij = dist[calc_pos(ii,jj)] as f64;
-            gsum /= n as f64-2.0;
-            let ksum = ssum/2.0+gsum+dist_ij/2.0;
-            //println!("{:?} {} ",(ii,jj),dist[calc_pos(ii,jj)]);
-            if ksum < kmin{
-                kmin = ksum;
-                pair = ((ii,((dist_ij+ssum_i-ssum_j)/2.0) as f32)
-                       ,(jj,((dist_ij+ssum_j-ssum_i)/2.0) as f32));
+        }
+        
+        let res:Vec<(f64,((usize,f32),(usize,f32)))> = checkpair.into_par_iter().map(|m|
+            {
+                let ii = m.0;
+                let jj = m.1;
+                let mut ssum_i:f64 = 0.0;
+                let mut ssum_j:f64 = 0.0;
+                let mut gsum:f64 = 0.0;
+                for kk in 0..vlen{
+                    if is_dead[kk]{
+                        continue;
+                    }
+                    if (kk as i64 -ii as i64)*(kk as i64 -jj as i64 ) == 0{
+                        continue;
+                    }
+                    ssum_i += dist[calc_pos(ii,kk)] as f64;
+                    ssum_j += dist[calc_pos(jj,kk)] as f64;
+                    for ll in (kk+1)..vlen{
+                        if is_dead[ll]{
+                            continue;
+                        }
+                        if (ll as i64 -ii as i64)*(ll as i64 -jj as i64 ) == 0{
+                            continue;
+                        }
+                        gsum += dist[calc_pos(kk,ll)] as f64;
+                    }
+                }
+                ssum_i /= n as f64-2.0;
+                ssum_j /= n as f64-2.0;
+                let ssum = ssum_i+ssum_j;
+                let dist_ij = dist[calc_pos(ii,jj)] as f64;
+                gsum /= n as f64-2.0;
+                let ksum = ssum/2.0+gsum+dist_ij/2.0;
+                //println!("{:?} {} ",(ii,jj),dist[calc_pos(ii,jj)]);
+                return (ksum, ((ii,((dist_ij+ssum_i-ssum_j)/2.0) as f32)
+                        ,(jj,((dist_ij+ssum_j-ssum_i)/2.0) as f32)))
+            }
+        ).collect();
+        for rr in res.iter(){
+            if rr.0 < kmin{
+                kmin = rr.0;
+                pair = rr.1;
             }
         }
     }
+    
     //println!("{}",kmin);
     return pair;
 }
@@ -80,14 +106,14 @@ pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>)->((usize,f32),(usize
 
 //子 1 のインデクス、子 2 のインデクス、自分自身の長さを返す
 ///合計枝長が最短になる状態であるので、親子関係に系統学的な意味はないと思う
-pub fn generate_unrooted_tree(dist:&mut Vec<f32>) -> Vec<(i64,i64,f32)>{
+pub fn generate_unrooted_tree(dist:&mut Vec<f32>,num_threads:usize) -> Vec<(i64,i64,f32)>{
     let leafnum:usize = ((-1.0+(1.0 as f64 +8.0*dist.len() as f64).sqrt()+0.0001) as usize)/2;
     let mut nodenum:usize = leafnum;
     let mut is_dead:Vec<bool> = vec![false;nodenum];
     let mut idmap:Vec<usize> = (0..leafnum).collect();
     let mut ret:Vec<(i64,i64,f32)> = (0..leafnum).map(|m| (m as i64, -1,-1000.0)).collect();
     while nodenum > 3{
-        let (a,b):((usize,f32),(usize,f32)) = get_next_neighbor(&dist, &is_dead);
+        let (a,b):((usize,f32),(usize,f32)) = get_next_neighbor(&dist, &is_dead,num_threads);
         //let mut newdist:Vec<f32> = vec![];
         for ii in 0..is_dead.len(){
             if a.0 != ii && b.0 != ii{
@@ -416,7 +442,7 @@ fn nj_test(){
         13.0,10.0,7.0,8.0,6.0,9.0,0.0,
         17.0,14.0,11.0,12.0,10.0,13.0,8.0,0.0
     ];
-    let unrooted = generate_unrooted_tree(&mut dist);
+    let unrooted = generate_unrooted_tree(&mut dist,4);
     println!("{:?}",unrooted);
     let mut dummyname:HashMap<usize,String> = HashMap::new();
     for ii in 0..8{
@@ -443,7 +469,7 @@ fn nj_test(){
         1.4,1.4,1.15,1.275,1.375,0.0,
     ];
 
-    let unrooted = generate_unrooted_tree(&mut dist);
+    let unrooted = generate_unrooted_tree(&mut dist,4);
     println!("{:?}",unrooted);
     let mut dummyname:HashMap<usize,String> = HashMap::new();
     for ii in 0..6{
@@ -531,7 +557,7 @@ fn claude3test() {
         1.4, 1.4, 1.15, 1.275, 1.375, 0.0,
     ];
 
-    let unrooted = generate_unrooted_tree(&mut dist);
+    let unrooted = generate_unrooted_tree(&mut dist,4);
 
     let mut node_name_map: HashMap<usize, String> = HashMap::new();
     node_name_map.insert(0, "A".to_string());

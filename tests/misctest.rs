@@ -95,9 +95,9 @@ mod tests{
     }
 
     #[test]
-    fn hieralchical_aligntest(){
+    fn hierarchical_aligntest(){
         let infile = "example_files/esm2_650m_example_output/a1_mat.dat".to_owned();
-        let outfile = "nogit/testout_hieralchical.test.dat".to_owned();
+        let outfile = "nogit/testout_hierarchical.test.dat".to_owned();
         
         let mut name_to_res:HashMap<String,String> = HashMap::new();
         
@@ -148,7 +148,7 @@ mod tests{
             seqvec.push(seq2);
         }
 
-        let mut ans = guide_tree::hieralchical_alignment(seqvec,&mut saligner,1000,&mut rngg,8);
+        let mut ans = guide_tree::hierarchical_alignment(seqvec,&mut saligner,100,&mut rngg,8);
         assert!(ans.len() == 1);
         let (alires,_alisc) = ans.pop().unwrap();
         for aii in 0..alires.alignments.len(){
