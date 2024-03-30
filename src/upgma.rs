@@ -30,9 +30,11 @@ pub fn get_next_pair(dist:&Vec<f32>,is_dead:&Vec<bool>)->((usize,usize),f32){
     return (pair,kmin);
 }
 
+
 //calc_pos でペアの距離が得られるような distance matrix を渡し、UPGMA の系統樹を返す。最終ノード が Root Node;
-fn get_upgma_tree(mut dist:Vec<f32>)->Vec<(i64,i64,f32)>{
+pub fn generate_unrooted_tree(dist:&mut Vec<f32>)->Vec<(i64,i64,f32)>{
     let leafnum:usize = ((-1.0+(1.0 as f64 +8.0*dist.len() as f64).sqrt()+0.0001) as usize)/2;
+    let mut cluster_member:Vec<usize> = vec![1;leafnum];
     let mut is_dead:Vec<bool> = vec![false;leafnum];
     let mut min_candidate:Vec<(f32,usize)> = vec![(std::f32::MAX,0);leafnum];
     for ii in 0..leafnum{
@@ -56,8 +58,7 @@ fn get_upgma_tree(mut dist:Vec<f32>)->Vec<(i64,i64,f32)>{
     }
 
     loop{
-        let mut nextpair = get_next_pair(&dist,&is_dead);
-        //
+        //let mut nextpair = get_next_pair(&dist,&is_dead);
         let mut minval = std::f32::MAX;
         let mut minpair:(usize,usize) = (0,0);
         for jj in 0..leafnum{
@@ -72,11 +73,11 @@ fn get_upgma_tree(mut dist:Vec<f32>)->Vec<(i64,i64,f32)>{
         if minval == std::f32::MAX{
             break;
         }
-        nextpair = (minpair,minval);
+        
+        let nextpair = (minpair,minval);
 
-        assert!((nextpair.0).0 < (nextpair.0).1);
-        let a = (nextpair.0).0;
-        let b = (nextpair.0).1;
+        let a = ((nextpair.0).0).min((nextpair.0).1);
+        let b = ((nextpair.0).0).max((nextpair.0).1);
         is_dead[b] = true;
         min_candidate[b].0 = std::f32::MAX;
 
@@ -94,7 +95,9 @@ fn get_upgma_tree(mut dist:Vec<f32>)->Vec<(i64,i64,f32)>{
             }
             let ppos1 = calc_pos(a, jj);
             let ppos2 = calc_pos(b, jj);
-            let ddist = (dist[ppos1]+dist[ppos2])/2.0;
+            let ddist = (dist[ppos1]*(cluster_member[a] as f32)+dist[ppos2]*(cluster_member[b] as f32))/
+            ((cluster_member[a] as f32)+(cluster_member[b] as f32));
+
             dist[ppos1] = ddist;
             if min_candidate[jj].1 == a || min_candidate[jj].1 == b{
                 let mut minval = std::f32::MAX;
@@ -113,6 +116,8 @@ fn get_upgma_tree(mut dist:Vec<f32>)->Vec<(i64,i64,f32)>{
                 min_candidate[jj].1 = minidx;
             }
         }
+        
+        cluster_member[a] = cluster_member[a]+cluster_member[b];
         let mut minval = std::f32::MAX;
         let mut minidx = 0_usize;
         for jj in 0..leafnum{
@@ -142,7 +147,7 @@ fn get_upgma_tree(mut dist:Vec<f32>)->Vec<(i64,i64,f32)>{
         let p = updater.pop().unwrap();
         currentindex = p.0;
         if ret[currentindex].1 == -1{
-            ret[currentindex].2 = currentval;
+            ret[currentindex].2 = p.1;
             continue;
         }
         assert!(ret[currentindex].0 != -1);
@@ -150,9 +155,35 @@ fn get_upgma_tree(mut dist:Vec<f32>)->Vec<(i64,i64,f32)>{
 
         currentval = ret[currentindex].2;
         let pval = p.1 - currentval/2.0;
+        
         ret[currentindex].2 = pval;
         updater.push((ret[currentindex].0 as usize,currentval/2.0));
         updater.push((ret[currentindex].1 as usize,currentval/2.0));
     }
     return ret;
+}
+
+#[test]
+fn upgmatest(){
+    //https://en.wikipedia.org/wiki/UPGMA
+    let mut dist = vec![
+        0.0, 
+        17.0,0.0,
+        21.0,30.0,0.0,
+        31.0,34.0,28.0,0.0,
+        23.0,21.0,39.0,43.0, 0.0 
+    ];
+    let res = generate_unrooted_tree(&mut dist);
+    let ans:Vec<(i64,i64,f32)> = vec![
+        (0,-1,8.5),
+        (1,-1,8.5),
+        (2,-1,14.0),
+        (3,-1,14.0),
+        (4,-1,11.0),
+        (0,1,2.5),
+        (5,4,5.5),
+        (2,3,2.5),
+        (6,7,0.0)
+    ];
+    assert_eq!(res,ans)
 }

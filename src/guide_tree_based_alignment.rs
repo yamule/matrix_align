@@ -1,19 +1,22 @@
 
-use crate::aligner::ScoredSequence;
-use crate::neighbor_joining;
-use core::num;
+use super::aligner::ScoredSequence;
+use super::neighbor_joining;
+use super::upgma;
 use std::collections::HashMap;
 use super::matrix_process::calc_euclid_dist;
-use super::neighbor_joining::generate_unrooted_tree;
 use super::gmat::calc_weighted_mean;
 use super::aligner::ScoredSeqAligner;
-use rayon::{self, max_num_threads};
 use rayon::prelude::*;
 use rand::rngs::StdRng;
-use rand::{seq, Rng, SeedableRng};
+use rand::{Rng, SeedableRng};
 use super::bisecting_kmeans;
 
-pub fn create_distence_tree(val:&Vec<&Vec<f32>>,num_threads:usize)-> Vec<(i64,i64,f32)>{
+
+#[derive(Copy,Clone)]
+pub enum TreeType{
+    TreeNj,TreeUPGMA
+}
+pub fn create_distence_tree(val:&Vec<&Vec<f32>>,num_threads:usize,typ:TreeType)-> Vec<(i64,i64,f32)>{
     let vsiz:usize = val.len();
     let mut dist:Vec<f32> = vec![];
     println!("calc_distance...");
@@ -24,9 +27,19 @@ pub fn create_distence_tree(val:&Vec<&Vec<f32>>,num_threads:usize)-> Vec<(i64,i6
         //neigbor_joining モジュールの仕様上
         dist.push(0.0);
     }
-    println!("calc_nj_tree...");
-    //println!("{:?}",dist);
-    return generate_unrooted_tree(&mut dist,num_threads);
+    match typ{
+        TreeType::TreeNj =>{
+            println!("calc_nj_tree...");
+            //println!("{:?}",dist);
+            return neighbor_joining::generate_unrooted_tree(&mut dist,num_threads);
+        },
+        TreeType::TreeUPGMA =>{
+            println!("calc_upgma_tree...");
+            //println!("{:?}",dist);
+            let ret =  upgma::generate_unrooted_tree(&mut dist);
+            return ret;
+        },
+    }
 }
 
 //与えられたベクトルの集合を 4 つのクラスタに分割する
@@ -102,7 +115,7 @@ pub fn calc_distance_from(anchors:&Vec<usize>,val:&Vec<Vec<f32>>) -> Vec<Vec<f32
     return ret;
 }
 
-pub fn hierarchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner, max_cluster_member_size:i64, rngg:&mut StdRng,num_threads_:usize)-> Vec<(ScoredSequence,f32)>{
+pub fn hierarchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner, max_cluster_member_size:i64, rngg:&mut StdRng,num_threads_:usize,tree_type:TreeType)-> Vec<(ScoredSequence,f32)>{
     assert!(sequences.len() > 1);
 
     if sequences.len() as i64 <= max_cluster_member_size {
@@ -110,7 +123,7 @@ pub fn hierarchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredS
             //なんか mut にするのが気持ち悪いので
             return sequences.into_iter().map(|m| (m,-1.0)).collect();
         }
-        return tree_guided_alignment(sequences, aligner, false,num_threads_);
+        return tree_guided_alignment(sequences, aligner, false,num_threads_,tree_type);
     }
     
     let mut averaged_value:Vec<Vec<f32>> = vec![];
@@ -188,7 +201,7 @@ pub fn hierarchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredS
     let mut subres:Vec<ScoredSequence> = vec![];
     for mut cc in clustered.into_iter(){
         if cc.len() > 3{
-            let alires = tree_guided_alignment(cc, aligner, true,num_threads_);
+            let alires = tree_guided_alignment(cc, aligner, true,num_threads_,tree_type);
             for aa in alires.into_iter(){
                 subres.push(aa.0);
             }
@@ -198,13 +211,13 @@ pub fn hierarchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredS
     }
 
     if subres.len() as i64 > max_cluster_member_size{
-        return hierarchical_alignment(subres, aligner, max_cluster_member_size, rngg, num_threads_);
+        return hierarchical_alignment(subres, aligner, max_cluster_member_size, rngg, num_threads_,tree_type);
     }
-    return tree_guided_alignment(subres, aligner, false,num_threads_);
+    return tree_guided_alignment(subres, aligner, false,num_threads_,tree_type);
 
 }
 
-pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner,skip_last_merge:bool,num_threads:usize)-> Vec<(ScoredSequence,f32)>{
+pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner,skip_last_merge:bool,num_threads:usize,tree_type:TreeType)-> Vec<(ScoredSequence,f32)>{
     assert!(sequences.len() > 1);
     if sequences.len() == 2{
         return aligner.make_msa(sequences,false);
@@ -233,69 +246,91 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
 
 
     /*
-    最も長いエッジをとって、その両端から親子関係を作っていくべき
-    そうすると最後に二つノードが残ることになると思う
+    最も長いエッジをとって、その両端から親子関係を作っていく
     ・ルートからの三本のうちの一つである場合なのもしない
     ・リーフノードである場合 Outgroup にする
     ・それ以外の場合親を探して親から逆方向に Leaf へパスを作っていく、自分の子は自分へのパスを削除する（最後まで残る）
     */
-    let mut treenodes = create_distence_tree(&averaged_value.iter().map(|m|m).collect(),num_threads);
+    let mut treenodes;
+    let use_upgma = match tree_type{TreeType::TreeUPGMA=>{true},TreeType::TreeNj=>{false}};
+    if use_upgma{
+        treenodes = create_distence_tree(&averaged_value.iter().map(|m|m).collect(),num_threads,TreeType::TreeUPGMA);
+    }else{
+        
+        treenodes = create_distence_tree(&averaged_value.iter().map(|m|m).collect(),num_threads,TreeType::TreeNj);
+    }
     //println!("{:?}",treenodes);
     
+
+
     let mut node_to_seq:HashMap<usize,usize> = HashMap::new();
     let parents:Vec<i64> = neighbor_joining::get_parent_branch(&treenodes);
-    let mut maxnode = 0;// 最も長い枝は最後まで残す
-    let mut is_leaf = false;
-    for ii in 0..treenodes.len(){
-        if treenodes[ii].2 > treenodes[maxnode].2{
-            maxnode = ii;
-        }
-        if treenodes[ii].0 > -1{
-            if treenodes[ii].0 as usize == ii{
-                node_to_seq.insert(ii,treenodes[ii].0 as usize);//Node (branch)には配列順に入っている
-                is_leaf = true;
-                assert!(treenodes[ii].1 == -1);
-                continue;
+
+    if use_upgma{
+        for ii in 0..treenodes.len(){
+            if treenodes[ii].0 > -1{
+                if treenodes[ii].0 as usize == ii{
+                    node_to_seq.insert(ii,treenodes[ii].0 as usize);//Node (branch)には配列順に入っている
+                    assert!(treenodes[ii].1 == -1);
+                    continue;
+                }
             }
         }
-    }
-
-    //if sequences.len() <= 40{
-        //println!("{}",maxnode);
-        //println!("{:?}",treenodes);
-        //println!("{:?}",parents);
-    //}
-
-    let mut noparent = false;
-    if parents[maxnode] == -1{
-        noparent = true;
-    }
-    if treenodes[maxnode].0 == -1 || treenodes[maxnode].1 == -1{
-        is_leaf = true;
-    }
-
-    if noparent {
-        //元から最終ノードである場合はなにもしない      
-        //println!("nochange");
     }else{
-        let (outree,oldmap, _) = if is_leaf{
-            //println!("leaf");
-            neighbor_joining::set_outgroup(maxnode, &treenodes,None)
-        }else{
-            //println!("internal");
-            neighbor_joining::change_center_branch(maxnode, &treenodes,None)
-        };
+        let mut maxnode = 0;// 最も長い枝は最後まで残す
+        let mut is_leaf = false;
 
-        treenodes = outree;
-        let mut newseqmap:HashMap<usize,usize> = HashMap::new();
-        for ii in 0..oldmap.len(){
-            if node_to_seq.contains_key(&ii){
-                newseqmap.insert(oldmap[ii] as usize,*node_to_seq.get(&ii).unwrap_or_else(||panic!("???")));
+        for ii in 0..treenodes.len(){
+            if treenodes[ii].2 > treenodes[maxnode].2{
+                maxnode = ii;
+            }
+            if treenodes[ii].0 > -1{
+                if treenodes[ii].0 as usize == ii{
+                    node_to_seq.insert(ii,treenodes[ii].0 as usize);//Node (branch)には配列順に入っている
+                    is_leaf = true;
+                    assert!(treenodes[ii].1 == -1);
+                    continue;
+                }
             }
         }
-        assert_eq!(node_to_seq.len(), newseqmap.len());
-        //println!("{:?} {:?} {:?}",oldmap,node_to_seq,newseqmap);
-        node_to_seq = newseqmap;
+
+        //if sequences.len() <= 40{
+            //println!("{}",maxnode);
+            //println!("{:?}",treenodes);
+            //println!("{:?}",parents);
+        //}
+
+        let mut noparent = false;
+        if parents[maxnode] == -1{
+            noparent = true;
+        }
+        if treenodes[maxnode].0 == -1 || treenodes[maxnode].1 == -1{
+            is_leaf = true;
+        }
+
+        if noparent {
+            //元から最終ノードである場合はなにもしない      
+            //println!("nochange");
+        }else{
+            let (outree,oldmap, _) = if is_leaf{
+                //println!("leaf");
+                neighbor_joining::set_outgroup(maxnode, &treenodes,None)
+            }else{
+                //println!("internal");
+                neighbor_joining::change_center_branch(maxnode, &treenodes,None)
+            };
+
+            treenodes = outree;
+            let mut newseqmap:HashMap<usize,usize> = HashMap::new();
+            for ii in 0..oldmap.len(){
+                if node_to_seq.contains_key(&ii){
+                    newseqmap.insert(oldmap[ii] as usize,*node_to_seq.get(&ii).unwrap_or_else(||panic!("???")));
+                }
+            }
+            assert_eq!(node_to_seq.len(), newseqmap.len());
+            //println!("{:?} {:?} {:?}",oldmap,node_to_seq,newseqmap);
+            node_to_seq = newseqmap;
+        }
     }
 
     let mut flagcounter:Vec<i64> = vec![0;treenodes.len()]; //0 は子ノードが全て計算されたもの
@@ -314,13 +349,13 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         }
     }
     
-    let mut profiles:Vec<Option<ScoredSequence>> = vec![None;treenodes.len()];
+    let mut profiles:Vec<Option<(ScoredSequence,f32)>> = vec![None;treenodes.len()];
     let _numseq:usize = sequences.len();
 
     let seq_to_node:HashMap<usize,usize> = node_to_seq.iter().map(|m|(*m.1,*m.0)).collect();
     assert_eq!(seq_to_node.len(),node_to_seq.len(),"Error in code");
     for ss in sequences.into_iter().enumerate(){
-        profiles[*seq_to_node.get(&ss.0).unwrap()] = Some(ss.1);
+        profiles[*seq_to_node.get(&ss.0).unwrap()] = Some((ss.1,-1.0));
     }
     let mut updated_pool:Vec<usize> = vec![];
     let leaves = flagcounter.clone();
@@ -343,7 +378,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     }
     println!("align");
     //println!("{:?}",treenodes);
-    //最終的に 3 つノードが残る
+    //unrooted の場合最終的に 3 つノードが残る
     while updated_pool.len() > 0{
 
         let mut updated_minibatch:Vec<(usize,ScoredSequence,ScoredSequence,f32,f32,ScoredSeqAligner)> = vec![];
@@ -364,7 +399,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
             profiles.push(None);
             let profile_child_b = profiles.swap_remove(idx_child_b).unwrap();
             let ali = aligners.pop().unwrap();
-            updated_minibatch.push((idx_target,profile_child_a,profile_child_b,adist,bdist,ali));
+            updated_minibatch.push((idx_target,profile_child_a.0,profile_child_b.0,adist,bdist,ali));
             if aligners.len() == 0{
                 break;
             }
@@ -379,13 +414,12 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
             let bdist = v.4;
             let mut ali = v.5;
 
-            //スコア情報は全部捨ててしまっているが持っておいた方が良いだろうか
             let res = align_and_merge_with_weight(&mut ali,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
             (ali,uu,res.0,res.1)            
         }).collect();
         
         for rr in results.into_iter(){
-            profiles.push(Some(rr.2));
+            profiles.push(Some((rr.2,rr.3)));
             let pst = profiles.swap_remove(rr.1);
             if let Some(x) = pst{
                 
@@ -409,7 +443,13 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
             remained.push((treenodes[ii].2,ii));
         }
     }
-
+    if remained.len() == 1{//rooted tree
+        let xx = profiles.swap_remove(remained[0].1);
+        if let Some(x) =  xx{
+            return vec![x];
+        }
+        panic!("???");
+    }
     //残りのうち近いペアを並べる
     remained.sort_by(|a,b| a.0.partial_cmp(&b.0).unwrap());
     let aa = remained[0].1;
@@ -418,9 +458,9 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     let bdist = treenodes[bb].2;
 
     profiles.push(None);
-    let ap = profiles.swap_remove(aa).unwrap();
+    let ap = profiles.swap_remove(aa).unwrap().0;
     profiles.push(None);
-    let bp = profiles.swap_remove(bb).unwrap();
+    let bp = profiles.swap_remove(bb).unwrap().0;
     let res = align_and_merge_with_weight(aligner,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
     if remained.len() == 2{
         return vec![(res.0,res.1)];
@@ -431,11 +471,11 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     let cp = profiles.swap_remove(remained[2].1).unwrap();
     
     if skip_last_merge{
-        return vec![(res.0,-1.0),(cp,-1.0)];
+        return vec![(res.0,res.1),cp];
     }
 
-    let res = align_and_merge_with_weight(aligner,res.0,cp,0.5,0.5);
-    return vec![(res.0,res.1)];
+    let res = align_and_merge_with_weight(aligner,res.0,cp.0,0.5,0.5);
+    return vec![res];
 }
 
 

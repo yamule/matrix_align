@@ -71,6 +71,7 @@ fn main_(args:Vec<String>){
         ("--tree_guided","<bool or novalue=true> : Use guide-tree based alignment."),
         ("--max_cluster_size","<int> : Limit all-vs-all comparison with this many number of profiles and align hierarchically. Must be > 10. Default -1."),
         ("--random_seed","<int> : Seed for random number generator."),
+        ("--tree_type","<string> : Type of guide tree. \"NJ\" or \"UPGMA\". Default \"NJ\"."),
         ("--help","<bool or novalue=true> : Print this message."),
     ];
     let allowed_arg:HashSet<&str> = allowed_arg_.clone().into_iter().map(|m|m.0).collect();
@@ -95,8 +96,12 @@ fn main_(args:Vec<String>){
         argcheck.sort();
         error_message.push(format!("Unknown arg: {:?}",argcheck));
     }
-
     
+    if !argss.contains_key("--in") || !argss.contains_key("--out"){
+        panic!("--in and --out is required.");
+    }
+
+    let tree_type = argss.get("--tree_type").unwrap_or(&"NJ".to_owned()).clone();
     let infile = argss.get("--in").unwrap().clone();
     let outfile = argss.get("--out").unwrap().clone();
     let num_iter:usize = argss.get("--num_iter").unwrap_or(&"2".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_iter {:?}",e));
@@ -108,6 +113,14 @@ fn main_(args:Vec<String>){
     let tree_guided:bool = check_bool(argss.get("--tree_guided").unwrap_or(&"true".to_owned()).as_str(),"--tree_guided");
     let max_cluster_size:i64 = argss.get("--max_cluster_size").unwrap_or(&"-1".to_owned()).parse::<i64>().unwrap_or_else(|e|panic!("in --maximum_cluster_size {:?}",e));
     
+    
+    check_acceptable(&tree_type.as_str(),vec!["NJ","UPGMA"] );
+    let tree_type = if &tree_type == "NJ"{
+        guide_tree_based_alignment::TreeType::TreeNj
+    }else{
+        guide_tree_based_alignment::TreeType::TreeUPGMA
+    };
+
 
     if print_help{
         for aa in allowed_arg_.iter(){
@@ -234,9 +247,9 @@ fn main_(args:Vec<String>){
         
         let mut ans = if tree_guided{
             if max_cluster_size == -1{
-                guide_tree_based_alignment::tree_guided_alignment(seqvec, &mut saligner,false,num_threads)
+                guide_tree_based_alignment::tree_guided_alignment(seqvec, &mut saligner,false,num_threads,tree_type)
             }else{
-                guide_tree_based_alignment::hierarchical_alignment(seqvec, &mut saligner,max_cluster_size, &mut rngg,num_threads)
+                guide_tree_based_alignment::hierarchical_alignment(seqvec, &mut saligner,max_cluster_size, &mut rngg,num_threads,tree_type)
             }
         }else{
             saligner.make_msa(seqvec,false)

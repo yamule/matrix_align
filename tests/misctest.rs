@@ -148,7 +148,8 @@ mod tests{
             seqvec.push(seq2);
         }
 
-        let mut ans = guide_tree_based_alignment::hierarchical_alignment(seqvec,&mut saligner,100,&mut rngg,8);
+        let mut ans = guide_tree_based_alignment::hierarchical_alignment(
+            seqvec,&mut saligner,100,&mut rngg,8,guide_tree_based_alignment::TreeType::TreeNj);
         assert!(ans.len() == 1);
         let (alires,_alisc) = ans.pop().unwrap();
         for aii in 0..alires.alignments.len(){
