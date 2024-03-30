@@ -5,7 +5,7 @@ use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_, GMatStatistics};
 use matrix_align::aligner::{AlignmentType, ScoredSeqAligner, ScoredSequence};
 use matrix_align::ioutil::{load_multi_gmat, save_lines};
 use matrix_align::matrix_process;
-use matrix_align::guide_tree;
+use matrix_align::guide_tree_based_alignment;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
@@ -234,9 +234,9 @@ fn main_(args:Vec<String>){
         
         let mut ans = if tree_guided{
             if max_cluster_size == -1{
-                guide_tree::tree_guided_alignment(seqvec, &mut saligner,false,num_threads)
+                guide_tree_based_alignment::tree_guided_alignment(seqvec, &mut saligner,false,num_threads)
             }else{
-                guide_tree::hierarchical_alignment(seqvec, &mut saligner,max_cluster_size, &mut rngg,num_threads)
+                guide_tree_based_alignment::hierarchical_alignment(seqvec, &mut saligner,max_cluster_size, &mut rngg,num_threads)
             }
         }else{
             saligner.make_msa(seqvec,false)

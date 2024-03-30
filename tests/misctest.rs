@@ -10,7 +10,7 @@ mod tests{
     use matrix_align::gmat::{self, calc_vec_stats, GMatStatistics};
     use matrix_align::aligner::{AlignmentType, ScoredSeqAligner, ScoredSequence};
     use matrix_align::ioutil::{load_multi_gmat,save_lines};
-    use matrix_align::guide_tree;
+    use matrix_align::guide_tree_based_alignment;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
@@ -148,7 +148,7 @@ mod tests{
             seqvec.push(seq2);
         }
 
-        let mut ans = guide_tree::hierarchical_alignment(seqvec,&mut saligner,100,&mut rngg,8);
+        let mut ans = guide_tree_based_alignment::hierarchical_alignment(seqvec,&mut saligner,100,&mut rngg,8);
         assert!(ans.len() == 1);
         let (alires,_alisc) = ans.pop().unwrap();
         for aii in 0..alires.alignments.len(){

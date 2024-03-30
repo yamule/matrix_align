@@ -1,22 +1,12 @@
-use std::{collections::HashMap, sync::Barrier, thread::panicking};
+use std::collections::HashMap;
 use rayon;
 use rayon::prelude::*;
+use super::guide_tree::calc_pos;
 
 //neighbor joining tree 作成コード
 //距離行列は calc_pos でアクセスできるような 45度 三角形の一次元行列。
 //自分自身も入っている。
 //使用法は nj_test 関数参照。
-pub fn calc_pos(aa:usize,bb:usize) -> usize{
-    let mut a:f64 = aa as f64;
-    let mut b:f64 = bb as f64;
-    if a < b{// a の方が常に大きい
-        let c = b;
-        b = a;
-        a = c;
-    }
-    return (a*a/2.0+a/2.0+b +0.000001) as usize;
-}
-
 
 //子ノード 1 のインデクス、新しいノードから 1 への枝の長さ、子ノード 2 のインデクス以下同じ
 pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>,num_threads:usize)->((usize,f32),(usize,f32)){
