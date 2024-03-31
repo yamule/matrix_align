@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::collections::*;
 use rayon;
 use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_, GMatStatistics};
-use matrix_align::aligner::{AlignmentType, ScoredSeqAligner, ScoredSequence};
+use matrix_align::aligner::{AlignmentType, ProfileAligner, SequenceProfile};
 use matrix_align::ioutil::{load_multi_gmat, save_lines};
 use matrix_align::matrix_process;
 use matrix_align::guide_tree_based_alignment;
@@ -171,7 +171,7 @@ fn main_(args:Vec<String>){
     let mut name_to_res:HashMap<String,String> = HashMap::new();
     
     let gmatstats:Vec<GMatStatistics>;
-    let mut profile_seq:Option<ScoredSequence> = None;
+    let mut profile_seq:Option<SequenceProfile> = None;
     unsafe{
         gmatstats = calc_vec_stats(& vec![infile.clone()]);// 統計値のために一回ファイルを読んでいるが後で変更する
     }
@@ -180,9 +180,9 @@ fn main_(args:Vec<String>){
     let gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
 
     let veclen = gmat1_[0].2[0].len();
-    let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,300,gap_open_penalty,gap_extension_penalty,alignment_type);
+    let mut saligner:ProfileAligner = ProfileAligner::new(veclen,300,gap_open_penalty,gap_extension_penalty,alignment_type);
     
-    let mut allseqs_:Vec<ScoredSequence> = vec![];
+    let mut allseqs_:Vec<SequenceProfile> = vec![];
     for mut gg in gmat1_.into_iter(){
         let n = gg.0.clone();
         if name_to_res.contains_key(&n){
@@ -199,7 +199,7 @@ fn main_(args:Vec<String>){
         
         let alen = gg.1.len();
         // ギャップまだ入って無い
-        let seq = ScoredSequence::new(
+        let seq = SequenceProfile::new(
             vec![(gg.0,gg.1)],alen,gg.2[0].len(),None,Some(gg.2),None
         );
         allseqs_.push(seq);
@@ -210,7 +210,7 @@ fn main_(args:Vec<String>){
     if similarity_sort{
         //先頭配列に近い順でアラインメントする
         let seq1 = allseqs_.swap_remove(0);
-        let mut scoresort:Vec<(f32,ScoredSequence)> = vec![];
+        let mut scoresort:Vec<(f32,SequenceProfile)> = vec![];
         for seq2 in allseqs_.into_iter(){
             let dpres = saligner.perform_dp(&seq1,&seq2,gap_open_penalty,gap_extension_penalty);
             //let nscore = dpres.1/(seq1.get_alignment_length().min(seq2.get_alignment_length())) as f32;
@@ -231,7 +231,7 @@ fn main_(args:Vec<String>){
     for ii in 0..num_iter{
         eprintln!("iter: {}",ii);
 
-        let mut seqvec:Vec<ScoredSequence> = vec![];
+        let mut seqvec:Vec<SequenceProfile> = vec![];
         
         if let Some(p) = profile_seq{
             seqvec.push(p.create_merged_dummy());
@@ -276,7 +276,7 @@ fn main_(args:Vec<String>){
             }
             maxpos += 1;
 
-            for seqidx in 0..alires.alignments.len(){
+            for seqidx in 0..alires.member_sequences.len(){
                 let mut aseq = alires.get_aligned_seq(seqidx);
                 assert!(aseq.len() <= maxpos,"{} {}",aseq.len(),maxpos);
                 while aseq.len() < maxpos{

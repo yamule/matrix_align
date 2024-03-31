@@ -8,7 +8,7 @@ mod tests{
 
     //extern crate matrix_align;
     use matrix_align::gmat::{self, calc_vec_stats, GMatStatistics};
-    use matrix_align::aligner::{AlignmentType, ScoredSeqAligner, ScoredSequence};
+    use matrix_align::aligner::{AlignmentType, ProfileAligner, SequenceProfile};
     use matrix_align::ioutil::{load_multi_gmat,save_lines};
     use matrix_align::guide_tree_based_alignment;
     use rand::rngs::StdRng;
@@ -23,7 +23,7 @@ mod tests{
         let mut name_to_res:HashMap<String,String> = HashMap::new();
         
         let gmatstats:Vec<GMatStatistics>;
-        let mut profile_seq:Option<ScoredSequence> = None;
+        let mut profile_seq:Option<SequenceProfile> = None;
         unsafe{
             gmatstats = calc_vec_stats(& vec![infile.clone()]);
         }
@@ -34,8 +34,8 @@ mod tests{
             eprintln!("{}",ii);
 
             let veclen = gmat1_[0].2[0].len();
-            let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,200,-10.0,-0.5,AlignmentType::Global);
-            let mut seqvec:Vec<ScoredSequence> = vec![];
+            let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,-10.0,-0.5,AlignmentType::Global);
+            let mut seqvec:Vec<SequenceProfile> = vec![];
             
             if let Some(p) = profile_seq{
                 seqvec.push(p);
@@ -54,7 +54,7 @@ mod tests{
                 }
                 gmat::normalize_seqmatrix(&mut (tt.2), &gmatstats);
                 let tlen = tt.1.len();
-                let seq2 = ScoredSequence::new(
+                let seq2 = SequenceProfile::new(
                     vec![(tt.0,tt.1)],tlen,tt.2[0].len(),None,Some(tt.2),None
                 );    
                 seqvec.push(seq2);
@@ -64,7 +64,7 @@ mod tests{
             assert!(ans.len() == 1);
             let (mut alires,_alisc) = ans.pop().unwrap();
             if num_iter == ii+1{
-                for aii in 0..alires.alignments.len(){
+                for aii in 0..alires.member_sequences.len(){
                     let hh = &alires.headers[aii];
                     let res = alires.get_aligned_seq(aii);
                     if name_to_res.contains_key(hh){
@@ -75,8 +75,8 @@ mod tests{
                 }
                 break;
             }
-            println!("{}",alires.alignments.len());
-            alires.alignments.clear();
+            println!("{}",alires.member_sequences.len());
+            alires.member_sequences.clear();
             alires.headers.clear();
             alires.alignment_mapping.clear();
             alires.alignment_mapping_ids.clear();
@@ -128,8 +128,8 @@ mod tests{
         }
 
         let veclen = gmat1_[0].2[0].len();
-        let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,200,-10.0,-0.5,AlignmentType::Global);
-        let mut seqvec:Vec<ScoredSequence> = vec![];
+        let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,-10.0,-0.5,AlignmentType::Global);
+        let mut seqvec:Vec<SequenceProfile> = vec![];
         
         let gmat1 = gmat1_.clone();
         for mut tt in gmat1.into_iter(){
@@ -142,7 +142,7 @@ mod tests{
         
             gmat::normalize_seqmatrix(&mut (tt.2), &gmatstats);
             let tlen = tt.1.len();
-            let seq2 = ScoredSequence::new(
+            let seq2 = SequenceProfile::new(
                 vec![(tt.0,tt.1)],tlen,tt.2[0].len(),None,Some(tt.2),None
             );    
             seqvec.push(seq2);
@@ -152,7 +152,7 @@ mod tests{
             seqvec,&mut saligner,100,&mut rngg,8,guide_tree_based_alignment::TreeType::TreeNj);
         assert!(ans.len() == 1);
         let (alires,_alisc) = ans.pop().unwrap();
-        for aii in 0..alires.alignments.len(){
+        for aii in 0..alires.member_sequences.len(){
             let hh = &alires.headers[aii];
             let res = alires.get_aligned_seq(aii);
             if name_to_res.contains_key(hh){

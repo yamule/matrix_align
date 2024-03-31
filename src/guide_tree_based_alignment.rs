@@ -1,11 +1,11 @@
 
-use super::aligner::ScoredSequence;
+use super::aligner::SequenceProfile;
 use super::neighbor_joining;
 use super::upgma;
 use std::collections::HashMap;
 use super::matrix_process::calc_euclid_dist;
 use super::gmat::calc_weighted_mean;
-use super::aligner::ScoredSeqAligner;
+use super::aligner::ProfileAligner;
 use rayon::prelude::*;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -92,9 +92,9 @@ pub fn soft_cluster(val:&Vec<&Vec<f32>>, rngg:&mut StdRng)->Vec<Vec<usize>>{
     return ret;
 }
 
-pub fn align_and_merge_with_weight(aligner:&mut ScoredSeqAligner,aseq:ScoredSequence,bseq:ScoredSequence,aweight:f32,bweight:f32)->(ScoredSequence,f32){
+pub fn align_and_merge_with_weight(aligner:&mut ProfileAligner,aseq:SequenceProfile,bseq:SequenceProfile,aweight:f32,bweight:f32)->(SequenceProfile,f32){
     let dpres = aligner.perform_dp(&aseq,&bseq,aligner.gap_open_penalty,aligner.gap_extension_penalty);
-    let res = ScoredSeqAligner::make_alignment(aligner,aseq,bseq,dpres.0,false,Some((aweight,bweight)));
+    let res = ProfileAligner::make_alignment(aligner,aseq,bseq,dpres.0,false,Some((aweight,bweight)));
     return (res,dpres.1);
 }
 
@@ -115,7 +115,7 @@ pub fn calc_distance_from(anchors:&Vec<usize>,val:&Vec<Vec<f32>>) -> Vec<Vec<f32
     return ret;
 }
 
-pub fn hierarchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner, max_cluster_member_size:i64, rngg:&mut StdRng,num_threads_:usize,tree_type:TreeType)-> Vec<(ScoredSequence,f32)>{
+pub fn hierarchical_alignment(sequences:Vec<SequenceProfile>,aligner:&mut ProfileAligner, max_cluster_member_size:i64, rngg:&mut StdRng,num_threads_:usize,tree_type:TreeType)-> Vec<(SequenceProfile,f32)>{
     assert!(sequences.len() > 1);
 
     if sequences.len() as i64 <= max_cluster_member_size {
@@ -184,10 +184,10 @@ pub fn hierarchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredS
         }
         println!("cluster_loss: {}",minloss);
     }
-    let mut sequences_hm:HashMap<usize,ScoredSequence> = sequences.into_iter().enumerate().collect();
-    let mut clustered:Vec<Vec<ScoredSequence>> = vec![];
+    let mut sequences_hm:HashMap<usize,SequenceProfile> = sequences.into_iter().enumerate().collect();
+    let mut clustered:Vec<Vec<SequenceProfile>> = vec![];
     for cluster in mincluster.into_iter(){
-        let mut cc:Vec<ScoredSequence> = vec![];
+        let mut cc:Vec<SequenceProfile> = vec![];
         for clustermem in cluster.into_iter(){
             if !sequences_hm.contains_key(&clustermem){
                 panic!("Error in code ???");
@@ -198,7 +198,7 @@ pub fn hierarchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredS
         clustered.push(cc);
     }
     assert!(sequences_hm.len() == 0);
-    let mut subres:Vec<ScoredSequence> = vec![];
+    let mut subres:Vec<SequenceProfile> = vec![];
     for mut cc in clustered.into_iter(){
         if cc.len() > 3{
             let alires = tree_guided_alignment(cc, aligner, true,num_threads_,tree_type);
@@ -217,7 +217,7 @@ pub fn hierarchical_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredS
 
 }
 
-pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSeqAligner,skip_last_merge:bool,num_threads:usize,tree_type:TreeType)-> Vec<(ScoredSequence,f32)>{
+pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut ProfileAligner,skip_last_merge:bool,num_threads:usize,tree_type:TreeType)-> Vec<(SequenceProfile,f32)>{
     assert!(sequences.len() > 1);
     if sequences.len() == 2{
         return aligner.make_msa(sequences,false);
@@ -349,7 +349,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         }
     }
     
-    let mut profiles:Vec<Option<(ScoredSequence,f32)>> = vec![None;treenodes.len()];
+    let mut profiles:Vec<Option<(SequenceProfile,f32)>> = vec![None;treenodes.len()];
     let _numseq:usize = sequences.len();
 
     let seq_to_node:HashMap<usize,usize> = node_to_seq.iter().map(|m|(*m.1,*m.0)).collect();
@@ -371,7 +371,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         }
     }
 
-    let mut aligners:Vec<ScoredSeqAligner> = vec![];
+    let mut aligners:Vec<ProfileAligner> = vec![];
 
     for _ in 0..num_threads{
         aligners.push(aligner.clone());
@@ -381,7 +381,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
     //unrooted の場合最終的に 3 つノードが残る
     while updated_pool.len() > 0{
 
-        let mut updated_minibatch:Vec<(usize,ScoredSequence,ScoredSequence,f32,f32,ScoredSeqAligner)> = vec![];
+        let mut updated_minibatch:Vec<(usize,SequenceProfile,SequenceProfile,f32,f32,ProfileAligner)> = vec![];
         while updated_pool.len() > 0{
             let idx_target = updated_pool.pop().unwrap();
             if let Some(x) = &profiles[idx_target]{
@@ -406,7 +406,7 @@ pub fn tree_guided_alignment(sequences:Vec<ScoredSequence>,aligner:&mut ScoredSe
         }
         //println!("multi_align_minibatch:{}",updated_minibatch.len());
         //rayon による並列処理
-        let results:Vec<(ScoredSeqAligner,usize,ScoredSequence,f32)> = updated_minibatch.into_par_iter().map(|v|{
+        let results:Vec<(ProfileAligner,usize,SequenceProfile,f32)> = updated_minibatch.into_par_iter().map(|v|{
             let uu = v.0;
             let ap = v.1;
             let bp = v.2;
