@@ -187,6 +187,7 @@ impl ProfileAligner {
             bweight.push(b.gmat[ii].match_ratio);
         }
         //バッファに入れようかと思ったが、結局新しく領域を確保していたのでやめた
+        //match_ratio についてもここで渡しておくこと
         let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
         //let match_score:Vec<Vec<f32>> = gmat::calc_dot_product_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
         
@@ -206,7 +207,7 @@ impl ProfileAligner {
                 let acol = &a.gmat[ii-1];
                 let bcol = &b.gmat[jj-1];
                 //let sc:f32 = ScoredSeqAligner::calc_match_score(&acol.0,&bcol.0);
-                let sc:f32 = match_score[ii-1][jj-1];
+                let sc:f32 = match_score[ii-1][jj-1];//match_ratio (ウエイト)は既に導入されているのでここでは使わない
                 
                 let diag_m:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UPLEFT as usize] + sc;
                 let diag_l:f32 = self.dp_matrix[ii-1][jj-1][DIREC_LEFT as usize] + sc;
@@ -360,6 +361,7 @@ impl ProfileAligner {
         return (aligned_tuple,maxscore);
     }
 
+    //alignment のデータをもとにプロファイルを合成して返す
     pub fn make_alignment(&mut self
         ,mut a:SequenceProfile
         ,mut b:SequenceProfile
@@ -367,6 +369,8 @@ impl ProfileAligner {
         ,profile_only:bool // true にすると alignment の文字は a に関してのみ保持する
     ,weight:Option<(f32,f32)>)->SequenceProfile{
         assert!(!profile_only);//後で追加する
+        // もし、distance のデータはプロファイルと別で持っておくならば、distance を計算した際のウエイト（カラムにおける match_ratio）の合計も持っておくこと
+        // 現在はカラムの Value の平均値を使っているが、配列の長さによって分母が変わるため、DISTANCE に使う値を例えばウエイト 0.5 等で単純に合計すると値がズレる
         let anumaliseq = a.get_num_seq();
         let bnumaliseq = b.get_num_seq();
         let _numallseq = anumaliseq+bnumaliseq;
@@ -729,10 +733,11 @@ impl SequenceProfile{
 
     //アラインされた文字列をマッピング情報から作成して返す。
     pub fn get_aligned_seq(&self,idx:usize)->Vec<char>{//a3m にし易いように char で返す。
+ここから iter かけるとエラーになる
         if self.alignment_mapping_ids[idx].len() == 0{
             return self.member_sequences[idx].clone();
         }
-        let mut mmax = self.member_sequences[idx].len() as i32;
+        let mut mmax = self.member_sequences[idx].len() as i32-1;
         for mapp in self.alignment_mapping_ids[idx].iter(){
             for jj in self.alignment_mapping[*mapp].iter(){
                 mmax = mmax.max(jj.1);
@@ -775,7 +780,6 @@ impl SequenceProfile{
                 }
             }
         }
-        
         return ret;
     }    
 }

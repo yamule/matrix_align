@@ -484,7 +484,8 @@ pub fn calc_euclid_dist(vec1: &Vec<f32>,vec2: &Vec<f32>)->f32{
 pub struct VectorStats{
     pub mean:f32,
     pub var:f32,
-    pub count:usize
+    pub count:usize,
+    pub weight_sum:f32
 }
 
 pub fn calc_stats(vec1:&Vec<f32>)->VectorStats{
@@ -498,7 +499,31 @@ pub fn calc_stats(vec1:&Vec<f32>)->VectorStats{
     }
     let vvar:f32 = mvec1.into_iter().sum::<f32>()/(count as f32);
     return VectorStats{
-        mean:mmean,var:vvar,count:count
+        mean:mmean,var:vvar,count:count,weight_sum:count as f32
+    };
+}
+
+
+pub fn calc_weighted_stats(vec1_:&Vec<f32>,weight:&Vec<f32>)->VectorStats{
+    assert!(vec1_.len() != 0);
+    let mut vec1 = vec1_.clone();
+    unsafe{
+        vector_multiply(&mut vec1,weight);
+    }
+
+    let weight_sum:f32 = weight.iter().sum::<f32>();
+    assert!(weight_sum > 0.0);
+    let count:usize = vec1_.len();
+    let mmean:f32 = vec1.iter().sum::<f32>()/weight_sum;
+    let mut mvec1 = vec1_.clone();
+    unsafe{
+        element_add(&mut mvec1,mmean*-1.0);
+        vector_square(&mut mvec1);
+        vector_multiply(&mut mvec1, weight);
+    }
+    let vvar:f32 = mvec1.into_iter().sum::<f32>()/weight_sum;
+    return VectorStats{
+        mean:mmean,var:vvar,count:count,weight_sum:weight_sum
     };
 }
 

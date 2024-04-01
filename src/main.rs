@@ -228,6 +228,8 @@ fn main_(args:Vec<String>){
         }
     }
 
+    assert!(num_threads > 0);
+    rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global().unwrap();
     for ii in 0..num_iter{
         eprintln!("iter: {}",ii);
 
@@ -240,10 +242,6 @@ fn main_(args:Vec<String>){
         for ss in allseqs_.iter(){
             seqvec.push(ss.clone());
         }
-        
-        assert!(num_threads > 0);
-        rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global().unwrap();
-
         
         let mut ans = if tree_guided{
             if max_cluster_size == -1{
@@ -278,7 +276,7 @@ fn main_(args:Vec<String>){
 
             for seqidx in 0..alires.member_sequences.len(){
                 let mut aseq = alires.get_aligned_seq(seqidx);
-                assert!(aseq.len() <= maxpos,"{} {}",aseq.len(),maxpos);
+                assert!(aseq.len() <= maxpos,"{} {} \n{}",aseq.len(),maxpos,aseq.iter().map(|m| m.to_string()).collect::<Vec<String>>().join(""));
                 while aseq.len() < maxpos{
                     aseq.push('-');
                 }
