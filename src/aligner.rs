@@ -382,7 +382,6 @@ impl ProfileAligner {
         new_alignments.append(&mut a.member_sequences);
         new_alignments.append(&mut b.member_sequences);
 
-        
         let boffset = a.alignment_mapping.len(); //b に属していたアラインメントの開始インデクス
 
         let mut new_alignment_mapping:Vec<Vec<(i32,i32)>> = vec![];
@@ -701,7 +700,7 @@ impl SequenceProfile{
         return SequenceProfile{
             member_sequences:alignments,
             alignment_mapping:vec![],
-            alignment_mapping_ids:vec![],
+            alignment_mapping_ids:vec![vec![]],
             headers:headers,
             gmat:gmat,
             seq_weights:seq_weights,
@@ -733,7 +732,7 @@ impl SequenceProfile{
 
     //アラインされた文字列をマッピング情報から作成して返す。
     pub fn get_aligned_seq(&self,idx:usize)->Vec<char>{//a3m にし易いように char で返す。
-ここから iter かけるとエラーになる
+        
         if self.alignment_mapping_ids[idx].len() == 0{
             return self.member_sequences[idx].clone();
         }
