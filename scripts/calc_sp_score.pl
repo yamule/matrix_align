@@ -1,6 +1,7 @@
 use strict;
 use warnings;
 
+# perl scripts/calc_sp_score.pl <targetfile> <reference file>
 
 sub load_seq{
 	my $filename = $_[0];
@@ -93,27 +94,29 @@ foreach my $ss(@seq1){
 	}
 }
 
+my %seq_to_name;
 foreach my $ss(@seq2){
 	my $seq = uc get_aa_fasta($ss);
 	my $aa = uc $seq;
 	$aa =~ s/[^A-Z]//g;
+	$seq_to_name{$aa} = get_name_fasta($ss);
 	my @pseq = split(//,$seq);
 	if(!defined $aa_to_align{$aa}){
-		die $aa." was notot found in file1.\n";
+		die $aa." was not found in file1.\n";
 	}else{
 		push(@{$aa_to_align{$aa}},\@pseq);
 	}
 }
 my @ssorted = sort{$a cmp $b}keys %aa_to_align;
 my $pnum = $#ssorted+1;
-my $snum = 2;# ƒyƒAƒƒCƒY‚¾‚¯
+my $snum = 2;# ï¿½yï¿½Aï¿½ï¿½ï¿½Cï¿½Yï¿½ï¿½ï¿½ï¿½
 for(my $ii = 0;$ii < $pnum;$ii++){
 	if($snum != 2){
 		die $ssorted[$ii]." has ".($#{$aa_to_align{$ssorted[$ii]}}+1)." seqs. Expected 2 .\n";
 	}
 }
-# “ñ‚Â•¶š—ñ‚Ì”z—ñ‚ğ—^‚¦‚ÄAƒ}ƒbƒ`ó‘Ô‚Å‚ ‚éê‡A‘æˆêˆø”‚Ìƒ}ƒbƒ`‚µ‚Ä‚¢‚é•¶š‚ÌƒCƒ“ƒfƒNƒX[>‘æ“ñˆø”‚Ìƒ}ƒbƒ`‚µ‚Ä‚¢‚é•¶š‚ÌƒCƒ“ƒfƒNƒX
-# ‚ÌƒnƒbƒVƒ…‚ğ•Ô‚·
+# ï¿½ï¿½Â•ï¿½ï¿½ï¿½ï¿½ï¿½Ì”zï¿½ï¿½ï¿½^ï¿½ï¿½ï¿½ÄAï¿½}ï¿½bï¿½`ï¿½ï¿½Ô‚Å‚ï¿½ï¿½ï¿½ê‡ï¿½Aï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ìƒ}ï¿½bï¿½`ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½é•¶ï¿½ï¿½ï¿½ÌƒCï¿½ï¿½ï¿½fï¿½Nï¿½Xï¿½[>ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ìƒ}ï¿½bï¿½`ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½é•¶ï¿½ï¿½ï¿½ÌƒCï¿½ï¿½ï¿½fï¿½Nï¿½X
+# ï¿½Ìƒnï¿½bï¿½Vï¿½ï¿½ï¿½ï¿½Ô‚ï¿½
 sub posmap{
 	my @s1 = @{$_[0]};
 	my @s2 = @{$_[1]};
@@ -143,27 +146,37 @@ sub posmap{
 	return \%ret;
 }
 
-my $score = 0;
+my $norm_all = 0;
+my $match_all = 0;
 for(my $ii = 0;$ii < $pnum;$ii++){
 	for(my $jj = $ii+1;$jj < $pnum;$jj++){
 		my %targetmap = %{posmap(${$aa_to_align{$ssorted[$ii]}}[0],${$aa_to_align{$ssorted[$jj]}}[0])};
 		my %refmap = %{posmap(${$aa_to_align{$ssorted[$ii]}}[1],${$aa_to_align{$ssorted[$jj]}}[1])};
+		my $aname = $seq_to_name{$ssorted[$ii]};
+		my $bname = $seq_to_name{$ssorted[$jj]};
 		
-		my $norm = length($ssorted[$ii]);
-		if( length($ssorted[$jj]) < length($ssorted[$ii])){
-			$norm = length($ssorted[$jj]); # min load ‚·‚é‚Ì‚ß‚ñ‚Ç‚­‚³‚¢B
-		}
-		my $counter = 0;
-		foreach my $kk(keys %targetmap){
-			if(defined $refmap{$kk}){
+		#my $norm = length($ssorted[$ii]);
+		#if( length($ssorted[$jj]) < length($ssorted[$ii])){
+		#	$norm = length($ssorted[$jj]); # min load ï¿½ï¿½ï¿½ï¿½Ì‚ß‚ï¿½Ç‚ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B
+		#}
+		my $matcher = 0;
+		my $norm = 0;
+		foreach my $kk(keys %refmap){
+			if(defined $targetmap{$kk}){
 				if($refmap{$kk} == $targetmap{$kk}){
-					$counter ++;
+					$matcher ++;
 				}
 			}
+			$norm ++;
 		}
-		#print $counter."\n";
-		$score += $counter/$norm;
+		print $aname."\t".$bname."\n";
+		print $matcher/$norm;
+		print "\n";
+
+		$norm_all += $norm;
+		$match_all += $matcher;
 	}
 }
 
-print $score."\n";
+print $match_all/$norm_all;
+print "\n";
