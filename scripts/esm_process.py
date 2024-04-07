@@ -250,7 +250,6 @@ while len(fass) > 0 or len(remained) > 0:
                 #    linebuff.append(format_string.format(repres[jj][mm]));
                 linebuff.append("\n");
             
-            linebuff.append("//\n");
             fout.write("".join(linebuff));
             del linebuff;
     for cc in completed:
