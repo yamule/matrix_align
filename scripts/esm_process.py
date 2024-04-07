@@ -45,7 +45,6 @@ infile = args.infile;
 outfile = args.outfile;
 rounder = args.round;
 ddev = args.device;
-assert outfile.endswith(".gz"), "Output file must ends with .gz ."
 
 # Load ESM-2 model
 model, alphabet = esm.pretrained.load_model_and_alphabet(model_path)
