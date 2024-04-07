@@ -95,6 +95,7 @@ foreach my $ss(@seq1){
 }
 
 my %seq_to_name;
+my %seq_in_ref;
 foreach my $ss(@seq2){
 	my $seq = uc get_aa_fasta($ss);
 	my $aa = uc $seq;
@@ -105,9 +106,10 @@ foreach my $ss(@seq2){
 		die $aa." was not found in file1.\n";
 	}else{
 		push(@{$aa_to_align{$aa}},\@pseq);
+		$seq_in_ref{$aa} = 100;
 	}
 }
-my @ssorted = sort{$a cmp $b}keys %aa_to_align;
+my @ssorted = sort{$a cmp $b}keys %seq_in_ref;
 my $pnum = $#ssorted+1;
 my $snum = 2;# �y�A���C�Y����
 for(my $ii = 0;$ii < $pnum;$ii++){
