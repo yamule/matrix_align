@@ -2,10 +2,12 @@ use std::cmp::max;
 use std::collections::*;
 use rayon;
 use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_, GMatStatistics};
-use matrix_align::aligner::{AlignmentType, ScoredSeqAligner, ScoredSequence};
+use matrix_align::aligner::{AlignmentType, ProfileAligner, SequenceProfile};
 use matrix_align::ioutil::{load_multi_gmat, save_lines};
 use matrix_align::matrix_process;
-use matrix_align::guide_tree;
+use matrix_align::guide_tree_based_alignment;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 fn argparse(mut args:Vec<String>)->HashMap<String,String>{
     assert!(args.len() > 0);
@@ -52,7 +54,10 @@ fn check_acceptable(a:&str,acceptable:Vec<&str>)-> bool{ // 10 もないだろ�
 }
 
 fn main(){
-    let argss: HashMap<String,String> = argparse(std::env::args().collect::<Vec<String>>());
+    main_(std::env::args().collect::<Vec<String>>());
+}
+fn main_(args:Vec<String>){
+    let argss: HashMap<String,String> = argparse(args);
     let required_arg:Vec<&str> = vec!["--in","--out"];
     let allowed_arg_:Vec<(&str,&str)> = vec![
         ("--in","<input file path> : Text based file which contains general profile matrices for multiple sequences. Something like as follows. \n>seq1\n[amino acid letter at position 1]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 2]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 3]\t[value1]\t[value2]\t[value3]...\n...\n>seq2\n[amino acid letter at position 1]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 2]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 3]\t[value1]\t[value2]\t[value3]...\n...\n..."),
@@ -63,6 +68,10 @@ fn main(){
         ("--normalize","<bool or novalue=true> : Normalize profile values before alignment. Default 'false'."),
         ("--alignment_type","<global or local> : Alignment type. Default 'global'"),
         ("--num_threads","<int> : Number of threads. Default 4."),
+        ("--tree_guided","<bool or novalue=true> : Use guide-tree based alignment."),
+        ("--max_cluster_size","<int> : Limit all-vs-all comparison with this many number of profiles and align hierarchically. Must be > 10. Default -1."),
+        ("--random_seed","<int> : Seed for random number generator."),
+        ("--tree_type","<string> : Type of guide tree. \"NJ\" or \"UPGMA\". Default \"NJ\"."),
         ("--help","<bool or novalue=true> : Print this message."),
     ];
     let allowed_arg:HashSet<&str> = allowed_arg_.clone().into_iter().map(|m|m.0).collect();
@@ -87,12 +96,51 @@ fn main(){
         argcheck.sort();
         error_message.push(format!("Unknown arg: {:?}",argcheck));
     }
-    if argss.contains_key("--help"){
+    
+    if !argss.contains_key("--in") || !argss.contains_key("--out"){
+        panic!("--in and --out is required.");
+    }
+
+    let tree_type = argss.get("--tree_type").unwrap_or(&"NJ".to_owned()).clone();
+    let infile = argss.get("--in").unwrap().clone();
+    let outfile = argss.get("--out").unwrap().clone();
+    let num_iter:usize = argss.get("--num_iter").unwrap_or(&"2".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_iter {:?}",e));
+    let gap_open_penalty:f32 = argss.get("--gap_open_penalty").unwrap_or(&"-10.0".to_owned()).parse::<f32>().unwrap_or_else(|e|panic!("in --gap_open_penalty {:?}",e));
+    let gap_extension_penalty:f32 = argss.get("--gap_extension_penalty").unwrap_or(&"-0.5".to_owned()).parse::<f32>().unwrap_or_else(|e|panic!("in --gap_extension_penalty {:?}",e));
+    let num_threads:usize = argss.get("--num_threads").unwrap_or(&"4".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_threads {:?}",e));
+    let normalize:bool = check_bool(argss.get("--normalize").unwrap_or(&"false".to_owned()).as_str(),"--normalize");
+    let print_help:bool = check_bool(argss.get("--help").unwrap_or(&"false".to_owned()).as_str(),"--help");
+    let tree_guided:bool = check_bool(argss.get("--tree_guided").unwrap_or(&"true".to_owned()).as_str(),"--tree_guided");
+    let max_cluster_size:i64 = argss.get("--max_cluster_size").unwrap_or(&"-1".to_owned()).parse::<i64>().unwrap_or_else(|e|panic!("in --maximum_cluster_size {:?}",e));
+    
+    
+    check_acceptable(&tree_type.as_str(),vec!["NJ","UPGMA"] );
+    let tree_type = if &tree_type == "NJ"{
+        guide_tree_based_alignment::TreeType::TreeNj
+    }else{
+        guide_tree_based_alignment::TreeType::TreeUPGMA
+    };
+
+
+    if print_help{
         for aa in allowed_arg_.iter(){
             eprintln!("{} {}",aa.0,aa.1);
         }
         std::process::exit(0);
     }
+
+    let mut rngg:StdRng = if let Some(x) = argss.get("--random_seed"){
+        let i = x.parse::<i64>().unwrap_or(-1);
+        assert!(i >  0,"--random_seed must be a positive integer. {}",x);
+        StdRng::seed_from_u64(i as u64)
+    }else{
+        StdRng::from_entropy()
+    };// -1 の場合シードを使わない
+
+    if max_cluster_size > -1 {
+        assert!(max_cluster_size >  10,"--max_cluster_size must be > 10 or -1. {}",max_cluster_size);
+    }// -1 の場合 hierarcical align を行わない
+
 
     let mut alignment_type = AlignmentType::Global;
     if argss.contains_key("--alignment_type"){
@@ -105,10 +153,7 @@ fn main(){
         }else{
             panic!("???");
         }
-
     }
-
-
 
     if error_message.len() > 0{
         for aa in allowed_arg_.iter(){
@@ -122,18 +167,11 @@ fn main(){
         panic!();
     }
 
-    let infile = argss.get("--in").unwrap().clone();
-    let outfile = argss.get("--out").unwrap().clone();
-    let num_iter:usize = argss.get("--num_iter").unwrap_or(&"2".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_iter {:?}",e));
-    let gap_open_penalty:f32 = argss.get("--gap_open_penalty").unwrap_or(&"-10.0".to_owned()).parse::<f32>().unwrap_or_else(|e|panic!("in --gap_open_penalty {:?}",e));
-    let gap_extension_penalty:f32 = argss.get("--gap_extension_penalty").unwrap_or(&"-0.5".to_owned()).parse::<f32>().unwrap_or_else(|e|panic!("in --gap_extension_penalty {:?}",e));
-    let num_threads:usize = argss.get("--num_threads").unwrap_or(&"4".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_threads {:?}",e));
-    let normalize:bool = check_bool(argss.get("--normalize").unwrap_or(&"false".to_owned()).as_str(),"--normalize");
-    
+
     let mut name_to_res:HashMap<String,String> = HashMap::new();
     
     let gmatstats:Vec<GMatStatistics>;
-    let mut profile_seq:Option<ScoredSequence> = None;
+    let mut profile_seq:Option<SequenceProfile> = None;
     unsafe{
         gmatstats = calc_vec_stats(& vec![infile.clone()]);// 統計値のために一回ファイルを読んでいるが後で変更する
     }
@@ -142,9 +180,9 @@ fn main(){
     let gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
 
     let veclen = gmat1_[0].2[0].len();
-    let mut saligner:ScoredSeqAligner = ScoredSeqAligner::new(veclen,300,gap_open_penalty,gap_extension_penalty,alignment_type);
+    let mut saligner:ProfileAligner = ProfileAligner::new(veclen,300,gap_open_penalty,gap_extension_penalty,alignment_type);
     
-    let mut allseqs_:Vec<ScoredSequence> = vec![];
+    let mut allseqs_:Vec<SequenceProfile> = vec![];
     for mut gg in gmat1_.into_iter(){
         let n = gg.0.clone();
         if name_to_res.contains_key(&n){
@@ -161,7 +199,7 @@ fn main(){
         
         let alen = gg.1.len();
         // ギャップまだ入って無い
-        let seq = ScoredSequence::new(
+        let seq = SequenceProfile::new(
             vec![(gg.0,gg.1)],alen,gg.2[0].len(),None,Some(gg.2),None
         );
         allseqs_.push(seq);
@@ -172,7 +210,7 @@ fn main(){
     if similarity_sort{
         //先頭配列に近い順でアラインメントする
         let seq1 = allseqs_.swap_remove(0);
-        let mut scoresort:Vec<(f32,ScoredSequence)> = vec![];
+        let mut scoresort:Vec<(f32,SequenceProfile)> = vec![];
         for seq2 in allseqs_.into_iter(){
             let dpres = saligner.perform_dp(&seq1,&seq2,gap_open_penalty,gap_extension_penalty);
             //let nscore = dpres.1/(seq1.get_alignment_length().min(seq2.get_alignment_length())) as f32;
@@ -190,10 +228,12 @@ fn main(){
         }
     }
 
+    assert!(num_threads > 0);
+    rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global().unwrap();
     for ii in 0..num_iter{
         eprintln!("iter: {}",ii);
 
-        let mut seqvec:Vec<ScoredSequence> = vec![];
+        let mut seqvec:Vec<SequenceProfile> = vec![];
         
         if let Some(p) = profile_seq{
             seqvec.push(p.create_merged_dummy());
@@ -203,21 +243,21 @@ fn main(){
             seqvec.push(ss.clone());
         }
         
-        assert!(num_threads > 0);
-        rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global().unwrap();
-
-        let softtree = true;
-        
-        let mut ans = if softtree{
-            guide_tree::tree_guided_alignment(seqvec, &mut saligner)
+        let mut ans = if tree_guided{
+            if max_cluster_size == -1{
+                guide_tree_based_alignment::tree_guided_alignment(seqvec, &mut saligner,false,num_threads,tree_type)
+            }else{
+                guide_tree_based_alignment::hierarchical_alignment(seqvec, &mut saligner,max_cluster_size, &mut rngg,num_threads,tree_type)
+            }
         }else{
             saligner.make_msa(seqvec,false)
         };
 
-        assert!(ans.0.len() == 1);
-        eprintln!("score:{}",ans.1);
-        let alires = ans.0.pop().unwrap();
-
+        assert!(ans.len() == 1);
+        eprintln!("score:{}",ans[0].1);
+        
+        let (alires,_alisc) = ans.pop().unwrap();
+        
         //let pstr = alires.gmat_str();
         //for pp in pstr{ //profile 表示
         //    println!("{}",pp);
@@ -234,9 +274,9 @@ fn main(){
             }
             maxpos += 1;
 
-            for seqidx in 0..alires.alignments.len(){
+            for seqidx in 0..alires.member_sequences.len(){
                 let mut aseq = alires.get_aligned_seq(seqidx);
-                assert!(aseq.len() <= maxpos,"{} {}",aseq.len(),maxpos);
+                assert!(aseq.len() <= maxpos,"{} {} \n{}",aseq.len(),maxpos,aseq.iter().map(|m| m.to_string()).collect::<Vec<String>>().join(""));
                 while aseq.len() < maxpos{
                     aseq.push('-');
                 }

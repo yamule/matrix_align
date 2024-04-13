@@ -5,4 +5,7 @@ pub mod gmat;
 pub mod aligner;
 pub mod misc;
 pub mod neighbor_joining;
+pub mod guide_tree_based_alignment;
+pub mod bisecting_kmeans;
 pub mod guide_tree;
+pub mod upgma;

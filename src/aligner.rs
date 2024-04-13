@@ -63,7 +63,7 @@ impl GMatColumn{
 }
 
 #[derive(Clone,Debug)]
-pub struct ScoredSeqAligner{
+pub struct ProfileAligner{
     pub dp_matrix:Vec<Vec<Vec<f32>>>,
     pub path_matrix:Vec<Vec<Vec<u8>>>,
     pub charmap:Vec<usize>,
@@ -75,8 +75,8 @@ pub struct ScoredSeqAligner{
     pub penalty_warning:bool,
     pub alignment_type:AlignmentType
 }
-impl ScoredSeqAligner {
-    pub fn new(vec_size:usize,buff_len:usize,gap_open_penalty:f32,gap_extension_penalty:f32,alignment_type:AlignmentType)->ScoredSeqAligner{
+impl ProfileAligner {
+    pub fn new(vec_size:usize,buff_len:usize,gap_open_penalty:f32,gap_extension_penalty:f32,alignment_type:AlignmentType)->ProfileAligner{
         let dp_matrix:Vec<Vec<Vec<f32>>> = vec![vec![vec![];1];1];
         let path_matrix:Vec<Vec<Vec<u8>>> = vec![vec![vec![];1];1];
         let mut charmap:Vec<usize> = vec![NUM_CHARTYPE;256];
@@ -86,7 +86,7 @@ impl ScoredSeqAligner {
             charmap[ee.1 as usize] = ee.0;
         }
 
-        let mut ret = ScoredSeqAligner{
+        let mut ret = ProfileAligner{
             dp_matrix:dp_matrix
             ,path_matrix:path_matrix
             ,charmap
@@ -107,7 +107,7 @@ impl ScoredSeqAligner {
         self.path_matrix  = vec![vec![vec![0;3];bmax+1];amax+1];
     }
 
-    pub fn perform_dp(&mut self,a:&ScoredSequence,b:&ScoredSequence,gap_open_penalty:f32,gap_extension_penalty:f32)->(Vec<(i32,i32)>,f32) {
+    pub fn perform_dp(&mut self,a:&SequenceProfile,b:&SequenceProfile,gap_open_penalty:f32,gap_extension_penalty:f32)->(Vec<(i32,i32)>,f32) {
         assert!(gap_extension_penalty <= 0.0);
         assert!(gap_open_penalty <= 0.0);
         if gap_extension_penalty < gap_open_penalty && !self.penalty_warning{
@@ -187,6 +187,7 @@ impl ScoredSeqAligner {
             bweight.push(b.gmat[ii].match_ratio);
         }
         //バッファに入れようかと思ったが、結局新しく領域を確保していたのでやめた
+        //match_ratio についてもここで渡しておくこと
         let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
         //let match_score:Vec<Vec<f32>> = gmat::calc_dot_product_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
         
@@ -206,7 +207,7 @@ impl ScoredSeqAligner {
                 let acol = &a.gmat[ii-1];
                 let bcol = &b.gmat[jj-1];
                 //let sc:f32 = ScoredSeqAligner::calc_match_score(&acol.0,&bcol.0);
-                let sc:f32 = match_score[ii-1][jj-1];
+                let sc:f32 = match_score[ii-1][jj-1];//match_ratio (ウエイト)は既に導入されているのでここでは使わない
                 
                 let diag_m:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UPLEFT as usize] + sc;
                 let diag_l:f32 = self.dp_matrix[ii-1][jj-1][DIREC_LEFT as usize] + sc;
@@ -331,7 +332,7 @@ impl ScoredSeqAligner {
         }
 
 
-        eprintln!("{:?} vs {:?}:{}",a.headers,b.headers,maxscore);
+        //println!("{:?} vs {:?}:{}",a.headers,b.headers,maxscore);
         
         if let AlignmentType::Local = self.alignment_type{
             while currentx > 0{
@@ -360,13 +361,16 @@ impl ScoredSeqAligner {
         return (aligned_tuple,maxscore);
     }
 
+    //alignment のデータをもとにプロファイルを合成して返す
     pub fn make_alignment(&mut self
-        ,mut a:ScoredSequence
-        ,mut b:ScoredSequence
+        ,mut a:SequenceProfile
+        ,mut b:SequenceProfile
         ,alignment:Vec<(i32,i32)>
         ,profile_only:bool // true にすると alignment の文字は a に関してのみ保持する
-    ,weight:Option<(f32,f32)>)->ScoredSequence{
+    ,weight:Option<(f32,f32)>)->SequenceProfile{
         assert!(!profile_only);//後で追加する
+        // もし、distance のデータはプロファイルと別で持っておくならば、distance を計算した際のウエイト（カラムにおける match_ratio）の合計も持っておくこと
+        // 現在はカラムの Value の平均値を使っているが、配列の長さによって分母が変わるため、DISTANCE に使う値を例えばウエイト 0.5 等で単純に合計すると値がズレる
         let anumaliseq = a.get_num_seq();
         let bnumaliseq = b.get_num_seq();
         let _numallseq = anumaliseq+bnumaliseq;
@@ -375,10 +379,9 @@ impl ScoredSeqAligner {
 
         //アラインメント情報をマージ
         let mut new_alignments:Vec<Vec<char>> = vec![];
-        new_alignments.append(&mut a.alignments);
-        new_alignments.append(&mut b.alignments);
+        new_alignments.append(&mut a.member_sequences);
+        new_alignments.append(&mut b.member_sequences);
 
-        
         let boffset = a.alignment_mapping.len(); //b に属していたアラインメントの開始インデクス
 
         let mut new_alignment_mapping:Vec<Vec<(i32,i32)>> = vec![];
@@ -438,7 +441,7 @@ impl ScoredSeqAligner {
         headers.append(&mut a.headers);
         headers.append(&mut b.headers);
 
-        let mut ret:ScoredSequence = ScoredSequence::new(headers.into_iter().zip(new_alignments.into_iter()).collect()
+        let mut ret:SequenceProfile = SequenceProfile::new(headers.into_iter().zip(new_alignments.into_iter()).collect()
         , gapper[0].len(), vec_size,None,None,None);
 
         ret.alignment_mapping = new_alignment_mapping;
@@ -537,10 +540,10 @@ impl ScoredSeqAligner {
     }
 
 
-    pub fn make_msa_with_edge(&mut self,mut sequences: Vec<ScoredSequence>,profile_only:bool,mut edges:Vec<(usize,usize)>,merge_all:bool)
-    -> Vec<(Vec<ScoredSequence>,f32)>{
+    pub fn make_msa_with_edge(&mut self,mut sequences: Vec<SequenceProfile>,profile_only:bool,mut edges:Vec<(usize,usize)>,merge_all:bool)
+    -> Vec<Vec<(SequenceProfile,f32)>>{
         let mut uff:UnionFind = UnionFind::new(sequences.len());
-        let mut bags:Vec<Option<(ScoredSequence,f32)>> = sequences.into_iter().map(|m|Some((m,0.0))).collect();
+        let mut bags:Vec<Option<(SequenceProfile,f32)>> = sequences.into_iter().map(|m|Some((m,0.0))).collect();
         
         edges.reverse();//pop なので Reverse
         while edges.len() > 0{
@@ -551,17 +554,18 @@ impl ScoredSeqAligner {
                 continue;
             }
             bags.push(None);
-            let aseq:(ScoredSequence,f32) = bags.swap_remove(a).unwrap_or_else(||panic!("???"));
+            let aseq:(SequenceProfile,f32) = bags.swap_remove(a).unwrap_or_else(||panic!("???"));
             bags.push(None);
-            let bseq:(ScoredSequence,f32) = bags.swap_remove(b).unwrap_or_else(||panic!("???"));
+            let bseq:(SequenceProfile,f32) = bags.swap_remove(b).unwrap_or_else(||panic!("???"));
             let mut r = self.make_msa(vec![aseq.0,bseq.0], profile_only);
-            assert!(r.0.len() == 1);
+            assert!(r.len() == 1);
             uff.union(a,b);
-            bags[a] = Some((r.0.pop().unwrap(),r.1));
+            let rres = r.pop().unwrap();
+            bags[a] = Some((rres.0,rres.1));
         }
 
         if merge_all{
-            let mut allseq:Vec<ScoredSequence> = vec![];
+            let mut allseq:Vec<SequenceProfile> = vec![];
             let mut scores:Vec<f32> = vec![];
             for bb in bags.into_iter(){
                 if let Some(x) = bb{
@@ -573,15 +577,15 @@ impl ScoredSeqAligner {
                 let res = self.make_msa(allseq, profile_only);
                 return vec![res];
             }else{
-                return vec![(allseq,scores[0])];
+                return vec![vec![(allseq.pop().unwrap(),scores[0])]];
             }
         }
         return bags.into_iter().filter(
                 |m| if let Some(x) =  m{true}else{false}
-                ).map(|m|  if let Some(x) = m{(vec![x.0],x.1)}else{panic!("???");}).collect();
+                ).map(|m|  if let Some(x) = m{vec![(x.0,x.1)]}else{panic!("???");}).collect();
     }
-    pub fn make_msa(&mut self,mut sequences: Vec<ScoredSequence>,profile_only:bool)
-    -> (Vec<ScoredSequence>,f32){
+    pub fn make_msa(&mut self,mut sequences: Vec<SequenceProfile>,profile_only:bool)
+    -> Vec<(SequenceProfile,f32)>{
         let mut final_score:f32 = 0.0;
         sequences.reverse();
         let mut center_seq = sequences.pop().unwrap();
@@ -592,18 +596,18 @@ impl ScoredSeqAligner {
             let newgroup;
             if firstrun{
                 dpres = self.perform_dp(&center_seq,&bseq,self.gap_open_penalty,self.gap_extension_penalty);
-                newgroup = ScoredSeqAligner::make_alignment(self,center_seq,bseq,dpres.0,profile_only,None);
+                newgroup = ProfileAligner::make_alignment(self,center_seq,bseq,dpres.0,profile_only,None);
                 firstrun = false;
             }else{
                 dpres = self.perform_dp(&bseq,&center_seq,self.gap_open_penalty,self.gap_extension_penalty);
-                newgroup = ScoredSeqAligner::make_alignment(self,bseq,center_seq,dpres.0,profile_only,None);
+                newgroup = ProfileAligner::make_alignment(self,bseq,center_seq,dpres.0,profile_only,None);
             };
             final_score = dpres.1;
             
             center_seq = newgroup;
         }
         // 今のところ全部マージする
-        return (vec![center_seq],final_score);
+        return vec![(center_seq,final_score)];
     }
 
     //配列のウェイトを計算する
@@ -615,19 +619,19 @@ impl ScoredSeqAligner {
 }
 
 #[derive(Clone,Debug)]
-pub struct ScoredSequence{
+pub struct SequenceProfile{
     pub gmat:Vec<GMatColumn>,
-    pub alignments:Vec<Vec<char>>,
+    pub member_sequences:Vec<Vec<char>>,
     pub alignment_mapping:Vec<Vec<(i32,i32)>>, // 現在の配列の場所は次のアラインメントが行われた場合どこに移動するか
-    pub alignment_mapping_ids:Vec<Vec<usize>>, //alignments の配列は alignment_mapping のどの mapping をどの順番で使うか
+    pub alignment_mapping_ids:Vec<Vec<usize>>, //member_sequences の配列は alignment_mapping のどの mapping をどの順番で使うか
     pub headers:Vec<String>,//Fasta Header 行
     pub seq_weights:Vec<f32>,
     pub is_dummy:bool
 }
 
-impl ScoredSequence{
+impl SequenceProfile{
     pub fn new(alignments_:Vec<(String,Vec<char>)>,alignment_length:usize,vec_size:usize,seq_weights_:Option<Vec<f32>>
-        ,gmat_:Option<Vec<Vec<f32>>>,gap_state_:Option<Vec<(f32,f32,f32,f32)>>)-> ScoredSequence{
+        ,gmat_:Option<Vec<Vec<f32>>>,gap_state_:Option<Vec<(f32,f32,f32,f32)>>)-> SequenceProfile{
         let seqnum = alignments_.len();
         let mut gmat:Vec<GMatColumn> = vec![];
         if let Some(mut x) = gmat_{
@@ -658,8 +662,8 @@ impl ScoredSequence{
             headers.push(aa.0);
             alimap_ids.push(vec![]);
         }
-        return ScoredSequence{
-            alignments:alignments,
+        return SequenceProfile{
+            member_sequences:alignments,
             alignment_mapping:vec![],
             alignment_mapping_ids:alimap_ids,
             is_dummy:false,
@@ -688,15 +692,15 @@ impl ScoredSequence{
         return ret;
     }
 
-    pub fn create_merged_dummy(&self)->ScoredSequence{
-        let alignments:Vec<Vec<char>> = vec![vec!['X';self.alignments[0].len()]];
+    pub fn create_merged_dummy(&self)->SequenceProfile{
+        let alignments:Vec<Vec<char>> = vec![vec!['X';self.member_sequences[0].len()]];
         let headers:Vec<String> = vec!["dummy".to_owned()];
         let gmat = self.gmat.clone();
         let seq_weights = vec![self.get_weight_sum()];
-        return ScoredSequence{
-            alignments:alignments,
+        return SequenceProfile{
+            member_sequences:alignments,
             alignment_mapping:vec![],
-            alignment_mapping_ids:vec![],
+            alignment_mapping_ids:vec![vec![]],
             headers:headers,
             gmat:gmat,
             seq_weights:seq_weights,
@@ -709,7 +713,7 @@ impl ScoredSequence{
     }
 
     pub fn get_num_seq(&self)-> usize{
-        return self.alignments.len();
+        return self.member_sequences.len();
     }
 
     pub fn get_vec_size(&self)-> usize{
@@ -728,10 +732,11 @@ impl ScoredSequence{
 
     //アラインされた文字列をマッピング情報から作成して返す。
     pub fn get_aligned_seq(&self,idx:usize)->Vec<char>{//a3m にし易いように char で返す。
+        
         if self.alignment_mapping_ids[idx].len() == 0{
-            return self.alignments[idx].clone();
+            return self.member_sequences[idx].clone();
         }
-        let mut mmax = self.alignments[idx].len() as i32;
+        let mut mmax = self.member_sequences[idx].len() as i32-1;
         for mapp in self.alignment_mapping_ids[idx].iter(){
             for jj in self.alignment_mapping[*mapp].iter(){
                 mmax = mmax.max(jj.1);
@@ -743,7 +748,7 @@ impl ScoredSequence{
         let mut updated_step_current:Vec<i32> = vec![-1;mmax as usize];
         let mut next_pos:Vec<i32> = vec![-1;mmax as usize];
         let mut updated_step_next:Vec<i32> = vec![-1;mmax as usize];
-        for ii in 0..self.alignments[idx].len(){
+        for ii in 0..self.member_sequences[idx].len(){
             current_pos[ii] = ii as i32;
         }
         //println!("{:?}",self.alignment_mapping_ids[idx]);
@@ -770,11 +775,10 @@ impl ScoredSequence{
         for (eii,uu) in updated_step_current.into_iter().enumerate(){
             if uu == mstep as i32{
                 if current_pos[eii] > -1{
-                    ret[eii] = self.alignments[idx][current_pos[eii] as usize];
+                    ret[eii] = self.member_sequences[idx][current_pos[eii] as usize];
                 }
             }
         }
-        
         return ret;
     }    
 }

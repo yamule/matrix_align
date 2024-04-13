@@ -1,6 +1,5 @@
-use rand::distributions::weighted;
 
-use self::matrix_process::{calc_euclid_dist, calc_stats, element_add, element_multiply, VectorStats};
+use self::matrix_process::*;
 
 use super::*;
 
@@ -24,6 +23,24 @@ pub unsafe fn calc_mean(allval:&Vec<&Vec<f32>>)->Vec<f32>{
         matrix_process::vector_add(&mut ssum, pp);
     }
     matrix_process::element_multiply(&mut ssum,1.0/(allval.len() as f32));
+    return ssum;
+}
+
+pub unsafe fn calc_weighted_mean(allval:&Vec<&Vec<f32>>,allweight:&Vec<f32>)->Vec<f32>{
+    assert_eq!(allval.len(),allweight.len());
+    let mut ssum:Vec<f32> = vec![];
+    if ssum.len() == 0{
+        ssum = vec![0.0;allval[0].len()];
+    }
+    let mut wsum = 0.0_f32;
+    for pp in allval.iter().zip(allweight.iter()){
+        let mut vp = (*pp.0).clone();
+        wsum += *pp.1;
+        matrix_process::element_multiply(&mut vp, *pp.1);
+        matrix_process::vector_add(&mut ssum, & vp);
+    }
+    assert!(wsum > 0.0);
+    matrix_process::element_multiply(&mut ssum,1.0/wsum);
     return ssum;
 }
 
@@ -149,7 +166,11 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
             let distt = calc_euclid_dist(avec[rr], bvec[cc])/vecsiz;
             evec.push((-1.0*distt).exp());
         }
-        let sstat:VectorStats = calc_stats(&evec);
+        let sstat:VectorStats = if let Some(x) = &bweight{
+            calc_weighted_stats(&evec,x)
+        }else{
+            calc_stats(&evec)
+        };
         let stdev = sstat.var.sqrt()+0.0000001;
         unsafe{
             element_add(&mut evec,-1.0*sstat.mean);
@@ -159,9 +180,7 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
                 element_multiply(&mut evec, 1.0/stdev/2.0);
             }
             if let Some(x) = bweight{
-                for cc in 0..blen{
-                    evec[cc] *= x[cc];
-                }
+                matrix_process::vector_multiply(&mut evec,&x);
             }
         }
         ret.push(evec);
@@ -173,7 +192,11 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
             let distt = calc_euclid_dist(&avec[rr], &bvec[cc])/vecsiz;//すぐに 0 とか INF になるのでベクトルのサイズで割る
             evec.push((-1.0*distt).exp());
         }
-        let sstat:VectorStats = calc_stats(&evec);
+        let sstat:VectorStats = if let Some(x) = &aweight{
+            calc_weighted_stats(&evec,x)
+        }else{
+            calc_stats(&evec)
+        };
         let stdev = sstat.var.sqrt()+0.0000001;
         unsafe{
             element_add(&mut evec,-1.0*sstat.mean);
@@ -190,6 +213,7 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
             ret[rr][cc] += evec[rr];
         }
     }
+
     return ret;
 }
 
