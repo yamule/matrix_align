@@ -95,13 +95,12 @@ pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>,num_threads:usize)->(
 
 //子 1 のインデクス、子 2 のインデクス、自分自身の長さを返す
 ///合計枝長が最短になる状態であるので、親子関係に系統学的な意味はないと思う
-pub fn generate_unrooted_tree(dist:&mut Vec<f32>,num_threads:usize) -> Vec<(i64,i64,f32)>{
+pub fn generate_unrooted_tree(dist:&mut Vec<f32>,_num_threads:usize) -> Vec<(i64,i64,f32)>{
     let leafnum:usize = ((-1.0+(1.0 as f64 +8.0*dist.len() as f64).sqrt()+0.0001) as usize)/2;
 
     let mut pair_to_other:Vec<f32> = vec![0.0;dist.len()];
     let mut node_to_other:Vec<f32> = vec![0.0;leafnum];
     let mut distall = 0.0;
-    let mut score:Vec<f32> = vec![0.0;dist.len()];
     let mut newnode:Vec<f32> = vec![0.0;dist.len()];
     let mut current_leafnum = leafnum;
     for ii in 0..leafnum{
@@ -128,12 +127,8 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,num_threads:usize) -> Vec<(i64,
     for ii in 0..leafnum{
         for jj in (ii+1)..leafnum{
             let pos = calc_pos(ii,jj);
-            newnode[pos] = (distall -pair_to_other[pos]-pair_to_other[pos] 
+            newnode[pos] = (distall -pair_to_other[pos]-pair_to_other[pos]/(current_leafnum as f32 -2.0-1.0)*2.0
                 - (current_leafnum as f32 -2.0)*dist[pos] -dist[pos])/(current_leafnum as f32 -2.0)/2.0;
-            //score[pos] = pair_to_other[pos]/2.0+newnode[pos]+dist[pos];
-            score[pos] = distall-(newnode[pos]*2.0)*(current_leafnum as f32 -2.0)
-            +newnode[pos]*(current_leafnum as f32 -2.0);
-            score[pos] /= 2.0;
         }
     }
 
@@ -145,9 +140,9 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,num_threads:usize) -> Vec<(i64,
         let mut a = (0,0.0);
         let mut b = (0,0.0);
         
-        let mut minindex = (0,0);
-        let mut minscore = -1.0;
-        let mut minpos = 0;
+        let mut maxindex = (0,0);
+        let mut maxnode = -1.0;
+        let mut maxpos = 0;
         for ii in 0..leafnum{
             if is_dead[ii] {
                 continue;
@@ -157,10 +152,10 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,num_threads:usize) -> Vec<(i64,
                 if is_dead[jj]{
                     continue;
                 }
-                if minscore < 0.0 || score[pos] < minscore{
-                    minscore = score[pos];
-                    minindex = (ii,jj);
-                    minpos = pos;
+                if maxnode < 0.0 || newnode[pos] > maxnode{
+                    maxnode = newnode[pos];
+                    maxindex = (ii,jj);
+                    maxpos = pos;
                 }
             }
         }
@@ -175,14 +170,14 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,num_threads:usize) -> Vec<(i64,
         
         //println!(">>>");
         
-        assert!(minscore >= 0.0);
-        a.0 = minindex.0;
-        b.0 = minindex.1;
-        a.1 = (node_to_other[a.0] - newnode[minpos]*(current_leafnum as f32-2.0) - dist[minpos] - pair_to_other[minpos]/2.0)/(current_leafnum as f32 -2.0);
-        b.1 = (node_to_other[b.0] - newnode[minpos]*(current_leafnum as f32-2.0) - dist[minpos] - pair_to_other[minpos]/2.0)/(current_leafnum as f32 -2.0);
+        assert!(maxnode >= 0.0);
+        a.0 = maxindex.0;
+        b.0 = maxindex.1;
+        a.1 = (node_to_other[a.0] - newnode[maxpos]*(current_leafnum as f32-2.0) - dist[maxpos] - pair_to_other[maxpos]/(current_leafnum as f32 -2.0-1.0))/(current_leafnum as f32 -2.0);
+        b.1 = (node_to_other[b.0] - newnode[maxpos]*(current_leafnum as f32-2.0) - dist[maxpos] - pair_to_other[maxpos]/(current_leafnum as f32 -2.0-1.0))/(current_leafnum as f32 -2.0);
         
         let newid = a.0;
-        let mergeddist = dist[minpos];
+        let mergeddist = dist[maxpos];
 
         let mut merged_to_other = 0.0;
         //let mut newdist:Vec<f32> = vec![];
@@ -230,11 +225,9 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,num_threads:usize) -> Vec<(i64,
                     continue;
                 }
                 let pos = calc_pos(ii,jj);
-                newnode[pos] = (distall -dist[pos] -pair_to_other[pos]-pair_to_other[pos] - (current_leafnum as f32 -2.0)*dist[pos])/(current_leafnum as f32 -2.0)/2.0;
-                //score[pos] = pair_to_other[pos]/2.0+newnode[pos]+dist[pos];
-                score[pos] = distall-(newnode[pos]*2.0)*(current_leafnum as f32 -2.0)
-                +newnode[pos]*(current_leafnum as f32 -2.0);
-                score[pos] /= 2.0;
+                newnode[pos] = (distall -pair_to_other[pos]-pair_to_other[pos]/(current_leafnum as f32 -2.0-1.0)*2.0
+                - (current_leafnum as f32 -2.0)*dist[pos] -dist[pos])/(current_leafnum as f32 -2.0)/2.0;
+                
             }
         }
 
