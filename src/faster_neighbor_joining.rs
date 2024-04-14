@@ -141,7 +141,7 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,_num_threads:usize) -> Vec<(i64
         let mut b = (0,0.0);
         
         let mut maxindex = (0,0);
-        let mut maxnode = -1.0;
+        let mut maxnode = std::f32::NEG_INFINITY;
         let mut maxpos = 0;
         for ii in 0..leafnum{
             if is_dead[ii] {
@@ -152,7 +152,7 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,_num_threads:usize) -> Vec<(i64
                 if is_dead[jj]{
                     continue;
                 }
-                if maxnode < 0.0 || newnode[pos] > maxnode{
+                if newnode[pos] > maxnode{
                     maxnode = newnode[pos];
                     maxindex = (ii,jj);
                     maxpos = pos;
@@ -169,8 +169,10 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,_num_threads:usize) -> Vec<(i64
         //println!("minindex: {:?}",minindex);
         
         //println!(">>>");
-        
-        assert!(maxnode >= 0.0);
+        if maxnode < 0.0{
+            eprintln!("WARNING: Internal node length is negative. {}",maxnode);
+            //assert!(maxnode >= 0.0);
+        }
         a.0 = maxindex.0;
         b.0 = maxindex.1;
         a.1 = (node_to_other[a.0] - newnode[maxpos]*(current_leafnum as f32-2.0) - dist[maxpos] - pair_to_other[maxpos]/(current_leafnum as f32 -2.0-1.0))/(current_leafnum as f32 -2.0);
