@@ -1,10 +1,8 @@
-use std::cmp::max;
 use std::collections::*;
 use rayon;
-use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_, GMatStatistics};
-use matrix_align::aligner::{AlignmentType, ProfileAligner, SequenceProfile};
+use matrix_align::gmat::{self, calc_vec_stats, GMatStatistics};
+use matrix_align::aligner::{AlignmentType, ProfileAligner, ScoreType, SequenceProfile};
 use matrix_align::ioutil::{load_multi_gmat, save_lines};
-use matrix_align::matrix_process;
 use matrix_align::guide_tree_based_alignment;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -72,6 +70,7 @@ fn main_(args:Vec<String>){
         ("--max_cluster_size","<int> : Limit all-vs-all comparison with this many number of profiles and align hierarchically. Must be > 10. Default -1."),
         ("--random_seed","<int> : Seed for random number generator."),
         ("--tree_type","<string> : Type of guide tree. \"NJ\" or \"UPGMA\". Default \"NJ\"."),
+        ("--score_type","<string> : Type of scoring function. \"distance_zscore\" or \"dot_product\". Default \"distance_zscore\"."),
         ("--help","<bool or novalue=true> : Print this message."),
     ];
     let allowed_arg:HashSet<&str> = allowed_arg_.clone().into_iter().map(|m|m.0).collect();
@@ -155,6 +154,19 @@ fn main_(args:Vec<String>){
         }
     }
 
+    let mut score_type = ScoreType::DistanceZscore;
+    if argss.contains_key("--score_type"){
+        let typ = argss.get("--score_type").unwrap().to_lowercase();
+        check_acceptable(typ.as_str(),vec!["distance_zscore","dot_product"] );
+        if typ.as_str() == "distance_zscore"{
+            score_type = ScoreType::DistanceZscore;
+        }else if typ.as_str() == "dot_product"{
+            score_type = ScoreType::DotProduct;
+        }else{
+            panic!("???");
+        }
+    }
+
     if error_message.len() > 0{
         for aa in allowed_arg_.iter(){
             eprintln!("{} {}",aa.0,aa.1);
@@ -180,7 +192,7 @@ fn main_(args:Vec<String>){
     let gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
 
     let veclen = gmat1_[0].2[0].len();
-    let mut saligner:ProfileAligner = ProfileAligner::new(veclen,300,gap_open_penalty,gap_extension_penalty,alignment_type);
+    let mut saligner:ProfileAligner = ProfileAligner::new(veclen,300,gap_open_penalty,gap_extension_penalty,alignment_type,score_type);
     
     let mut allseqs_:Vec<SequenceProfile> = vec![];
     for mut gg in gmat1_.into_iter(){
@@ -212,7 +224,7 @@ fn main_(args:Vec<String>){
         let seq1 = allseqs_.swap_remove(0);
         let mut scoresort:Vec<(f32,SequenceProfile)> = vec![];
         for seq2 in allseqs_.into_iter(){
-            let dpres = saligner.perform_dp(&seq1,&seq2,gap_open_penalty,gap_extension_penalty);
+            let dpres = saligner.perform_dp(&seq1,&seq2);
             //let nscore = dpres.1/(seq1.get_alignment_length().min(seq2.get_alignment_length())) as f32;
             //needleman wunsh の合計だと normalize する必要はない気がするが・・・
             //うーん

@@ -34,7 +34,7 @@ mod tests{
             eprintln!("{}",ii);
 
             let veclen = gmat1_[0].2[0].len();
-            let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,-10.0,-0.5,AlignmentType::Global);
+            let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,-10.0,-0.5,AlignmentType::Global,matrix_align::aligner::ScoreType::DistanceZscore);
             let mut seqvec:Vec<SequenceProfile> = vec![];
             
             if let Some(p) = profile_seq{
@@ -128,7 +128,7 @@ mod tests{
         }
 
         let veclen = gmat1_[0].2[0].len();
-        let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,-10.0,-0.5,AlignmentType::Global);
+        let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,-10.0,-0.5,AlignmentType::Global,matrix_align::aligner::ScoreType::DistanceZscore);
         let mut seqvec:Vec<SequenceProfile> = vec![];
         
         let gmat1 = gmat1_.clone();

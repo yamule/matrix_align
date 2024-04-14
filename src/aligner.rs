@@ -24,6 +24,13 @@ pub enum AlignmentType {
     Global,
 }
 
+
+#[derive(Clone,Debug)]
+pub enum ScoreType {
+    DistanceZscore,
+    DotProduct,
+}
+
 #[derive(Debug,Clone)]
 pub struct GMatColumn{
     pub match_vec:Vec<f32>,//match 時に使用されるベクトル
@@ -73,10 +80,13 @@ pub struct ProfileAligner{
     pub gap_open_penalty:f32,
     pub gap_extension_penalty:f32,
     pub penalty_warning:bool,
-    pub alignment_type:AlignmentType
+    pub alignment_type:AlignmentType,
+    pub score_type:ScoreType,
+    pub col_norm:bool,
 }
 impl ProfileAligner {
-    pub fn new(vec_size:usize,buff_len:usize,gap_open_penalty:f32,gap_extension_penalty:f32,alignment_type:AlignmentType)->ProfileAligner{
+    pub fn new(vec_size:usize,buff_len:usize,gap_open_penalty:f32,gap_extension_penalty:f32
+        ,alignment_type:AlignmentType,score_type:ScoreType)->ProfileAligner{
         let dp_matrix:Vec<Vec<Vec<f32>>> = vec![vec![vec![];1];1];
         let path_matrix:Vec<Vec<Vec<u8>>> = vec![vec![vec![];1];1];
         let mut charmap:Vec<usize> = vec![NUM_CHARTYPE;256];
@@ -85,6 +95,7 @@ impl ProfileAligner {
         for ee in cc.into_iter().enumerate(){
             charmap[ee.1 as usize] = ee.0;
         }
+        let col_norm = false;
 
         let mut ret = ProfileAligner{
             dp_matrix:dp_matrix
@@ -97,6 +108,8 @@ impl ProfileAligner {
             ,gap_extension_penalty
             ,penalty_warning:false
             ,alignment_type:alignment_type
+            ,score_type:score_type
+            ,col_norm:col_norm
         };
         ret.reconstruct_matrix(buff_len, buff_len);
         return ret;
@@ -107,7 +120,10 @@ impl ProfileAligner {
         self.path_matrix  = vec![vec![vec![0;3];bmax+1];amax+1];
     }
 
-    pub fn perform_dp(&mut self,a:&SequenceProfile,b:&SequenceProfile,gap_open_penalty:f32,gap_extension_penalty:f32)->(Vec<(i32,i32)>,f32) {
+    pub fn perform_dp(&mut self,a:&SequenceProfile,b:&SequenceProfile)->(Vec<(i32,i32)>,f32) {
+        let mut gap_extension_penalty = self.gap_extension_penalty;
+        let mut gap_open_penalty = self.gap_open_penalty;
+
         assert!(gap_extension_penalty <= 0.0);
         assert!(gap_open_penalty <= 0.0);
         if gap_extension_penalty < gap_open_penalty && !self.penalty_warning{
@@ -175,22 +191,80 @@ impl ProfileAligner {
 
         let mut aavec:Vec<&Vec<f32>> = vec![];
         let mut aweight:Vec<f32> = vec![];
+
+        let mut aavec_colnorm:Vec<Vec<f32>> = vec![];
+        let mut bbvec_colnorm:Vec<Vec<f32>> = vec![];
+
+        if self.col_norm{
+            for ii in 0..aalen{
+                    let st = matrix_process::calc_stats(&a.gmat[ii].match_vec);
+                    let mut arr = a.gmat[ii].match_vec.clone();
+                    unsafe{
+                        matrix_process::element_add(&mut arr,st.mean*-1.0);
+                        if st.var > 0.0{
+                            matrix_process::element_multiply(&mut arr,1.0/st.var);
+                        }
+                    }
+                    aavec_colnorm.push(arr);
+            }
+
+            for ii in 0..bblen{
+                let st = matrix_process::calc_stats(&b.gmat[ii].match_vec);
+                let mut arr = b.gmat[ii].match_vec.clone();
+                unsafe{
+                    matrix_process::element_add(&mut arr,st.mean*-1.0);
+                    if st.var > 0.0{
+                        matrix_process::element_multiply(&mut arr,1.0/st.var);
+                    }
+                }
+                bbvec_colnorm.push(arr);
+        }
+        }
         for ii in 0..aalen{
-            aavec.push(&a.gmat[ii].match_vec);
+            if self.col_norm{
+                aavec.push(&aavec_colnorm[ii]);
+            }else{
+                aavec.push(&a.gmat[ii].match_vec);
+            }
             aweight.push(a.gmat[ii].match_ratio);
         }
         
         let mut bbvec:Vec<&Vec<f32>> = vec![];
         let mut bweight:Vec<f32> = vec![];
         for ii in 0..bblen{
-            bbvec.push(&b.gmat[ii].match_vec);
+            if self.col_norm{
+                bbvec.push(&bbvec_colnorm[ii]);
+            }else{
+                bbvec.push(&b.gmat[ii].match_vec);
+            }
             bweight.push(b.gmat[ii].match_ratio);
         }
         //バッファに入れようかと思ったが、結局新しく領域を確保していたのでやめた
         //match_ratio についてもここで渡しておくこと
-        let match_score:Vec<Vec<f32>> = gmat::calc_dist_zscore_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
-        //let match_score:Vec<Vec<f32>> = gmat::calc_dot_product_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight));
-        
+        let match_score:Vec<Vec<f32>> = match self.score_type{
+            ScoreType::DistanceZscore => {
+                gmat::calc_dist_zscore_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight))
+            },
+            ScoreType::DotProduct => {
+                gmat::calc_dot_product_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight))
+            }
+        };
+
+        if false{
+            let mut zmax = std::f32::NEG_INFINITY;
+            let mut zmin = std::f32::INFINITY;
+            for rr in 0..match_score.len(){
+                for cc in 0..match_score[rr].len(){
+                    zmax = zmax.max(match_score[rr][cc]);
+                    zmin = zmin.min(match_score[rr][cc]);
+                }
+            }
+            gap_open_penalty  = (zmin*2.5+zmax*-1.0)/2.0;
+            gap_extension_penalty = gap_open_penalty*0.5;
+            println!("score_max:{} score_min{}",zmax,zmin);
+
+        }
+
         /*
         println!("#{:?} vs {:?}",a.headers,b.headers);
         for ii in 0..aalen{
@@ -595,11 +669,11 @@ impl ProfileAligner {
             let dpres;
             let newgroup;
             if firstrun{
-                dpres = self.perform_dp(&center_seq,&bseq,self.gap_open_penalty,self.gap_extension_penalty);
+                dpres = self.perform_dp(&center_seq,&bseq);
                 newgroup = ProfileAligner::make_alignment(self,center_seq,bseq,dpres.0,profile_only,None);
                 firstrun = false;
             }else{
-                dpres = self.perform_dp(&bseq,&center_seq,self.gap_open_penalty,self.gap_extension_penalty);
+                dpres = self.perform_dp(&bseq,&center_seq);
                 newgroup = ProfileAligner::make_alignment(self,bseq,center_seq,dpres.0,profile_only,None);
             };
             final_score = dpres.1;

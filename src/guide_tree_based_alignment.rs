@@ -93,7 +93,7 @@ pub fn soft_cluster(val:&Vec<&Vec<f32>>, rngg:&mut StdRng)->Vec<Vec<usize>>{
 }
 
 pub fn align_and_merge_with_weight(aligner:&mut ProfileAligner,aseq:SequenceProfile,bseq:SequenceProfile,aweight:f32,bweight:f32)->(SequenceProfile,f32){
-    let dpres = aligner.perform_dp(&aseq,&bseq,aligner.gap_open_penalty,aligner.gap_extension_penalty);
+    let dpres = aligner.perform_dp(&aseq,&bseq);
     let res = ProfileAligner::make_alignment(aligner,aseq,bseq,dpres.0,false,Some((aweight,bweight)));
     return (res,dpres.1);
 }
