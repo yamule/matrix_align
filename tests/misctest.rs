@@ -114,7 +114,7 @@ mod tests{
         let mut gmat1_:Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)> = vec![];
         for gg in gmat1__.into_iter(){
 
-            for ii in 0..2000{//200 で 20 秒くらい
+            for ii in 0..200{//200 で 20 秒くらい
                 let mut gp = gg.clone();
                 for jj in gp.2.iter_mut(){
                     for kk in jj.iter_mut().enumerate(){
@@ -149,7 +149,7 @@ mod tests{
         }
 
         let mut ans = guide_tree_based_alignment::hierarchical_alignment(
-            seqvec,&mut saligner,100,&mut rngg,8,guide_tree_based_alignment::TreeType::TreeNj);
+            seqvec,&mut saligner,500,&mut rngg,8,guide_tree_based_alignment::TreeType::TreeNj);
         assert!(ans.len() == 1);
         let (alires,_alisc) = ans.pop().unwrap();
         for aii in 0..alires.member_sequences.len(){

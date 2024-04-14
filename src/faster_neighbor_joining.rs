@@ -128,8 +128,8 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,num_threads:usize) -> Vec<(i64,
     for ii in 0..leafnum{
         for jj in (ii+1)..leafnum{
             let pos = calc_pos(ii,jj);
-            newnode[pos] = (distall -dist[pos] -pair_to_other[pos]-pair_to_other[pos]*2.0 
-                - (current_leafnum as f32 -2.0)*dist[pos])/(current_leafnum as f32 -2.0)/2.0;
+            newnode[pos] = (distall -pair_to_other[pos]-pair_to_other[pos] 
+                - (current_leafnum as f32 -2.0)*dist[pos] -dist[pos])/(current_leafnum as f32 -2.0)/2.0;
             //score[pos] = pair_to_other[pos]/2.0+newnode[pos]+dist[pos];
             score[pos] = distall-(newnode[pos]*2.0)*(current_leafnum as f32 -2.0)
             +newnode[pos]*(current_leafnum as f32 -2.0);
@@ -157,7 +157,7 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,num_threads:usize) -> Vec<(i64,
                 if is_dead[jj]{
                     continue;
                 }
-                if minscore < 0.0 || score[pos] <= minscore{
+                if minscore < 0.0 || score[pos] < minscore{
                     minscore = score[pos];
                     minindex = (ii,jj);
                     minpos = pos;
@@ -178,10 +178,8 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,num_threads:usize) -> Vec<(i64,
         assert!(minscore >= 0.0);
         a.0 = minindex.0;
         b.0 = minindex.1;
-        a.1 = (node_to_other[a.0] - newnode[minpos]*(current_leafnum as f32-2.0)-pair_to_other[minpos] - dist[minpos])/(current_leafnum as f32 -2.0);
-        b.1 = (node_to_other[b.0] - newnode[minpos]*(current_leafnum as f32-2.0)-pair_to_other[minpos] - dist[minpos])/(current_leafnum as f32 -2.0);
-        
-        //println!("????????????{:?} {:?}",a,b);
+        a.1 = (node_to_other[a.0] - newnode[minpos]*(current_leafnum as f32-2.0) - dist[minpos] - pair_to_other[minpos]/2.0)/(current_leafnum as f32 -2.0);
+        b.1 = (node_to_other[b.0] - newnode[minpos]*(current_leafnum as f32-2.0) - dist[minpos] - pair_to_other[minpos]/2.0)/(current_leafnum as f32 -2.0);
         
         let newid = a.0;
         let mergeddist = dist[minpos];
@@ -232,7 +230,7 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,num_threads:usize) -> Vec<(i64,
                     continue;
                 }
                 let pos = calc_pos(ii,jj);
-                newnode[pos] = (distall -dist[pos] -pair_to_other[pos]-pair_to_other[pos]*2.0 - (current_leafnum as f32 -2.0)*dist[pos])/(current_leafnum as f32 -2.0)/2.0;
+                newnode[pos] = (distall -dist[pos] -pair_to_other[pos]-pair_to_other[pos] - (current_leafnum as f32 -2.0)*dist[pos])/(current_leafnum as f32 -2.0)/2.0;
                 //score[pos] = pair_to_other[pos]/2.0+newnode[pos]+dist[pos];
                 score[pos] = distall-(newnode[pos]*2.0)*(current_leafnum as f32 -2.0)
                 +newnode[pos]*(current_leafnum as f32 -2.0);
@@ -562,8 +560,9 @@ fn faster_small_nj_test(){
     for ii in 0..5{
         dummyname.insert(ii,ii.to_string());
     }
-    println!("{:?}",set_outgroup(0,&unrooted,Some(&dummyname)));
-    println!("{}",get_newick_string(&unrooted,&dummyname));
+    //println!("{:?}",set_outgroup(0,&unrooted,Some(&dummyname)));
+    let (unrooted,_,dummyname) = set_outgroup(0, &unrooted, Some(&dummyname));
+    println!("{}",get_newick_string(&unrooted,&dummyname.unwrap()));
 }
 #[test]
 fn faster_nj_test(){
@@ -578,13 +577,14 @@ fn faster_nj_test(){
         17.0,14.0,11.0,12.0,10.0,13.0,8.0,0.0
     ];
     let unrooted = generate_unrooted_tree(&mut dist,4);
-    println!("{:?}",unrooted);
+    //println!("{:?}",unrooted);
     let mut dummyname:HashMap<usize,String> = HashMap::new();
     for ii in 0..8{
         dummyname.insert(ii,ii.to_string());
     }
-    println!("{:?}",set_outgroup(0,&unrooted,Some(&dummyname)));
-    println!("{}",get_newick_string(&unrooted,&dummyname));
+    let (unrooted,_,dummyname) = set_outgroup(0, &unrooted, Some(&dummyname));
+    println!("{}",get_newick_string(&unrooted,&dummyname.unwrap()));
+    
     //parent がない、もしくはペアの相手が -1 である（もう一方は自分）である場合は Leaf になっている。
     //newick format で出力
     //interior node も名前を付けられる
@@ -604,11 +604,13 @@ fn faster_nj_test(){
     ];
 
     let unrooted = generate_unrooted_tree(&mut dist,4);
-    println!("{:?}",unrooted);
+    //println!("{:?}",unrooted);
     let mut dummyname:HashMap<usize,String> = HashMap::new();
     for ii in 0..6{
         dummyname.insert(ii,ii.to_string());
     }
+    let (unrooted,_,dummyname) = set_outgroup(0, &unrooted, Some(&dummyname));
+    let dummyname = dummyname.unwrap();
     println!("{}",get_newick_string(&unrooted,&dummyname));
     let mut group_checker:HashMap<Vec<usize>,f32> = HashMap::new();
 
@@ -636,12 +638,12 @@ fn faster_nj_test(){
         }else{
             chklen2 = *group_checker.get(&childleaves).unwrap();
         }
-        println!("{} {} {}",ii,chklen,chklen2);
+        //println!("{} {} {}",ii,chklen,chklen2);
         assert!((chklen-chklen2).abs() < 0.0001);
     }
     let llen = unrooted.len();
     for ii in 0..llen{
-        println!("{} === ",ii);
+        //println!("{} === ",ii);
         let changed = change_center_branch(ii,&unrooted, Some(&dummyname));
         let changed_branch = changed.0;
         let changed_label = changed.2.unwrap();
@@ -658,7 +660,7 @@ fn faster_nj_test(){
             }else{
                 chklen2 = *group_checker.get(&childleaves).unwrap();
             }
-            println!("{} {} {} {:?}",jj,chklen,chklen2,childleaves);
+            //println!("{} {} {} {:?}",jj,chklen,chklen2,childleaves);
             assert!((chklen-chklen2).abs() < 0.0001);
         }
     }
