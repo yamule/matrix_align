@@ -1,6 +1,6 @@
 
 use super::aligner::SequenceProfile;
-use super::neighbor_joining;
+use super::faster_neighbor_joining;
 use super::upgma;
 use std::collections::HashMap;
 use super::matrix_process::calc_euclid_dist;
@@ -31,7 +31,7 @@ pub fn create_distence_tree(val:&Vec<&Vec<f32>>,num_threads:usize,typ:TreeType)-
         TreeType::TreeNj =>{
             println!("calc_nj_tree...");
             //println!("{:?}",dist);
-            return neighbor_joining::generate_unrooted_tree(&mut dist,num_threads);
+            return faster_neighbor_joining::generate_unrooted_tree(&mut dist,num_threads);
         },
         TreeType::TreeUPGMA =>{
             println!("calc_upgma_tree...");
@@ -264,7 +264,7 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profile
 
 
     let mut node_to_seq:HashMap<usize,usize> = HashMap::new();
-    let parents:Vec<i64> = neighbor_joining::get_parent_branch(&treenodes);
+    let parents:Vec<i64> = faster_neighbor_joining::get_parent_branch(&treenodes);
 
     if use_upgma{
         for ii in 0..treenodes.len(){
@@ -314,10 +314,10 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profile
         }else{
             let (outree,oldmap, _) = if is_leaf{
                 //println!("leaf");
-                neighbor_joining::set_outgroup(maxnode, &treenodes,None)
+                faster_neighbor_joining::set_outgroup(maxnode, &treenodes,None)
             }else{
                 //println!("internal");
-                neighbor_joining::change_center_branch(maxnode, &treenodes,None)
+                faster_neighbor_joining::change_center_branch(maxnode, &treenodes,None)
             };
 
             treenodes = outree;
@@ -334,7 +334,7 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profile
     }
 
     let mut flagcounter:Vec<i64> = vec![0;treenodes.len()]; //0 は子ノードが全て計算されたもの
-    let parents:Vec<i64> = neighbor_joining::get_parent_branch(&treenodes);
+    let parents:Vec<i64> = faster_neighbor_joining::get_parent_branch(&treenodes);
     for ii in 0..treenodes.len(){
         if treenodes[ii].0 > -1{
             if treenodes[ii].0 == ii as i64{

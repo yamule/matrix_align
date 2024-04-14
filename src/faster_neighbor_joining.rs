@@ -95,31 +95,148 @@ pub fn get_next_neighbor(dist:&Vec<f32>,is_dead:&Vec<bool>,num_threads:usize)->(
 
 //子 1 のインデクス、子 2 のインデクス、自分自身の長さを返す
 ///合計枝長が最短になる状態であるので、親子関係に系統学的な意味はないと思う
-pub fn generate_unrooted_tree(dist:&mut Vec<f32>,num_threads:usize) -> Vec<(i64,i64,f32)>{
+pub fn generate_unrooted_tree(dist:&mut Vec<f32>,_num_threads:usize) -> Vec<(i64,i64,f32)>{
     let leafnum:usize = ((-1.0+(1.0 as f64 +8.0*dist.len() as f64).sqrt()+0.0001) as usize)/2;
-    let mut nodenum:usize = leafnum;
-    let mut is_dead:Vec<bool> = vec![false;nodenum];
+
+    let mut pair_to_other:Vec<f32> = vec![0.0;dist.len()];
+    let mut node_to_other:Vec<f32> = vec![0.0;leafnum];
+    let mut distall = 0.0;
+    let mut newnode:Vec<f32> = vec![0.0;dist.len()];
+    let mut current_leafnum = leafnum;
+    for ii in 0..leafnum{
+        let mut mine = 0.0;
+        for jj in 0..leafnum{
+            if jj == ii{
+                continue;
+            }
+            let pos = calc_pos(ii,jj);
+            mine += dist[pos];
+            if jj < ii{
+                distall += dist[pos];
+            }
+        }
+        node_to_other[ii] = mine;
+    }
+    for ii in 0..leafnum{
+        for jj in (ii+1)..leafnum{
+            let pos = calc_pos(ii,jj);
+            pair_to_other[pos] = distall-node_to_other[ii]-node_to_other[jj]+dist[pos];
+        }
+    }
+    
+    for ii in 0..leafnum{
+        for jj in (ii+1)..leafnum{
+            let pos = calc_pos(ii,jj);
+            newnode[pos] = (distall -pair_to_other[pos]-pair_to_other[pos]/(current_leafnum as f32 -2.0-1.0)*2.0
+                - (current_leafnum as f32 -2.0)*dist[pos] -dist[pos])/(current_leafnum as f32 -2.0)/2.0;
+        }
+    }
+
+    let mut is_dead:Vec<bool> = vec![false;leafnum];
     let mut idmap:Vec<usize> = (0..leafnum).collect();
     let mut ret:Vec<(i64,i64,f32)> = (0..leafnum).map(|m| (m as i64, -1,-1000.0)).collect();
-    while nodenum > 3{
-        let (a,b):((usize,f32),(usize,f32)) = get_next_neighbor(&dist, &is_dead,num_threads);
+    while current_leafnum > 3{
+        //let (a,b):((usize,f32),(usize,f32)) = get_next_neighbor(&dist, &is_dead,num_threads);
+        let mut a = (0,0.0);
+        let mut b = (0,0.0);
+        
+        let mut maxindex = (0,0);
+        let mut maxnode = -1.0;
+        let mut maxpos = 0;
+        for ii in 0..leafnum{
+            if is_dead[ii] {
+                continue;
+            }
+            for jj in (ii+1)..leafnum{
+                let pos = calc_pos(ii,jj);
+                if is_dead[jj]{
+                    continue;
+                }
+                if maxnode < 0.0 || newnode[pos] > maxnode{
+                    maxnode = newnode[pos];
+                    maxindex = (ii,jj);
+                    maxpos = pos;
+                }
+            }
+        }
+        
+        //println!("{:?}",distall);
+        //println!("node: {:?}",node_to_other);
+        //println!("pair_to_other: {:?}",pair_to_other);
+        //println!("score: {:?}",score);
+        //println!("newnode: {:?}",newnode);
+        //println!("dist: {:?}",dist);
+        //println!("minindex: {:?}",minindex);
+        
+        //println!(">>>");
+        
+        assert!(maxnode >= 0.0);
+        a.0 = maxindex.0;
+        b.0 = maxindex.1;
+        a.1 = (node_to_other[a.0] - newnode[maxpos]*(current_leafnum as f32-2.0) - dist[maxpos] - pair_to_other[maxpos]/(current_leafnum as f32 -2.0-1.0))/(current_leafnum as f32 -2.0);
+        b.1 = (node_to_other[b.0] - newnode[maxpos]*(current_leafnum as f32-2.0) - dist[maxpos] - pair_to_other[maxpos]/(current_leafnum as f32 -2.0-1.0))/(current_leafnum as f32 -2.0);
+        
+        let newid = a.0;
+        let mergeddist = dist[maxpos];
+
+        let mut merged_to_other = 0.0;
         //let mut newdist:Vec<f32> = vec![];
-        for ii in 0..is_dead.len(){
+        for ii in 0..leafnum{
+            if is_dead[ii]{
+                continue;
+            }
             if a.0 != ii && b.0 != ii{
                 let aa = calc_pos(a.0,ii);
                 let bb = calc_pos(b.0,ii);
                 let tdist = (dist[aa]+dist[bb])/2.0;
+                node_to_other[ii] -= (dist[aa]+dist[bb])/2.0;
                 dist[aa] = tdist;//つまり元の Leaf の Distance 関係は破壊される
                 dist[bb] = -1000.0;
+                merged_to_other += tdist;
             }
         }
+        
+        distall = distall-node_to_other[a.0]-node_to_other[b.0]+mergeddist;
+        
+        node_to_other[newid] = merged_to_other;
+        
+        distall += node_to_other[newid];
+        current_leafnum -= 1;
         is_dead[b.0] = true;
+
+        for ii in 0..leafnum{
+            if is_dead[ii]{
+                continue;
+            }
+            for jj in (ii+1)..leafnum{
+                if is_dead[jj]{
+                    continue;
+                }
+                let pos = calc_pos(ii,jj);
+                pair_to_other[pos] = distall-node_to_other[ii]-node_to_other[jj]+dist[pos];
+            }
+        }
+        for ii in 0..leafnum{
+            if is_dead[ii]{
+                continue;
+            }
+            for jj in (ii+1)..leafnum{
+                if is_dead[jj]{
+                    continue;
+                }
+                let pos = calc_pos(ii,jj);
+                newnode[pos] = (distall -pair_to_other[pos]-pair_to_other[pos]/(current_leafnum as f32 -2.0-1.0)*2.0
+                - (current_leafnum as f32 -2.0)*dist[pos] -dist[pos])/(current_leafnum as f32 -2.0)/2.0;
+                
+            }
+        }
+
         // Leaf でない場合、子の平均長も含んだ仮枝長
         ret[idmap[a.0]].2 = a.1;        
         ret[idmap[b.0]].2 = b.1;
         ret.push((idmap[a.0] as i64,idmap[b.0] as i64,-100.0000));//枝長は後で決定。新しくできたノードは全 Leaf より後のインデクスになる
         idmap[a.0] = ret.len()-1;//破壊された Distance 関係に対応する ret 内要素のインデクスを入れる
-        nodenum -= 1;
+        
     }
     let mut lastnodes:Vec<usize> = vec![];
     for ii in 0..leafnum{
@@ -290,6 +407,7 @@ pub fn change_center_branch(centerbranch:usize,branches:&Vec<(i64,i64,f32)>,node
         return (branches.clone(),(0..(branches.len() as i64)).into_iter().collect(),mp);
     }
     */
+
     let mut current_branch:usize = centerbranch;
     let mut old_new_map:Vec<i64> = vec![-1;branches.len()];
     let mut descend:Vec<usize> = vec![];
@@ -405,6 +523,7 @@ pub fn get_opposite(targetids:&Vec<usize>,maxid:usize)->Vec<usize>{
     }
     return ret;
 }
+  
 
 #[test]
 fn pos_test(){
@@ -420,7 +539,26 @@ fn pos_test(){
 }
 
 #[test]
-fn nj_test(){
+
+fn faster_small_nj_test(){
+    let mut dist:Vec<f32> = vec![
+        0.0,
+        5.0,0.0,
+        7.0,8.0,0.0,
+        11.0,12.0,10.0,0.0,
+        12.0,13.0,11.0,3.0,0.0
+    ];
+    let unrooted = generate_unrooted_tree(&mut dist,4);
+    let mut dummyname:HashMap<usize,String> = HashMap::new();
+    for ii in 0..5{
+        dummyname.insert(ii,ii.to_string());
+    }
+    //println!("{:?}",set_outgroup(0,&unrooted,Some(&dummyname)));
+    let (unrooted,_,dummyname) = set_outgroup(0, &unrooted, Some(&dummyname));
+    println!("{}",get_newick_string(&unrooted,&dummyname.unwrap()));
+}
+#[test]
+fn faster_nj_test(){
     let mut dist:Vec<f32> = vec![
         0.0,
         7.0,0.0,
@@ -539,7 +677,7 @@ fn compare_newick_structure(s1: &str, s2: &str) -> bool {
 }
 
 #[test]
-fn claude3test() {
+fn faster_claude3test() {
     let mut dist: Vec<f32> = vec![
         0.0,
         0.2, 0.0,
@@ -581,23 +719,4 @@ fn claude3test() {
     println!("{:?}",new_newick_string);
     
     println!("All tests passed!");
-}
-
-#[test]
-fn small_nj_test(){
-    let mut dist:Vec<f32> = vec![
-        0.0,
-        5.0,0.0,
-        7.0,8.0,0.0,
-        11.0,12.0,10.0,0.0,
-        12.0,13.0,11.0,3.0,0.0
-    ];
-    let unrooted = generate_unrooted_tree(&mut dist,4);
-    let mut dummyname:HashMap<usize,String> = HashMap::new();
-    for ii in 0..5{
-        dummyname.insert(ii,ii.to_string());
-    }
-    //println!("{:?}",set_outgroup(0,&unrooted,Some(&dummyname)));
-    let (unrooted,_,dummyname) = set_outgroup(0, &unrooted, Some(&dummyname));
-    println!("{}",get_newick_string(&unrooted,&dummyname.unwrap()));
 }
