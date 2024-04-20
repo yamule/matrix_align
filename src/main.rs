@@ -2,7 +2,7 @@ use std::collections::*;
 use rayon;
 use matrix_align::gmat::{self, calc_vec_stats, GMatStatistics};
 use matrix_align::aligner::{AlignmentType, ProfileAligner, ScoreType, SequenceProfile};
-use matrix_align::ioutil::{load_multi_gmat, save_lines};
+use matrix_align::ioutil::{self, load_multi_gmat, save_lines};
 use matrix_align::guide_tree_based_alignment;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -71,6 +71,7 @@ fn main_(args:Vec<String>){
         ("--random_seed","<int> : Seed for random number generator."),
         ("--tree_type","<string> : Type of guide tree. \"NJ\" or \"UPGMA\". Default \"NJ\"."),
         ("--score_type","<string> : Type of scoring function. \"distance_zscore\" or \"dot_product\". Default \"distance_zscore\"."),
+        ("--out_matrix","<string> : Save matrix file of the resulting alignment."),
         ("--help","<bool or novalue=true> : Print this message."),
     ];
     let allowed_arg:HashSet<&str> = allowed_arg_.clone().into_iter().map(|m|m.0).collect();
@@ -111,7 +112,7 @@ fn main_(args:Vec<String>){
     let print_help:bool = check_bool(argss.get("--help").unwrap_or(&"false".to_owned()).as_str(),"--help");
     let tree_guided:bool = check_bool(argss.get("--tree_guided").unwrap_or(&"true".to_owned()).as_str(),"--tree_guided");
     let max_cluster_size:i64 = argss.get("--max_cluster_size").unwrap_or(&"-1".to_owned()).parse::<i64>().unwrap_or_else(|e|panic!("in --maximum_cluster_size {:?}",e));
-    
+    let out_matrix_path:&Option<&String> = &argss.get("--out_matrix");
     
     check_acceptable(&tree_type.as_str(),vec!["NJ","UPGMA"] );
     let tree_type = if &tree_type == "NJ"{
@@ -299,6 +300,10 @@ fn main_(args:Vec<String>){
                         hh.clone(),aseq.into_iter().map(|m|m.to_string()).collect::<Vec<String>>().concat()
                     );
                 }
+            }
+
+            if let Some(x) = out_matrix_path{
+                ioutil::save_gmat(x,&vec![(0,&alires)], x.ends_with(".gz"));
             }
             break;
         }

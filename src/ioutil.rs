@@ -1,11 +1,11 @@
 use flate2::bufread::GzDecoder;
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use std::io::{Read,BufWriter,Write,BufReader,BufRead};
+use std::io::{BufWriter,Write,BufReader,BufRead};
 use std::fs::File;
-use std::collections::HashMap;
 use std::vec;
 use regex::Regex;
+use super::aligner::SequenceProfile;
 
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -115,53 +115,6 @@ pub fn save_lines(filename:&str,contents:Vec<String>,gzipped:bool){
     }
     
 }
-pub fn load_gmat(filename:&str,gzipped:bool)-> (Vec<char>,Vec<Vec<f32>>){
-    
-    let mut ret_c:Vec<char> = vec![];
-    let mut ret_f:Vec<Vec<f32>> = vec![];
-    
-    let file = File::open(filename).unwrap_or_else(|e| panic!("Loading {} was failed! {:?}",filename,e));
-        
-    let reader: Box<dyn BufRead> = if gzipped {
-        Box::new(BufReader::new(GzDecoder::new(BufReader::new(file))))
-    } else {
-        Box::new(BufReader::new(file))
-    };
-    
-    let mut vecsize = -1_i32;
-    for (lcount_,line) in reader.lines().enumerate() {
-        let lcount = lcount_+1;
-        if let Ok(x) = line{
-            let ptt:Vec<String> = x.split_ascii_whitespace().map(|m|m.to_owned()).collect();
-            if ptt.len() < 2{
-                eprintln!("line:{} {:?} was skipped.",lcount,x);
-                continue;
-            }
-
-            let cc:Vec<char> = ptt[0].chars().into_iter().collect();
-            if cc[0] == '#'{ //コメント行
-                continue;
-            }
-            if cc.len() != 1{
-                panic!("{} is not an expected string.",ptt[0]);
-            }
-            let mut val:Vec<f32> = vec![];
-            if vecsize == -1{
-                vecsize = ptt.len() as i32 -1;
-            }else{
-                assert_eq!(vecsize, ptt.len() as i32 -1);
-            }
-            for ii in 1..ptt.len(){
-                val.push(
-                    ptt[ii].parse::<f32>().unwrap_or_else(|e| panic!("line:{} {}",lcount,e))
-                );
-            }
-            ret_c.push(cc[0]);
-            ret_f.push(val);
-        }
-    }
-    return (ret_c,ret_f);
-}
 
 pub fn parse_gmat_block(lines:Vec<String>)-> (String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>){
     let name_matcher:Regex = Regex::new(r">[\s]*([^\s]+)").unwrap();
@@ -254,15 +207,38 @@ pub fn load_multi_gmat(filename:&str,gzipped:bool)-> Vec<(String,Vec<char>,Vec<V
     return ret;
 }
 
-#[test]
-fn gmat_load_check(){
-    //単にエラーが出ないかだけ
-    let v = load_gmat("./example_files/esm2_650m_example_output/d1g43a_.res.gz",true);
-    for vv in v.0.into_iter().zip(v.1.into_iter()){
-        let mut arr:Vec<f32> = vec![];
-        for ii in 0..10{
-            arr.push(vv.1[ii]);
+pub fn save_gmat(filename:&str,seqs:&Vec<(usize,&SequenceProfile)>,gzipped:bool){
+    let mut buff:Vec<String> = vec![];
+    for ss in seqs.iter(){
+        let baseindex = ss.0;
+        let proff = ss.1;
+        buff.push(
+            ">".to_owned()+proff.headers[baseindex].as_str()
+        );
+        let aliseq = proff.get_aligned_seq(baseindex);
+        let alilen = proff.get_alignment_length();
+        for ii in 0..alilen{
+            buff.push(
+                format!("@\t{}\t{}\t{}\t{}",proff.gmat[ii].match_ratio,proff.gmat[ii].del_ratio,proff.gmat[ii].connected_ratio,proff.gmat[ii].gapped_ratio)
+            );
+            let mut ptt:Vec<String> = vec![];
+            if ii < aliseq.len(){
+                ptt.push(
+                    aliseq[ii].to_string()
+                );
+            }else{
+                ptt.push("-".to_owned());
+            }
+            for vv in proff.gmat[ii].match_vec.iter(){
+                ptt.push(format!("{:.5}",vv));
+            }
+            buff.push(
+                ptt.join("\t")
+            );
         }
-        //println!("{} {} {:?}",vv.0,vv.1.len(),arr);
+        buff.push(
+            format!("@\t{}\t{}\t{}\t{}",proff.gmat[alilen].match_ratio,proff.gmat[alilen].del_ratio,proff.gmat[alilen].connected_ratio,proff.gmat[alilen].gapped_ratio)
+        );
     }
+    save_lines(filename,buff, gzipped);
 }
