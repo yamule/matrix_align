@@ -1,5 +1,3 @@
-use std::vec;
-
 use self::matrix_process::element_multiply;
 use self::matrix_process::vector_add;
 
@@ -233,6 +231,7 @@ impl ProfileAligner {
             }else{
                 aavec.push(&a.gmat[ii].match_vec);
             }
+            //デバッグ中
             aweight.push(a.gmat[ii].match_ratio);
         }
         
@@ -244,6 +243,7 @@ impl ProfileAligner {
             }else{
                 bbvec.push(&b.gmat[ii].match_vec);
             }
+            //デバッグ中
             bweight.push(b.gmat[ii].match_ratio);
         }
         //バッファに入れようかと思ったが、結局新しく領域を確保していたのでやめた
@@ -253,11 +253,11 @@ impl ProfileAligner {
                 gmat::calc_dist_zscore_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight))
             },
             ScoreType::DotProduct => {
-                gmat::calc_dot_product_matrix(&aavec, &bbvec,Some(&aweight),Some(&bweight))
+                gmat::calc_dot_product_matrix(&aavec, &bbvec)
             }
         };
 
-        if false{
+        if true{
             let mut zmax = std::f32::NEG_INFINITY;
             let mut zmin = std::f32::INFINITY;
             for rr in 0..match_score.len(){
@@ -266,10 +266,9 @@ impl ProfileAligner {
                     zmin = zmin.min(match_score[rr][cc]);
                 }
             }
-            gap_open_penalty  = (zmin*2.5+zmax*-1.0)/2.0;
-            gap_extension_penalty = gap_open_penalty*0.5;
-            println!("score_max:{} score_min{}",zmax,zmin);
-
+            gap_open_penalty  = (zmin+zmax*-1.0)/2.0;
+            gap_extension_penalty = gap_open_penalty*0.05;
+            println!("Dynamic gap penalty open:{} extend:{}",gap_open_penalty,gap_extension_penalty);
         }
 
         /*
@@ -288,27 +287,27 @@ impl ProfileAligner {
                 let acol = &a.gmat[ii-1];
                 let bcol = &b.gmat[jj-1];
                 //let sc:f32 = ScoredSeqAligner::calc_match_score(&acol.0,&bcol.0);
-                let sc:f32 = match_score[ii-1][jj-1];//match_ratio (ウエイト)は既に導入されているのでここでは使わない
+                let abweight = (acol.match_ratio*0.5+bcol.match_ratio*0.5);
+                let sc:f32 = match_score[ii-1][jj-1]*abweight;
                 
                 let diag_m:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UPLEFT as usize] + sc;
                 let diag_l:f32 = self.dp_matrix[ii-1][jj-1][DIREC_LEFT as usize] + sc;
                 let diag_u:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UP as usize] + sc;
 
+                
                 let lef_m:f32 = self.dp_matrix[ii-1][jj][DIREC_UPLEFT as usize]
-                + (bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty)*(1.0-acol.del_ratio);
+                + (bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty)*abweight;
                 let lef_l:f32 = self.dp_matrix[ii-1][jj][DIREC_LEFT as usize]
-                + (bcol.connected_ratio*gap_extension_penalty + bcol.gapped_ratio*gap_extension_penalty)*(1.0-acol.del_ratio);
+                + (bcol.connected_ratio*gap_extension_penalty + bcol.gapped_ratio*gap_extension_penalty)*abweight;
                 let lef_u:f32 = self.dp_matrix[ii-1][jj][DIREC_UP as usize]
-                + (bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty)*(1.0-acol.del_ratio);
-
+                + (bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty)*abweight;
 
                 let up_m:f32 = self.dp_matrix[ii][jj-1][DIREC_UPLEFT as usize]
-                + (acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty)*(1.0-bcol.del_ratio);
+                + (acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty)*abweight;
                 let up_l:f32 = self.dp_matrix[ii][jj-1][DIREC_LEFT as usize]
-                + (acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty)*(1.0-bcol.del_ratio);
+                + (acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty)*abweight;
                 let up_u:f32 = self.dp_matrix[ii][jj-1][DIREC_UP as usize]
-                + (acol.connected_ratio*gap_extension_penalty + acol.gapped_ratio*gap_extension_penalty)*(1.0-bcol.del_ratio);
-                
+                + (acol.connected_ratio*gap_extension_penalty + acol.gapped_ratio*gap_extension_penalty)*abweight;
 
                 let px = vec![
                     (DIREC_UPLEFT,(diag_m,diag_l,diag_u)),
@@ -379,6 +378,7 @@ impl ProfileAligner {
                 if currentx > 0 && currenty > 0{
                     ret_score.push(match_score[currentx as usize -1][currenty as usize -1]);
                 }
+                assert!(currentx > 0 && currenty > 0,"{} {}",currentx,currenty);
                 currentx -= 1;
                 currenty -= 1;
                 
@@ -443,6 +443,40 @@ impl ProfileAligner {
                 startingy += 1;
             }
         }
+
+        let mut flaga = false;
+        for (ii,hh) in a.headers.iter().enumerate(){
+            if hh == "seq0001" || hh == "seq0002" || hh == "seq0003"{
+                flaga = true;
+            }
+        }
+
+        let mut flagb = false;
+        for (ii,hh) in b.headers.iter().enumerate(){
+            if hh == "seq0001" || hh == "seq0002" || hh == "seq0003"{
+                flagb = true;
+            }
+        }
+
+        if flaga && flagb{
+
+            for (ii,hh) in a.headers.iter().enumerate(){
+                if hh == "seq0001" || hh == "seq0002" || hh == "seq0003"{
+                    println!("a:{}",hh);
+                    println!("{}",a.get_aligned_seq(ii).into_iter().fold("".to_owned(),|s,m|s+m.to_string().as_str()));
+                }
+            }
+    
+            for (ii,hh) in b.headers.iter().enumerate(){
+                if hh == "seq0001" || hh == "seq0002" || hh == "seq0003"{
+                    println!("b{}",hh);
+                    println!("{}",b.get_aligned_seq(ii).into_iter().fold("".to_owned(),|s,m|s+m.to_string().as_str()));
+                }
+            }
+    
+            println!("{:?}",ret_score);
+        }
+
         return DPResult{alignment:aligned_tuple,score:maxscore,match_scores:ret_score};
     }
 
@@ -452,7 +486,7 @@ impl ProfileAligner {
         ,mut b:SequenceProfile
         ,alignment:Vec<(i32,i32)>
         ,profile_only:bool // true にすると alignment の文字は a に関してのみ保持する
-    ,weight:Option<(f32,f32)>)->SequenceProfile{
+        ,weight:Option<(f32,f32)>)->SequenceProfile{
         assert!(!profile_only);//後で追加する
         // もし、distance のデータはプロファイルと別で持っておくならば、distance を計算した際のウエイト（カラムにおける match_ratio）の合計も持っておくこと
         // 現在はカラムの Value の平均値を使っているが、配列の長さによって分母が変わるため、DISTANCE に使う値を例えばウエイト 0.5 等で単純に合計すると値がズレる
@@ -522,6 +556,32 @@ impl ProfileAligner {
                 gapper[1].push('-');
             }
         }
+
+
+        let mut mergestart = 0_usize;
+        let mut mergeend = gapper.len()-1;
+
+        match self.alignment_type{
+            AlignmentType::Global =>{
+
+            },
+            AlignmentType::Local => {
+                for ii in 0..alignment.len(){
+                    if alignment[ii].0 > -1 && alignment[ii].1 > -1{
+                        mergestart = ii;
+                        break;
+                    }
+                }
+                for ii_ in 0..alignment.len(){
+                    let ii = alignment.len() -1 -ii_;
+                    if alignment[ii].0 > -1 && alignment[ii].1 > -1{
+                        mergeend = ii;
+                        break;
+                    }
+                }
+            }
+        }
+
         let mut headers:Vec<String> = vec![];
         headers.append(&mut a.headers);
         headers.append(&mut b.headers);
@@ -532,14 +592,40 @@ impl ProfileAligner {
         ret.alignment_mapping = new_alignment_mapping;
         ret.alignment_mapping_ids = new_alignment_mapping_ids;
 
-        let aweight = if let Some(x) = weight{x.0}else{a.get_weight_sum()};
-        let bweight = if let Some(x) = weight{x.1}else{b.get_weight_sum()};
+        let mut aweight = if let Some(x) = weight{x.0}else{a.get_weight_sum()};
+        let mut bweight = if let Some(x) = weight{x.1}else{b.get_weight_sum()};
+        
+        if aweight == 0.0 && bweight == 0.0{
+            eprintln!("WARNING: The weight of profile 1 and 2 is 0. 0.5 was assigned.");
+            aweight = 0.5;
+            bweight = 0.5;
+        }
+        if aweight == 0.0{
+            eprintln!("WARNING: The weight of profile 1 is 0. 0.0001 was assigned. The weight of profile 2 was changed to 1.0.");
+            bweight = 1.0;
+            aweight = 0.0001;
+        }
+        if bweight == 0.0{
+            eprintln!("WARNING: The weight of profile 2 is 0. 0.0001 was assigned. The weight of profile 1 was changed to 1.0.");
+            aweight = 1.0;
+            bweight = 0.0001;
+        }
         
         let mut ex_weights:Vec<(f32,f32,f32,f32)> = vec![(0.0,0.0,0.0,0.0);alignment_length+1];
 
         for (wei,alichar,sprof) in vec![(aweight,&gapper[0],&a),(bweight,&gapper[1],&b)]{
             let mut poscount = 0_usize;
             for alipos in 0..alignment_length{
+                let mut mergeflag = match self.alignment_type{
+                    AlignmentType::Global => {true},
+                    AlignmentType::Local =>{
+                        if alipos >= mergestart && alipos <= mergeend{
+                            true
+                        }else{
+                            false
+                        }
+                    }
+                };
                 let mut sum_weight = 0.0;
                 let mut sum_weight_del = 0.0;
                 let mut ungapratio = 0.0;
@@ -550,14 +636,18 @@ impl ProfileAligner {
                         ungapratio += wei*sprof.gmat[poscount].connected_ratio;
                         gapratio += wei*sprof.gmat[poscount].gapped_ratio;
                     }else{
-                        gapratio += wei*sprof.gmat[poscount].gapped_ratio+ wei*sprof.gmat[poscount].connected_ratio;
+                        if mergeflag{
+                            gapratio += wei*sprof.gmat[poscount].gapped_ratio+ wei*sprof.gmat[poscount].connected_ratio;
+                        }
                     }
                 }else{
                     if alichar[alipos-1] != GAP_CHAR && alichar[alipos] != GAP_CHAR {
                         ungapratio += wei*sprof.gmat[poscount].connected_ratio;
                         gapratio += wei*sprof.gmat[poscount].gapped_ratio;
                     }else{
-                        gapratio += wei*sprof.gmat[poscount].gapped_ratio+ wei*sprof.gmat[poscount].connected_ratio;
+                        if mergeflag || alichar[alipos] != GAP_CHAR{
+                            gapratio += wei*sprof.gmat[poscount].gapped_ratio+ wei*sprof.gmat[poscount].connected_ratio;
+                        }
                     }
                 }
 
@@ -570,7 +660,9 @@ impl ProfileAligner {
                     sum_weight_del += wei*sprof.gmat[poscount].del_ratio;
                     poscount += 1;
                 }else{
-                    sum_weight_del += wei;
+                    if mergeflag{
+                        sum_weight_del += wei;
+                    }
                 }
                 ex_weights[alipos].0 += sum_weight;
                 ex_weights[alipos].1 += sum_weight_del;
@@ -585,7 +677,7 @@ impl ProfileAligner {
             let ungapratio = ex_weights[alipos].2;
             let gapratio = ex_weights[alipos].3;
 
-            assert!((ungapratio+gapratio) > 0.0);
+            assert!((ungapratio+gapratio) > 0.0,"{} {} {:?} {:?}",alignment_length,alipos,weight,ex_weights[alipos]);
 
             ret.gmat[alipos].connected_ratio = ungapratio/(ungapratio+gapratio);
             ret.gmat[alipos].gapped_ratio = gapratio/(ungapratio+gapratio);
@@ -610,6 +702,7 @@ impl ProfileAligner {
                 ungapratio += wei*sprof.gmat[sprof.gmat.len()-1].connected_ratio;
                 gapratio += wei*sprof.gmat[sprof.gmat.len()-1].gapped_ratio;
             }else{
+                //LOCAL の場合はどんな値であろうと関係ないのでここは flag とか使わず放置
                 gapratio += wei*sprof.gmat[sprof.gmat.len()-1].gapped_ratio+ wei*sprof.gmat[sprof.gmat.len()-1].connected_ratio;
             }
         }
@@ -681,11 +774,11 @@ impl ProfileAligner {
             let newgroup;
             if firstrun{
                 dpres = self.perform_dp(&center_seq,&bseq);
-                newgroup = ProfileAligner::make_alignment(self,center_seq,bseq,dpres.alignment,profile_only,None);
+                newgroup = self.make_alignment(center_seq,bseq,dpres.alignment,profile_only,None);
                 firstrun = false;
             }else{
                 dpres = self.perform_dp(&bseq,&center_seq);
-                newgroup = ProfileAligner::make_alignment(self,bseq,center_seq,dpres.alignment,profile_only,None);
+                newgroup = self.make_alignment(bseq,center_seq,dpres.alignment,profile_only,None);
             };
             final_score = dpres.score;
             

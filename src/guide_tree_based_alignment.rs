@@ -45,7 +45,7 @@ pub fn create_distence_tree(val:&Vec<&Vec<f32>>,num_threads:usize,typ:TreeType)-
 
 pub fn align_and_merge_with_weight(aligner:&mut ProfileAligner,aseq:SequenceProfile,bseq:SequenceProfile,aweight:f32,bweight:f32)->(SequenceProfile,f32){
     let dpres = aligner.perform_dp(&aseq,&bseq);
-    let res = ProfileAligner::make_alignment(aligner,aseq,bseq,dpres.alignment,false,Some((aweight,bweight)));
+    let res = aligner.make_alignment(aseq,bseq,dpres.alignment,false,Some((aweight,bweight)));
     return (res,dpres.score);
 }
 
@@ -174,7 +174,7 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profile
         return aligner.make_msa(sequences,false);
     }
     println!("align {} sequences.",sequences.len());
-
+    /*
     let mut virtual_coordinate:Vec<Vec<f32>> = vec![];
     for ss in sequences.iter(){
         unsafe{
@@ -186,12 +186,12 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profile
             virtual_coordinate.push(calc_weighted_mean(&vv,&ww));
         }
     }
+    */
     
-    /*
     let virtual_coordinate :Vec<Vec<f32>> = alignment_based_distance::calc_alignment_based_distance_from_seed(
         &sequences,aligner,10,num_threads,rngg
     );
-    */
+    
 
     /*
     最も長いエッジをとって、その両端から親子関係を作っていく
@@ -370,7 +370,8 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profile
                 eprintln!("Changed to: {} {}",adist,bdist);
             }
 
-            let res = align_and_merge_with_weight(&mut ali,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
+            let res = align_and_merge_with_weight(&mut ali,ap,bp,bdist/(adist+bdist),adist/(adist+bdist)
+        );
             (ali,uu,res.0,res.1)            
         }).collect();
         

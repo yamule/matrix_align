@@ -304,6 +304,7 @@ fn main_(args:Vec<String>){
 
             if let Some(x) = out_matrix_path{
                 ioutil::save_gmat(x,&vec![(0,&alires)], x.ends_with(".gz"));
+                //ioutil::save_gmat(x,&vec![(alires.headers.iter().position(|n| n == "seq0001").unwrap(),&alires)], x.ends_with(".gz"));//デバッグ中
             }
             break;
         }
