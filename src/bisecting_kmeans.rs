@@ -16,7 +16,7 @@ pub fn bisecting_kmeans(val:&Vec<&Vec<f32>>,max_member_num:usize,rng:&mut StdRng
     assert!(num_threads_ > 0);
     
     let mut num_threads = 1;
-    for ii in vec![40,20,10,8,4,2,1]{
+    for ii in vec![40,20,10,8,4,2,1]{ //40 回クラスタ中心候補を検討するので割り切れる数にする
         if ii <= num_threads_{
             num_threads = ii;
             break;

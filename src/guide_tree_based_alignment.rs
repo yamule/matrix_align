@@ -422,7 +422,7 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profile
             profiles.push(Some((rr.2,rr.3)));
             let pst = profiles.swap_remove(rr.1);
             if let Some(x) = pst{
-                
+                panic!("This is not expected ????");// None であるはず
             }
             if parents[rr.1] > -1{
                 let p = parents[rr.1] as usize;
