@@ -70,6 +70,13 @@ impl GMatColumn{
 }
 
 #[derive(Clone,Debug)]
+pub struct DPResult{
+    pub alignment:Vec<(i32,i32)>,
+    pub match_scores:Vec<f32>,
+    pub score:f32
+}
+
+#[derive(Clone,Debug)]
 pub struct ProfileAligner{
     pub dp_matrix:Vec<Vec<Vec<f32>>>,
     pub path_matrix:Vec<Vec<Vec<u8>>>,
@@ -120,7 +127,7 @@ impl ProfileAligner {
         self.path_matrix  = vec![vec![vec![0;3];bmax+1];amax+1];
     }
 
-    pub fn perform_dp(&mut self,a:&SequenceProfile,b:&SequenceProfile)->(Vec<(i32,i32)>,f32) {
+    pub fn perform_dp(&mut self,a:&SequenceProfile,b:&SequenceProfile)->DPResult {
         let mut gap_extension_penalty = self.gap_extension_penalty;
         let mut gap_open_penalty = self.gap_open_penalty;
 
@@ -365,9 +372,13 @@ impl ProfileAligner {
         let mut startingy = currenty;
         let mut nexpos = self.path_matrix[currentx][currenty][currentpos as usize];//前のセルのどこから来たか
         let mut aligned_tuple:Vec<(i32,i32)> = vec![];
+        let mut ret_score:Vec<f32> = vec![];
         while currentx > 0 || currenty > 0{
             if currentpos == DIREC_UPLEFT{
                 aligned_tuple.push((currentx as i32 -1 ,currenty as i32 -1));
+                if currentx > 0 && currenty > 0{
+                    ret_score.push(match_score[currentx as usize -1][currenty as usize -1]);
+                }
                 currentx -= 1;
                 currenty -= 1;
                 
@@ -432,7 +443,7 @@ impl ProfileAligner {
                 startingy += 1;
             }
         }
-        return (aligned_tuple,maxscore);
+        return DPResult{alignment:aligned_tuple,score:maxscore,match_scores:ret_score};
     }
 
     //alignment のデータをもとにプロファイルを合成して返す
@@ -670,13 +681,13 @@ impl ProfileAligner {
             let newgroup;
             if firstrun{
                 dpres = self.perform_dp(&center_seq,&bseq);
-                newgroup = ProfileAligner::make_alignment(self,center_seq,bseq,dpres.0,profile_only,None);
+                newgroup = ProfileAligner::make_alignment(self,center_seq,bseq,dpres.alignment,profile_only,None);
                 firstrun = false;
             }else{
                 dpres = self.perform_dp(&bseq,&center_seq);
-                newgroup = ProfileAligner::make_alignment(self,bseq,center_seq,dpres.0,profile_only,None);
+                newgroup = ProfileAligner::make_alignment(self,bseq,center_seq,dpres.alignment,profile_only,None);
             };
-            final_score = dpres.1;
+            final_score = dpres.score;
             
             center_seq = newgroup;
         }

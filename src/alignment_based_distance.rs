@@ -13,7 +13,7 @@ use super::bisecting_kmeans;
 use std::collections::HashSet;
 
 pub fn calc_alignment_based_distance_from_seed(sequences:&Vec<SequenceProfile>,aligner:&mut ProfileAligner,
-    num_seed_seq_:usize,num_threads:usize,random_seed:Option<u64>
+    num_seed_seq_:usize,num_threads:usize,rngg:&mut StdRng
 )-> Vec<Vec<f32>>{
     let num_seed_seq = num_seed_seq_.min(sequences.len());
     let num_seqs = sequences.len();
@@ -25,12 +25,6 @@ pub fn calc_alignment_based_distance_from_seed(sequences:&Vec<SequenceProfile>,a
     for _ in 0..num_threads{
         aligners.push(aligner.clone());
     }
-
-    let mut rngg:StdRng = if let Some(x) = random_seed{
-        StdRng::seed_from_u64(x)
-    }else{
-        StdRng::from_entropy()
-    };
 
     let mut seedseqs:HashSet<usize> = HashSet::new();
     loop{
@@ -73,8 +67,13 @@ pub fn calc_alignment_based_distance_from_seed(sequences:&Vec<SequenceProfile>,a
             let s2 = v.1;
             let mut ali = v.2;
             let shorter_length = sequences[s1].get_alignment_length().min(sequences[s2].get_alignment_length()) as f32;
+            let longer_length = sequences[s1].get_alignment_length().max(sequences[s2].get_alignment_length()) as f32;
             let res = ali.perform_dp(&sequences[s1],&sequences[s2]);
-            (s1,s2,ali,res.1/shorter_length)
+            let mut positivecount = 0_f32;
+            for ss in res.match_scores.iter(){
+                positivecount += *ss;
+            }
+            (s1,s2,ali,positivecount/(shorter_length as f32))
         }).collect();
         
         for rr in results.into_iter(){
@@ -84,6 +83,7 @@ pub fn calc_alignment_based_distance_from_seed(sequences:&Vec<SequenceProfile>,a
         }
 
     }
+    
     return ret;
 }
 

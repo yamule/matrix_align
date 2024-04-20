@@ -229,7 +229,7 @@ fn main_(args:Vec<String>){
             //needleman wunsh の合計だと normalize する必要はない気がするが・・・
             //うーん
             //scoresort.push((nscore,seq2));
-            scoresort.push((dpres.1,seq2));
+            scoresort.push((dpres.score,seq2));
         }
         scoresort.sort_by(|a,b|a.0.partial_cmp(&b.0).unwrap());
         scoresort.reverse();
@@ -257,7 +257,7 @@ fn main_(args:Vec<String>){
         
         let mut ans = if tree_guided{
             if max_cluster_size == -1{
-                guide_tree_based_alignment::tree_guided_alignment(seqvec, &mut saligner,false,num_threads,tree_type)
+                guide_tree_based_alignment::tree_guided_alignment(seqvec, &mut saligner,false,num_threads,tree_type,&mut rngg)
             }else{
                 guide_tree_based_alignment::hierarchical_alignment(seqvec, &mut saligner,max_cluster_size, &mut rngg,num_threads,tree_type)
             }

@@ -6,11 +6,12 @@ use std::collections::HashMap;
 use super::matrix_process::calc_euclid_dist;
 use super::gmat::calc_weighted_mean;
 use super::aligner::ProfileAligner;
+use rand::seq::index::IndexVecIter;
 use rayon::prelude::*;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use super::bisecting_kmeans;
-
+use super::alignment_based_distance;
 
 #[derive(Copy,Clone)]
 pub enum TreeType{
@@ -42,60 +43,10 @@ pub fn create_distence_tree(val:&Vec<&Vec<f32>>,num_threads:usize,typ:TreeType)-
     }
 }
 
-//与えられたベクトルの集合を 4 つのクラスタに分割する
-pub fn soft_cluster(val:&Vec<&Vec<f32>>, rngg:&mut StdRng)->Vec<Vec<usize>>{
-    assert!(val.len() > 10);
-    let numseq = val.len();
-    let base:usize = rngg.gen_range(0..numseq);
-    let mut dist:Vec<(usize,f32)> = vec![];
-    for ii in 0..numseq{
-        if ii == base{
-            dist.push((ii,-1.0));
-            continue;
-        }
-        dist.push((ii,calc_euclid_dist(val[base], val[ii])));
-    }
-    dist.sort_by(|a,b|a.1.partial_cmp(&b.1).unwrap());
-
-    let a1 = dist[0].0;
-    let goldpoint = (numseq as f64/2.618) as usize;
-    let a2 = dist[goldpoint].0;
-    let a3 = dist[numseq-1-goldpoint].0;
-    let a4 = dist[numseq-1].0;
-
-    let basepoints:Vec<usize> = vec![a1,a2,a3,a4];
-    
-    let mut clusterids:Vec<i64> = vec![-1;numseq];
-    for ii in 0..basepoints.len(){
-        clusterids[basepoints[ii]] = ii as i64;
-    }
-
-    for ii in 0..numseq{
-        if clusterids[ii] > -1{//basepoint
-            continue;
-        }
-        let mut minid = 0_usize;
-        let mut minval = calc_euclid_dist(val[basepoints[0]], val[ii]);//前の結果を利用すれば端折れるが、今後のことを考えて計算し直す
-        for jj in 1..basepoints.len(){
-            let ddis = calc_euclid_dist(val[basepoints[jj]], val[ii]);
-            if ddis < minval{
-                minval = ddis;
-                minid = jj;
-            }
-        }
-        clusterids[ii] = minid as i64;
-    }
-    let mut ret:Vec<Vec<usize>> = vec![vec![];basepoints.len()];
-    for ii in 0..clusterids.len(){
-        ret[clusterids[ii] as usize].push(ii);
-    }
-    return ret;
-}
-
 pub fn align_and_merge_with_weight(aligner:&mut ProfileAligner,aseq:SequenceProfile,bseq:SequenceProfile,aweight:f32,bweight:f32)->(SequenceProfile,f32){
     let dpres = aligner.perform_dp(&aseq,&bseq);
-    let res = ProfileAligner::make_alignment(aligner,aseq,bseq,dpres.0,false,Some((aweight,bweight)));
-    return (res,dpres.1);
+    let res = ProfileAligner::make_alignment(aligner,aseq,bseq,dpres.alignment,false,Some((aweight,bweight)));
+    return (res,dpres.score);
 }
 
 pub fn calc_distance_from(anchors:&Vec<usize>,val:&Vec<Vec<f32>>) -> Vec<Vec<f32>>{
@@ -123,7 +74,7 @@ pub fn hierarchical_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profil
             //なんか mut にするのが気持ち悪いので
             return sequences.into_iter().map(|m| (m,-1.0)).collect();
         }
-        return tree_guided_alignment(sequences, aligner, false,num_threads_,tree_type);
+        return tree_guided_alignment(sequences, aligner, false,num_threads_,tree_type,rngg);
     }
     
     let mut averaged_value:Vec<Vec<f32>> = vec![];
@@ -201,7 +152,7 @@ pub fn hierarchical_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profil
     let mut subres:Vec<SequenceProfile> = vec![];
     for mut cc in clustered.into_iter(){
         if cc.len() > 3{
-            let alires = tree_guided_alignment(cc, aligner, true,num_threads_,tree_type);
+            let alires = tree_guided_alignment(cc, aligner, true,num_threads_,tree_type,rngg);
             for aa in alires.into_iter(){
                 subres.push(aa.0);
             }
@@ -213,17 +164,18 @@ pub fn hierarchical_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profil
     if subres.len() as i64 > max_cluster_member_size{
         return hierarchical_alignment(subres, aligner, max_cluster_member_size, rngg, num_threads_,tree_type);
     }
-    return tree_guided_alignment(subres, aligner, false,num_threads_,tree_type);
+    return tree_guided_alignment(subres, aligner, false,num_threads_,tree_type,rngg);
 
 }
 
-pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut ProfileAligner,skip_last_merge:bool,num_threads:usize,tree_type:TreeType)-> Vec<(SequenceProfile,f32)>{
+pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut ProfileAligner,skip_last_merge:bool,num_threads:usize,tree_type:TreeType,rngg:&mut StdRng)-> Vec<(SequenceProfile,f32)>{
     assert!(sequences.len() > 1);
     if sequences.len() == 2{
         return aligner.make_msa(sequences,false);
     }
     println!("align {} sequences.",sequences.len());
-    let mut averaged_value:Vec<Vec<f32>> = vec![];
+
+    let mut virtual_coordinate:Vec<Vec<f32>> = vec![];
     for ss in sequences.iter(){
         unsafe{
             let mut vv:Vec<&Vec<f32>> = ss.gmat.iter().map(|m|&m.match_vec).collect();
@@ -231,19 +183,15 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profile
             assert_eq!(vv[vv.len()-1].iter().sum::<f32>(), 0.0,"???{:?}",ss.gmat[ss.gmat.len()-1]);
             vv.pop();
             ww.pop();
-            averaged_value.push(calc_weighted_mean(&vv,&ww));
+            virtual_coordinate.push(calc_weighted_mean(&vv,&ww));
         }
     }
+    
     /*
-    if max_cluster_size > 0{
-        if sequences.len() as i64 > max_cluster_size{
-            let clusterids = soft_cluster(&averaged_value.iter().map(|m|m).collect(), rngg);
-
-
-        }
-        return 
-    }*/
-
+    let virtual_coordinate :Vec<Vec<f32>> = alignment_based_distance::calc_alignment_based_distance_from_seed(
+        &sequences,aligner,10,num_threads,rngg
+    );
+    */
 
     /*
     最も長いエッジをとって、その両端から親子関係を作っていく
@@ -254,10 +202,10 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profile
     let mut treenodes;
     let use_upgma = match tree_type{TreeType::TreeUPGMA=>{true},TreeType::TreeNj=>{false}};
     if use_upgma{
-        treenodes = create_distence_tree(&averaged_value.iter().map(|m|m).collect(),num_threads,TreeType::TreeUPGMA);
+        treenodes = create_distence_tree(&virtual_coordinate.iter().map(|m|m).collect(),num_threads,TreeType::TreeUPGMA);
     }else{
         
-        treenodes = create_distence_tree(&averaged_value.iter().map(|m|m).collect(),num_threads,TreeType::TreeNj);
+        treenodes = create_distence_tree(&virtual_coordinate.iter().map(|m|m).collect(),num_threads,TreeType::TreeNj);
     }
     //println!("{:?}",treenodes);
     
@@ -410,9 +358,17 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profile
             let uu = v.0;
             let ap = v.1;
             let bp = v.2;
-            let adist = v.3;
-            let bdist = v.4;
+            let mut adist = v.3;
+            let mut bdist = v.4;
             let mut ali = v.5;
+
+            if adist < 0.0 || bdist < 0.0{
+                eprintln!("Negative branch length was found: {} {}",adist,bdist);
+                let minlen = adist.min(bdist)-0.00001;
+                adist -= minlen;
+                bdist -= minlen;
+                eprintln!("Changed to: {} {}",adist,bdist);
+            }
 
             let res = align_and_merge_with_weight(&mut ali,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
             (ali,uu,res.0,res.1)            
