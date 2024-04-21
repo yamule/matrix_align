@@ -71,7 +71,9 @@ pub fn calc_alignment_based_distance_from_seed(sequences:&Vec<SequenceProfile>,a
             let res = ali.perform_dp(&sequences[s1],&sequences[s2]);
             let mut positivecount = 0_f32;
             for ss in res.match_scores.iter(){
-                positivecount += *ss;
+                if *ss > 0.0{
+                    positivecount += *ss;
+                }
             }
             (s1,s2,ali,positivecount/(shorter_length as f32))
         }).collect();

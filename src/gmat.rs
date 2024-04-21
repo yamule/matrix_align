@@ -174,14 +174,7 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
         let stdev = sstat.var.sqrt()+0.0000001;
         unsafe{
             element_add(&mut evec,-1.0*sstat.mean);
-            if let Some(x) = aweight{// 逆方向の値との平均を取るので 2.0 で割る
-                element_multiply(&mut evec, 1.0/stdev/2.0*x[rr]);
-            }else{
-                element_multiply(&mut evec, 1.0/stdev/2.0);
-            }
-            if let Some(x) = bweight{
-                matrix_process::vector_multiply(&mut evec,&x);
-            }
+            element_multiply(&mut evec, 1.0/stdev/2.0);
         }
         ret.push(evec);
     }
@@ -200,14 +193,7 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
         let stdev = sstat.var.sqrt()+0.0000001;
         unsafe{
             element_add(&mut evec,-1.0*sstat.mean);
-            if let Some(x) = bweight{
-                element_multiply(&mut evec, 1.0/stdev/2.0*x[cc]);
-            }else{
-                element_multiply(&mut evec, 1.0/stdev/2.0);
-            }
-        }
-        if let Some(x) = aweight{
-            matrix_process::vector_multiply(&mut evec,&x);
+           element_multiply(&mut evec, 1.0/stdev/2.0);
         }
         for rr in 0..alen{
             ret[rr][cc] += evec[rr];
@@ -218,24 +204,16 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
 }
 
  
-pub fn calc_dot_product_matrix(avec:&Vec<&Vec<f32>>,bvec:&Vec<&Vec<f32>>,aweight:Option<&Vec<f32>>,bweight:Option<&Vec<f32>>)->Vec<Vec<f32>>{
+pub fn calc_dot_product_matrix(avec:&Vec<&Vec<f32>>,bvec:&Vec<&Vec<f32>>)->Vec<Vec<f32>>{
     let alen = avec.len();
     let blen = bvec.len();
     let mut ret:Vec<Vec<f32>> = vec![];
     for rr in 0..alen{
         let mut evec:Vec<f32> = vec![];
-        let mut aww = 1.0;
-        if let Some(x) = aweight{
-            aww = x[rr];
-        }
         for cc in 0..blen{
             unsafe{
-                let mut bww = 1.0;
-                if let Some(x) = bweight{
-                    bww = x[cc];
-                }
                 let score = matrix_process::dot_product(avec[rr], bvec[cc]);
-                evec.push(score*(aww*bww));
+                evec.push(score);
             }
         }
         ret.push(evec);

@@ -10,7 +10,7 @@ mod tests{
     use matrix_align::gmat::{self, calc_vec_stats, GMatStatistics};
     use matrix_align::aligner::{AlignmentType, ProfileAligner, SequenceProfile};
     use matrix_align::ioutil::{load_multi_gmat,save_lines};
-    use matrix_align::guide_tree_based_alignment;
+    use matrix_align::guide_tree_based_alignment::{self, DistanceBase};
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
@@ -34,7 +34,7 @@ mod tests{
             eprintln!("{}",ii);
 
             let veclen = gmat1_[0].2[0].len();
-            let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,-10.0,-0.5,AlignmentType::Global,matrix_align::aligner::ScoreType::DistanceZscore);
+            let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,Some((-10.0,-0.5)),AlignmentType::Global,matrix_align::aligner::ScoreType::DistanceZscore,None);
             let mut seqvec:Vec<SequenceProfile> = vec![];
             
             if let Some(p) = profile_seq{
@@ -128,7 +128,7 @@ mod tests{
         }
 
         let veclen = gmat1_[0].2[0].len();
-        let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,-10.0,-0.5,AlignmentType::Global,matrix_align::aligner::ScoreType::DistanceZscore);
+        let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,Some((-10.0,-0.5)),AlignmentType::Global,matrix_align::aligner::ScoreType::DistanceZscore,None);
         let mut seqvec:Vec<SequenceProfile> = vec![];
         
         let gmat1 = gmat1_.clone();
@@ -149,7 +149,7 @@ mod tests{
         }
 
         let mut ans = guide_tree_based_alignment::hierarchical_alignment(
-            seqvec,&mut saligner,500,&mut rngg,8,guide_tree_based_alignment::TreeType::TreeNj);
+            seqvec, &DistanceBase::AveragedValue, &mut saligner,500,&mut rngg,8,guide_tree_based_alignment::TreeType::TreeNj);
         assert!(ans.len() == 1);
         let (alires,_alisc) = ans.pop().unwrap();
         for aii in 0..alires.member_sequences.len(){

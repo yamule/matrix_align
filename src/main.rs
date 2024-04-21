@@ -1,9 +1,9 @@
 use std::collections::*;
 use rayon;
 use matrix_align::gmat::{self, calc_vec_stats, GMatStatistics};
-use matrix_align::aligner::{AlignmentType, ProfileAligner, ScoreType, SequenceProfile};
+use matrix_align::aligner::{AlignmentType, GapPenaltyAutoAdjustParam, ProfileAligner, ScoreType, SequenceProfile};
 use matrix_align::ioutil::{self, load_multi_gmat, save_lines};
-use matrix_align::guide_tree_based_alignment;
+use matrix_align::guide_tree_based_alignment::{self, DistanceBase};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
@@ -63,10 +63,16 @@ fn main_(args:Vec<String>){
         ("--num_iter","<int> : Number of alignment iterations. Construct global profile with -1 times with this number. Default '2'."),
         ("--gap_open_penalty","<float> : Gap open penalty for DP. Must be negative. Default '-10.0'"),
         ("--gap_extension_penalty","<float> : Gap extension penalty for DP. Must be negative. Default '-0.5'."),
+
+        ("--gap_penalty_auto_adjust","<bool or novalue=true> : Adjust gap penalty automaticall. <gap open penalty> = <maximum matching score>*a1*-1.0 + <minimum matching score>*a2; <gap extension penalty> = <gap open penalty>*0.05; Default true. "),
+        ("--gap_penalty_a1_a2","<float>,<float> : Parameters for gap penalty auto adjust. Default 0.5,0.5."),
+
         ("--normalize","<bool or novalue=true> : Normalize profile values before alignment. Default 'false'."),
         ("--alignment_type","<global or local> : Alignment type. Default 'global'"),
         ("--num_threads","<int> : Number of threads. Default 4."),
-        ("--tree_guided","<bool or novalue=true> : Use guide-tree based alignment."),
+        ("--tree_guided","<bool or novalue=true> : Use guide-tree based alignment. Default true."),
+        ("--distance_base","<string> : Estimation procedure for distance between samples. \"averaged_value\" or \"score_with_seed\". Default score_with_seed."),
+
         ("--max_cluster_size","<int> : Limit all-vs-all comparison with this many number of profiles and align hierarchically. Must be > 10. Default -1."),
         ("--random_seed","<int> : Seed for random number generator."),
         ("--tree_type","<string> : Type of guide tree. \"NJ\" or \"UPGMA\". Default \"NJ\"."),
@@ -102,6 +108,8 @@ fn main_(args:Vec<String>){
     }
 
     let tree_type = argss.get("--tree_type").unwrap_or(&"NJ".to_owned()).clone();
+    let distance_base = argss.get("--distance_base").unwrap_or(&"score_with_seed".to_owned()).clone();
+    
     let infile = argss.get("--in").unwrap().clone();
     let outfile = argss.get("--out").unwrap().clone();
     let num_iter:usize = argss.get("--num_iter").unwrap_or(&"2".to_owned()).parse::<usize>().unwrap_or_else(|e|panic!("in --num_iter {:?}",e));
@@ -114,6 +122,13 @@ fn main_(args:Vec<String>){
     let max_cluster_size:i64 = argss.get("--max_cluster_size").unwrap_or(&"-1".to_owned()).parse::<i64>().unwrap_or_else(|e|panic!("in --maximum_cluster_size {:?}",e));
     let out_matrix_path:&Option<&String> = &argss.get("--out_matrix");
     
+    let gap_penalty_auto_adjust:bool = check_bool(argss.get("--gap_penalty_auto_adjust").unwrap_or(&"true".to_owned()).as_str(),"--gap_penalty_auto_adjust");
+    let gap_penalty_a1_a2:Vec<String> = argss.get("--gap_penalty_a1_a2").unwrap_or(&"0.5,0.5".to_owned()).to_string().split(',').map(|m|m.to_owned()).collect();
+    
+    if gap_penalty_auto_adjust{
+        assert!(!argss.contains_key("--gap_open_penalty") && !argss.contains_key("--gap_extension_penalty"), "To use gap_open_penalty or gap_extension_penalty, set gap_penalty_auto_adjust \"false\".");
+    }
+
     check_acceptable(&tree_type.as_str(),vec!["NJ","UPGMA"] );
     let tree_type = if &tree_type == "NJ"{
         guide_tree_based_alignment::TreeType::TreeNj
@@ -154,7 +169,20 @@ fn main_(args:Vec<String>){
             panic!("???");
         }
     }
-
+    
+    let mut distance_base = DistanceBase::ScoreWithSeed;
+    if argss.contains_key("--distance_base"){
+        let typ = argss.get("--distance_base").unwrap().to_lowercase();
+        check_acceptable(typ.as_str(),vec!["score_with_seed","averaged_value"] );
+        if typ.as_str() == "score_with_seed"{
+            distance_base = DistanceBase::ScoreWithSeed;
+        }else if typ.as_str() == "averaged_value"{
+            distance_base = DistanceBase::AveragedValue;
+        }else{
+            panic!("???");
+        }
+    }
+    
     let mut score_type = ScoreType::DistanceZscore;
     if argss.contains_key("--score_type"){
         let typ = argss.get("--score_type").unwrap().to_lowercase();
@@ -193,7 +221,18 @@ fn main_(args:Vec<String>){
     let gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
 
     let veclen = gmat1_[0].2[0].len();
-    let mut saligner:ProfileAligner = ProfileAligner::new(veclen,300,gap_open_penalty,gap_extension_penalty,alignment_type,score_type);
+    let mut saligner:ProfileAligner = 
+    
+    if gap_penalty_auto_adjust{
+        ProfileAligner::new(veclen,300,None
+        ,alignment_type,score_type,Some(GapPenaltyAutoAdjustParam{
+            a1:gap_penalty_a1_a2[0].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2,e)),
+            a2:gap_penalty_a1_a2[1].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2,e))
+        }))
+    }else{
+        ProfileAligner::new(veclen,300, Some((gap_open_penalty,gap_extension_penalty))
+        ,alignment_type,score_type,None)
+    };
     
     let mut allseqs_:Vec<SequenceProfile> = vec![];
     for mut gg in gmat1_.into_iter(){
@@ -258,9 +297,9 @@ fn main_(args:Vec<String>){
         
         let mut ans = if tree_guided{
             if max_cluster_size == -1{
-                guide_tree_based_alignment::tree_guided_alignment(seqvec, &mut saligner,false,num_threads,tree_type,&mut rngg)
+                guide_tree_based_alignment::tree_guided_alignment(seqvec, &distance_base,&mut saligner,false,num_threads,tree_type,&mut rngg)
             }else{
-                guide_tree_based_alignment::hierarchical_alignment(seqvec, &mut saligner,max_cluster_size, &mut rngg,num_threads,tree_type)
+                guide_tree_based_alignment::hierarchical_alignment(seqvec, &distance_base,&mut saligner,max_cluster_size, &mut rngg,num_threads,tree_type)
             }
         }else{
             saligner.make_msa(seqvec,false)
