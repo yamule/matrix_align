@@ -17,6 +17,14 @@ use super::alignment_based_distance;
 pub enum TreeType{
     TreeNj,TreeUPGMA
 }
+
+
+#[derive(Copy,Clone)]
+pub enum DistanceBase{
+    AveragedValue,ScoreWithSeed
+}
+
+
 pub fn create_distence_tree(val:&Vec<&Vec<f32>>,num_threads:usize,typ:TreeType)-> Vec<(i64,i64,f32)>{
     let vsiz:usize = val.len();
     let mut dist:Vec<f32> = vec![];
@@ -66,7 +74,7 @@ pub fn calc_distance_from(anchors:&Vec<usize>,val:&Vec<Vec<f32>>) -> Vec<Vec<f32
     return ret;
 }
 
-pub fn hierarchical_alignment(sequences:Vec<SequenceProfile>,aligner:&mut ProfileAligner, max_cluster_member_size:i64, rngg:&mut StdRng,num_threads_:usize,tree_type:TreeType)-> Vec<(SequenceProfile,f32)>{
+pub fn hierarchical_alignment(sequences:Vec<SequenceProfile>,distance_base:&DistanceBase,aligner:&mut ProfileAligner, max_cluster_member_size:i64, rngg:&mut StdRng,num_threads_:usize,tree_type:TreeType)-> Vec<(SequenceProfile,f32)>{
     assert!(sequences.len() > 1);
 
     if sequences.len() as i64 <= max_cluster_member_size {
@@ -74,18 +82,27 @@ pub fn hierarchical_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profil
             //なんか mut にするのが気持ち悪いので
             return sequences.into_iter().map(|m| (m,-1.0)).collect();
         }
-        return tree_guided_alignment(sequences, aligner, false,num_threads_,tree_type,rngg);
+        return tree_guided_alignment(sequences, distance_base, aligner, false,num_threads_,tree_type,rngg);
     }
     
-    let mut averaged_value:Vec<Vec<f32>> = vec![];
-    for ss in sequences.iter(){
-        unsafe{
-            let mut vv:Vec<&Vec<f32>> = ss.gmat.iter().map(|m|&m.match_vec).collect();
-            let mut ww:Vec<f32> = ss.gmat.iter().map(|m|m.match_ratio).collect();
-            assert_eq!(vv[vv.len()-1].iter().sum::<f32>(), 0.0,"???{:?}",ss.gmat[ss.gmat.len()-1]);
-            vv.pop();
-            ww.pop();
-            averaged_value.push(calc_weighted_mean(&vv,&ww));
+    let mut virtual_coordinate:Vec<Vec<f32>> = vec![];
+    match distance_base{
+        DistanceBase::AveragedValue => {
+            for ss in sequences.iter(){
+                unsafe{
+                    let mut vv:Vec<&Vec<f32>> = ss.gmat.iter().map(|m|&m.match_vec).collect();
+                    let mut ww:Vec<f32> = ss.gmat.iter().map(|m|m.match_ratio).collect();
+                    assert_eq!(vv[vv.len()-1].iter().sum::<f32>(), 0.0,"???{:?}",ss.gmat[ss.gmat.len()-1]);
+                    vv.pop();
+                    ww.pop();
+                    virtual_coordinate.push(calc_weighted_mean(&vv,&ww));
+                }
+            }
+        },
+        DistanceBase::ScoreWithSeed => {
+            virtual_coordinate = alignment_based_distance::calc_alignment_based_distance_from_seed(
+                &sequences, aligner, 5, num_threads_, rngg
+            );
         }
     }
 
@@ -100,7 +117,7 @@ pub fn hierarchical_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profil
     for _ in 0..num_trial{
         let mut mbuff:Vec<usize> = vec![];
         for _ in 0..num_anchors{
-            mbuff.push(rngg.gen_range(0..averaged_value.len()));
+            mbuff.push(rngg.gen_range(0..virtual_coordinate.len()));
         } 
         trial_buff.push(
             mbuff
@@ -112,13 +129,14 @@ pub fn hierarchical_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profil
         for _ in 0..num_threads{
             let p = trial_buff.pop().unwrap();
             trial_minibatch.push((
-                calc_distance_from(&p,&averaged_value),
+                calc_distance_from(&p,&virtual_coordinate),
                 rngg.gen::<u64>())
             );
             if trial_buff.len() == 0{
                 break;
             }
         }
+
         println!("clustering minibatch: {}",trial_minibatch.len());
         let res:Vec<Result<(Vec<Vec<usize>>,f32),()>> = trial_minibatch.into_par_iter().map(|m|
         bisecting_kmeans::bisecting_kmeans(&m.0.iter().collect(),max_cluster_member_size as usize,&mut StdRng::seed_from_u64(m.1),num_mini_threads)
@@ -152,7 +170,7 @@ pub fn hierarchical_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profil
     let mut subres:Vec<SequenceProfile> = vec![];
     for mut cc in clustered.into_iter(){
         if cc.len() > 3{
-            let alires = tree_guided_alignment(cc, aligner, true,num_threads_,tree_type,rngg);
+            let alires = tree_guided_alignment(cc, distance_base, aligner, true,num_threads_,tree_type,rngg);
             for aa in alires.into_iter(){
                 subres.push(aa.0);
             }
@@ -162,36 +180,39 @@ pub fn hierarchical_alignment(sequences:Vec<SequenceProfile>,aligner:&mut Profil
     }
 
     if subres.len() as i64 > max_cluster_member_size{
-        return hierarchical_alignment(subres, aligner, max_cluster_member_size, rngg, num_threads_,tree_type);
+        return hierarchical_alignment(subres, distance_base, aligner, max_cluster_member_size, rngg, num_threads_,tree_type);
     }
-    return tree_guided_alignment(subres, aligner, false,num_threads_,tree_type,rngg);
+    return tree_guided_alignment(subres, distance_base, aligner, false,num_threads_,tree_type,rngg);
 
 }
 
-pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,aligner:&mut ProfileAligner,skip_last_merge:bool,num_threads:usize,tree_type:TreeType,rngg:&mut StdRng)-> Vec<(SequenceProfile,f32)>{
+pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&DistanceBase,aligner:&mut ProfileAligner,skip_last_merge:bool,num_threads:usize,tree_type:TreeType,rngg:&mut StdRng)-> Vec<(SequenceProfile,f32)>{
     assert!(sequences.len() > 1);
     if sequences.len() == 2{
         return aligner.make_msa(sequences,false);
     }
     println!("align {} sequences.",sequences.len());
-    /*
+    
     let mut virtual_coordinate:Vec<Vec<f32>> = vec![];
-    for ss in sequences.iter(){
-        unsafe{
-            let mut vv:Vec<&Vec<f32>> = ss.gmat.iter().map(|m|&m.match_vec).collect();
-            let mut ww:Vec<f32> = ss.gmat.iter().map(|m|m.match_ratio).collect();
-            assert_eq!(vv[vv.len()-1].iter().sum::<f32>(), 0.0,"???{:?}",ss.gmat[ss.gmat.len()-1]);
-            vv.pop();
-            ww.pop();
-            virtual_coordinate.push(calc_weighted_mean(&vv,&ww));
+    match distance_base{
+        DistanceBase::AveragedValue => {
+            for ss in sequences.iter(){
+                unsafe{
+                    let mut vv:Vec<&Vec<f32>> = ss.gmat.iter().map(|m|&m.match_vec).collect();
+                    let mut ww:Vec<f32> = ss.gmat.iter().map(|m|m.match_ratio).collect();
+                    assert_eq!(vv[vv.len()-1].iter().sum::<f32>(), 0.0,"???{:?}",ss.gmat[ss.gmat.len()-1]);
+                    vv.pop();
+                    ww.pop();
+                    virtual_coordinate.push(calc_weighted_mean(&vv,&ww));
+                }
+            }
+        },
+        DistanceBase::ScoreWithSeed => {
+            virtual_coordinate = alignment_based_distance::calc_alignment_based_distance_from_seed(
+                &sequences, aligner, 5,num_threads, rngg
+            );
         }
-    }
-    */
-    
-    let virtual_coordinate :Vec<Vec<f32>> = alignment_based_distance::calc_alignment_based_distance_from_seed(
-        &sequences,aligner,10,num_threads,rngg
-    );
-    
+    } 
 
     /*
     最も長いエッジをとって、その両端から親子関係を作っていく
