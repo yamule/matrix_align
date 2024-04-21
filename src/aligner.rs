@@ -248,7 +248,7 @@ impl ProfileAligner {
                     zmin = zmin.min(match_score[rr][cc]);
                 }
             }
-            gap_open_penalty  = zmax*self.auto_adjust_param.a2+zmin*self.auto_adjust_param.a2;
+            gap_open_penalty  = zmax*self.auto_adjust_param.a2*-1.0+zmin*self.auto_adjust_param.a2;
             gap_extension_penalty = gap_open_penalty*0.05;
             //println!("Adjusted gap penalty open:{} extend:{}",gap_open_penalty,gap_extension_penalty);
         }
