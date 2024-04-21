@@ -481,40 +481,6 @@ impl ProfileAligner {
                 startingy += 1;
             }
         }
-
-        let mut flaga = false;
-        for (ii,hh) in a.headers.iter().enumerate(){
-            if hh == "seq0001" || hh == "seq0002" || hh == "seq0003"{
-                flaga = true;
-            }
-        }
-
-        let mut flagb = false;
-        for (ii,hh) in b.headers.iter().enumerate(){
-            if hh == "seq0001" || hh == "seq0002" || hh == "seq0003"{
-                flagb = true;
-            }
-        }
-
-        if flaga && flagb{
-
-            for (ii,hh) in a.headers.iter().enumerate(){
-                if hh == "seq0001" || hh == "seq0002" || hh == "seq0003"{
-                    println!("a:{}",hh);
-                    println!("{}",a.get_aligned_seq(ii).into_iter().fold("".to_owned(),|s,m|s+m.to_string().as_str()));
-                }
-            }
-    
-            for (ii,hh) in b.headers.iter().enumerate(){
-                if hh == "seq0001" || hh == "seq0002" || hh == "seq0003"{
-                    println!("b{}",hh);
-                    println!("{}",b.get_aligned_seq(ii).into_iter().fold("".to_owned(),|s,m|s+m.to_string().as_str()));
-                }
-            }
-    
-            println!("{:?}",ret_score);
-        }
-
         return DPResult{alignment:aligned_tuple,score:maxscore,match_scores:ret_score};
     }
 
