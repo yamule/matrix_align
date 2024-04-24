@@ -322,8 +322,24 @@ impl ProfileAligner {
             for jj in 1..=bblen{
                 let acol = &a.gmat[ii-1];
                 let bcol = &b.gmat[jj-1];
-                //let sc:f32 = ScoredSeqAligner::calc_match_score(&acol.0,&bcol.0);
-                let abweight = (acol.match_ratio*0.5+bcol.match_ratio*0.5);
+
+                let acol_next = &a.gmat[ii];
+                let bcol_next = &b.gmat[jj];
+
+                
+                /*
+                //こうするのが適切な気がするがあまりにもスコアが下がりすぎる。
+                let abweight = acol.match_ratio*bcol.match_ratio;
+                let abweight_gapa = acol_next.match_ratio*(1.0-bcol.del_ratio);
+                let abweight_gapb = (1.0-acol.del_ratio)*bcol_next.match_ratio;
+                */
+                
+                
+                let abweight = 1.0;
+                let abweight_gapa = 1.0;
+                let abweight_gapb = 1.0;
+                
+
                 let sc:f32 = match_score[ii-1][jj-1]*abweight;
                 
                 let diag_m:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UPLEFT as usize] + sc;
@@ -332,18 +348,18 @@ impl ProfileAligner {
 
                 
                 let lef_m:f32 = self.dp_matrix[ii-1][jj][DIREC_UPLEFT as usize]
-                + (bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty)*abweight;
+                + (bcol_next.connected_ratio*gap_open_penalty + bcol_next.gapped_ratio*gap_extension_penalty)*abweight_gapb;
                 let lef_l:f32 = self.dp_matrix[ii-1][jj][DIREC_LEFT as usize]
-                + (bcol.connected_ratio*gap_extension_penalty + bcol.gapped_ratio*gap_extension_penalty)*abweight;
+                + (bcol_next.connected_ratio*gap_extension_penalty + bcol_next.gapped_ratio*gap_extension_penalty)*abweight_gapb;
                 let lef_u:f32 = self.dp_matrix[ii-1][jj][DIREC_UP as usize]
-                + (bcol.connected_ratio*gap_open_penalty + bcol.gapped_ratio*gap_extension_penalty)*abweight;
+                + (bcol_next.connected_ratio*gap_open_penalty + bcol_next.gapped_ratio*gap_extension_penalty)*abweight_gapb;
 
                 let up_m:f32 = self.dp_matrix[ii][jj-1][DIREC_UPLEFT as usize]
-                + (acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty)*abweight;
+                + (acol_next.connected_ratio*gap_open_penalty + acol_next.gapped_ratio*gap_extension_penalty)*abweight_gapa;
                 let up_l:f32 = self.dp_matrix[ii][jj-1][DIREC_LEFT as usize]
-                + (acol.connected_ratio*gap_open_penalty + acol.gapped_ratio*gap_extension_penalty)*abweight;
+                + (acol_next.connected_ratio*gap_open_penalty + acol_next.gapped_ratio*gap_extension_penalty)*abweight_gapa;
                 let up_u:f32 = self.dp_matrix[ii][jj-1][DIREC_UP as usize]
-                + (acol.connected_ratio*gap_extension_penalty + acol.gapped_ratio*gap_extension_penalty)*abweight;
+                + (acol_next.connected_ratio*gap_extension_penalty + acol_next.gapped_ratio*gap_extension_penalty)*abweight_gapa;
 
                 let px = vec![
                     (DIREC_UPLEFT,(diag_m,diag_l,diag_u)),

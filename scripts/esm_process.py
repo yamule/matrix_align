@@ -3,6 +3,7 @@ import esm
 import sys,re,os,gzip
 import copy;
 import numpy as np;
+import gc;
 
 # タンパク質配列を ESM にかける際に、長いタンパク質についても分割して処理し、切断部周辺はいくつかスキップして重複部分は平均 Representation として
 # 出力するスクリプト
@@ -203,13 +204,15 @@ while len(fass) > 0 or len(remained) > 0:
                 ]);
     
 
+    print("remained","fragment:",len(remained),"full:",len(fass));
+
     batch_labels, batch_strs, batch_tokens = batch_converter(data)
     batch_lens = (batch_tokens != alphabet.padding_idx).sum(1)
     data.clear();
     with torch.no_grad():
-        results = model(batch_tokens, repr_layers=[33], return_contacts=True)
-    token_representations = results["representations"][33]
-
+        results = model(batch_tokens, repr_layers=[33], return_contacts=False);
+    token_representations = results["representations"][33];
+    del results;
     # Generate per-sequence representations via averaging
     # NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
     for i, tokens_len in enumerate(batch_lens):
@@ -253,6 +256,7 @@ while len(fass) > 0 or len(remained) > 0:
             del linebuff;
     for cc in completed:
         seq_fragment.pop(cc);
+    gc.collect();
 
 fout.close();
 
