@@ -123,9 +123,9 @@ pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdR
             center[jj] += dist_to_anchor[*ss][jj];
         }
     }
-
-    element_multiply(&mut center, 1.0/(num_samples as f32));
-
+    unsafe{
+        element_multiply(&mut center, 1.0/(num_samples as f32));
+    }
     let firstsameple = sample_ids[rng.gen_range(0..num_samples)];
     
     let mut leftcenter:Vec<f32> = dist_to_anchor[firstsameple].iter().map(|m| *m).collect();
@@ -169,12 +169,16 @@ pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdR
             let ldist = calc_euclid_dist(dist_to_anchor[*ss], &leftcenter);
             let rdist = calc_euclid_dist(dist_to_anchor[*ss], &rightcenter);
             if ldist > rdist{
-                vector_add(&mut right_current,dist_to_anchor[*ss]);
+                unsafe{
+                    vector_add(&mut right_current,dist_to_anchor[*ss]);
+                }
                 rloss += rdist;
                 num_right += 1;
                 cluster_result[*ss] = CLUSTER_RIGHT;
             }else{
-                vector_add(&mut left_current,dist_to_anchor[*ss]);
+                unsafe{
+                    vector_add(&mut left_current,dist_to_anchor[*ss]);
+                }
                 lloss += ldist;
                 num_left += 1;
                 cluster_result[*ss] = CLUSTER_LEFT;
@@ -186,9 +190,10 @@ pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdR
             }
             return Err(cluster_result);
         }
-
-        element_multiply(&mut left_current, 1.0/(num_left as f32));
-        element_multiply(&mut right_current, 1.0/(num_right as f32));
+        unsafe{
+            element_multiply(&mut left_current, 1.0/(num_left as f32));
+            element_multiply(&mut right_current, 1.0/(num_right as f32));
+        }
         if left_current == leftcenter && right_current == rightcenter{
             break;
         }

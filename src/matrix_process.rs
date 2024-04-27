@@ -1,12 +1,5 @@
 use std::arch::x86_64::*;
 
-
-pub fn dot_product_native(a: &[f32], b: &[f32]) -> f32 {
-    assert_eq!(a.len(), b.len());
-    //eprintln!("running native");
-    return a.iter().zip(b.iter()).map(|(x,y)|x*y).sum();
-}
-
 //二つの一次元配列の内積を取る
 #[cfg(all(not(target_feature = "avx2"),target_feature = "sse3"))]
 pub unsafe fn dot_product(a: &[f32], b: &[f32]) -> f32 {
@@ -70,14 +63,11 @@ pub unsafe fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     sum
 }
 
-#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
-pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
+pub fn dot_product_native(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len());
     //eprintln!("running native");
-    return dot_product_native(a, b);
+    return a.iter().zip(b.iter()).map(|(x,y)|x*y).sum();
 }
-
-
 
 type SimdOpAvx2 = unsafe fn(__m256, __m256) -> __m256;
 type SimdOpSse3 = unsafe fn(__m128, __m128) -> __m128;
@@ -200,27 +190,25 @@ pub unsafe fn element_multiply(vec1: &mut [f32], val: f32) {
     }
 }
 
-
-#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
-pub fn element_min(vec1: &mut [f32], val: f32) {
+pub fn element_min_native(vec1: &mut [f32], val: f32) {
     for elem in vec1 {
         *elem = elem.min(val);
     }
 }
-#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
-pub fn element_max(vec1: &mut [f32], val: f32) {
+
+pub fn element_max_native(vec1: &mut [f32], val: f32) {
     for elem in vec1 {
         *elem = elem.max(val);
     }
 }
-#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
-pub fn element_add(vec1: &mut [f32], val: f32) {
+
+pub fn element_add_native(vec1: &mut [f32], val: f32) {
     for elem in vec1 {
         *elem += val;
     }
 }
-#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
-pub fn element_multiply(vec1: &mut [f32], val: f32) {
+
+pub fn element_multiply_native(vec1: &mut [f32], val: f32) {
     for elem in vec1 {
         *elem *= val;
     }
@@ -360,29 +348,25 @@ pub unsafe fn vector_multiply(vec1:&mut [f32],vec2:&[f32]){
 }
 
 
-#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
-pub fn vector_max(vec1:&mut [f32],vec2:&[f32]){
+pub fn vector_max_native(vec1:&mut [f32],vec2:&[f32]){
     for (elem1,elem2) in vec1.iter_mut().zip(vec2.iter()) {
         *elem1 = (*elem1).max(*elem2);
     }
 }
 
-#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
-pub fn vector_min(vec1:&mut [f32],vec2:&[f32]){
+pub fn vector_min_native(vec1:&mut [f32],vec2:&[f32]){
     for (elem1,elem2) in vec1.iter_mut().zip(vec2.iter()) {
         *elem1 = (*elem1).min(*elem2);
     }
 }
 
-#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
-pub fn vector_add(vec1:&mut [f32],vec2:&[f32]){
+pub fn vector_add_native(vec1:&mut [f32],vec2:&[f32]){
     for (elem1,elem2) in vec1.iter_mut().zip(vec2.iter()) {
         *elem1 += *elem2;
     }
 }
 
-#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
-pub fn vector_multiply(vec1:&mut [f32],vec2:&[f32]){
+pub fn vector_multiply_native(vec1:&mut [f32],vec2:&[f32]){
     for (elem1,elem2) in vec1.iter_mut().zip(vec2.iter()) {
         *elem1 *= *elem2;
     }
@@ -420,8 +404,7 @@ pub unsafe fn vector_square(vec: &mut [f32]){
     }
 }
 
-#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
-pub fn vector_square(vec: &mut[f32]){
+pub fn vector_square_native(vec: &mut[f32]){
     for j in 0..vec.len() {
         vec[j] = vec[j]*vec[j] ;
     }
@@ -461,13 +444,84 @@ pub unsafe fn vector_sqrt(vec: &mut [f32]){
     }
 }
 
-#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
-pub fn vector_sqrt(vec: &mut[f32]){
+pub fn vector_sqrt_native(vec: &mut[f32]){
     for j in 0..vec.len() {
         vec[j] = vec[j].sqrt();
     }
 }
 
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
+    return dot_product_native(a,b);
+}
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn element_min(vec1: &mut [f32], val: f32) {
+    element_min_native(vec1,val);
+}
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn element_max(vec1: &mut [f32], val: f32) {
+    element_max_native(vec1,val);
+}
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn element_add(vec1: &mut [f32], val: f32) {
+    element_add_native(vec1,val);
+}
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn element_multiply(vec1: &mut [f32], val: f32) {
+    element_multiply_native(vec1,val);
+}
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn vector_max(vec1:&mut [f32],vec2:&[f32]){
+    vector_max_native(vec1,vec2);
+}
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn vector_min(vec1:&mut [f32],vec2:&[f32]){
+    vector_min_native(vec1,vec2);
+}
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn vector_add(vec1:&mut [f32],vec2:&[f32]){
+    vector_add_native(vec1,vec2);
+}
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn vector_multiply(vec1:&mut [f32],vec2:&[f32]){
+    vector_multiply_native(vec1,vec2);
+}
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn vector_square(vec: &mut[f32]){
+    vector_square_native(vec);
+}
+
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub fn vector_sqrt(vec: &mut[f32]){
+    vector_sqrt_native(vec);
+}
+
+
+
+#[cfg(all(not(target_feature = "avx2"),target_feature = "sse3"))]
+pub unsafe fn check_simd(){
+    println!("use sse3");
+}
+
+#[cfg(target_feature = "avx2")]
+pub unsafe fn check_simd(){
+    println!("use avx2");
+}
+
+#[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
+pub unsafe fn check_simd(){
+    println!("do not use simd operation");
+}
 
 //一次元配列を 2 つ与えてユークリッド距離を計算する
 pub fn calc_euclid_dist(vec1: &Vec<f32>,vec2: &Vec<f32>)->f32{
