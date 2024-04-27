@@ -11,3 +11,4 @@ pub mod bisecting_kmeans;
 pub mod guide_tree;
 pub mod upgma;
 pub mod alignment_based_distance;
+pub mod simple_argparse;
