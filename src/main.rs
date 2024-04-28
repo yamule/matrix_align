@@ -1,5 +1,5 @@
 use std::collections::*;
-use matrix_align::simple_argparse;
+use matrix_align::{matrix_process, simple_argparse};
 use rayon;
 use matrix_align::gmat::{self, calc_vec_stats, GMatStatistics};
 use matrix_align::aligner::{AlignmentType, GapPenaltyAutoAdjustParam, ProfileAligner, ScoreType, SequenceProfile};
@@ -28,15 +28,15 @@ fn main_(args:Vec<String>){
         at position 2]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 3]\t[value1]\t[value2]\t[value3]\
         ...\n...\n>seq2\n[amino acid letter at position 1]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at posit\
         ion 2]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 3]\t[value1]\t[value2]\t[value3]...\n...\n\
-        ..."
+        ...\n"
         ,None,vec![], true),
         
         ("--out",None
-        ,"<output file path> : Multi-fasta file. Required."
+        ,"<output file path> : Output file for alignemt result in multi-fasta format."
         ,None,vec![], true),
         
         ("--num_iter",None
-        ,"<int> : Number of alignment iterations. Construct global profile with -1 times with this number."
+        ,"<int> : Number of alignment iterations. Construct global profile with -1 with this number."
         ,Some("2"),vec![],false),
         
         ("--gap_open_penalty",None
@@ -96,6 +96,12 @@ fn main_(args:Vec<String>){
         ,"<string> : Save matrix file of the resulting alignment."
         ,None,vec![],false)
     ];
+
+    for aa in args.iter(){
+        if aa == "--help" || aa == "-h"{
+            unsafe{matrix_process::check_simd();}
+        }
+    }
 
     let mut argparser = simple_argparse::SimpleArgParse::new(allowed_arg_);
     argparser.parse(args);

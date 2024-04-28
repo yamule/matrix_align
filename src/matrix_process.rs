@@ -7,7 +7,7 @@ pub unsafe fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     //eprintln!("running sse3");
     let mut sum = 0.0;
     let mut i = 0;
-    while i + 4 < a.len() {
+    while i + 3 < a.len() {
         // SIMD型にデータをロード
         let a_chunk = _mm_loadu_ps(a[i..].as_ptr());
         let b_chunk = _mm_loadu_ps(b[i..].as_ptr());
@@ -41,7 +41,7 @@ pub unsafe fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     let mut sum = 0.0;
     let mut sum_vec = _mm256_setzero_ps();
     let mut i = 0;
-    while i + 8 < a.len() {
+    while i + 7 < a.len() {
         let a_chunk = _mm256_loadu_ps(a[i..].as_ptr());
         let b_chunk = _mm256_loadu_ps(b[i..].as_ptr());
         let mul_chunk = _mm256_mul_ps(a_chunk, b_chunk);
@@ -510,17 +510,17 @@ pub fn vector_sqrt(vec: &mut[f32]){
 
 #[cfg(all(not(target_feature = "avx2"),target_feature = "sse3"))]
 pub unsafe fn check_simd(){
-    println!("use sse3");
+    println!("Compiled with sse3 op.");
 }
 
 #[cfg(target_feature = "avx2")]
 pub unsafe fn check_simd(){
-    println!("use avx2");
+    println!("Compiled with avx2 op.");
 }
 
 #[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
 pub unsafe fn check_simd(){
-    println!("do not use simd operation");
+    println!("Compiled without SIMD op.");
 }
 
 //一次元配列を 2 つ与えてユークリッド距離を計算する
