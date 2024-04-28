@@ -219,7 +219,7 @@ pub fn save_gmat(filename:&str,seqs:&Vec<(usize,&SequenceProfile)>,gzipped:bool)
         let alilen = proff.get_alignment_length();
         for ii in 0..alilen{
             buff.push(
-                format!("@\t{}\t{}\t{}\t{}",proff.gmat[ii].match_ratio,proff.gmat[ii].del_ratio,proff.gmat[ii].connected_ratio,proff.gmat[ii].gapped_ratio)
+                format!("@\t{}\t{}\t{}\t{}",proff.gmat[ii].match_ratio,proff.gmat[ii].del_ratio,proff.gmat[ii].match_to_del,proff.gmat[ii].del_to_del)
             );
             let mut ptt:Vec<String> = vec![];
             if ii < aliseq.len(){
@@ -237,7 +237,7 @@ pub fn save_gmat(filename:&str,seqs:&Vec<(usize,&SequenceProfile)>,gzipped:bool)
             );
         }
         buff.push(
-            format!("@\t{}\t{}\t{}\t{}",proff.gmat[alilen].match_ratio,proff.gmat[alilen].del_ratio,proff.gmat[alilen].connected_ratio,proff.gmat[alilen].gapped_ratio)
+            format!("@\t{}\t{}\t{}\t{}",proff.gmat[alilen].match_ratio,proff.gmat[alilen].del_ratio,proff.gmat[alilen].match_to_del,proff.gmat[alilen].del_to_del)
         );
     }
     save_lines(filename,buff, gzipped);

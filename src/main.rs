@@ -64,10 +64,6 @@ fn main_(args:Vec<String>){
         ,"<float> : Gap open penalty for DP. Must be negative."
         ,Some("-10.0"),vec![],false),
         
-        ("--gap_extension_penalty",None
-        ,"<float> : Gap extension penalty for DP. Must be negative."
-        ,Some("-0.5"),vec![],false),
-
         ("--gap_penalty_auto_adjust",None
         ,"<bool or novalue=true> : Adjust gap penalty automaticall. <gap open penalty> = <maximum matching score>*a1*-1.0 + \
         <minimum matching score>*a2; <gap extension penalty> = <gap open penalty>*0.05;"
@@ -137,7 +133,6 @@ fn main_(args:Vec<String>){
     let outfile = argparser.get_string("--out").unwrap().clone();
     let num_iter:usize = argparser.get_int("--num_iter").unwrap() as usize;
     let gap_open_penalty:f32 = argparser.get_float("--gap_open_penalty").unwrap() as f32;
-    let gap_extension_penalty:f32 = argparser.get_float("--gap_extension_penalty").unwrap() as f32;
     let num_threads:usize = argparser.get_int("--num_threads").unwrap() as usize;
     let normalize:bool = argparser.get_bool("--normalize").unwrap();
 
@@ -174,9 +169,7 @@ fn main_(args:Vec<String>){
         ("--a3m_pairwise","--distance_base"),
         ("--num_iter","--tree_guided"),
         ("--gap_penalty_auto_adjust","--gap_open_penalty"),
-        ("--gap_penalty_auto_adjust","--gap_extension_penalty"),
         ("--gap_penalty_a1_a2","--gap_open_penalty"),
-        ("--gap_penalty_a1_a2","--gap_extension_penalty"),
     ];
     for (a,b) in voidpair{
         if argparser.user_defined(a) && argparser.user_defined(b){
@@ -240,7 +233,7 @@ fn main_(args:Vec<String>){
             a2:gap_penalty_a1_a2[1].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2,e))
         }))
     }else{
-        ProfileAligner::new(veclen,300, Some((gap_open_penalty,gap_extension_penalty))
+        ProfileAligner::new(veclen,300, Some((gap_open_penalty))
         ,alignment_type,score_type,None)
     };
     
