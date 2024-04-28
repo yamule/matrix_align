@@ -9,6 +9,7 @@ pub struct SimpleArgParse{
     mapper:HashMap<String,String>, //基準文字列もしくは省略形->基準文字列へのマップ
     mapped_rev:HashMap<String,String>,//基準文字列→省略形へのマップ。省略形が無い場合は None
     required:HashSet<String>,
+    user_defined:HashSet<String>,//デフォルトでなくユーザーが設定したもの
     acceptable_values:HashMap<String,HashSet<String>>,
     descriptions:Vec<String>
 }
@@ -100,6 +101,7 @@ impl SimpleArgParse{
             mapper:mapper,
             mapped_rev:mapped_rev,
             acceptable_values:acceptable_values,
+            user_defined:HashSet::new(),
             descriptions:descriptions
         };
     }
@@ -169,6 +171,7 @@ impl SimpleArgParse{
         let mut errors:Vec<String> = vec![];
         let mut processed:HashSet<String> = HashSet::new();
         for (kk,vv) in preprocessed.iter(){
+            self.user_defined.insert(kk.to_string());
             if !self.mapper.contains_key(kk){
                 if kk.starts_with("--nokey"){
                     errors.push(
@@ -222,8 +225,19 @@ impl SimpleArgParse{
         }
     }
 
+    pub fn check_key(&self,k:&str){
+        if !self.mapper.contains_key(k){
+            panic!("Error in code. {} is not registered as an option.",k);
+        }
+    }
+
+    pub fn user_defined(&self,k:&str)-> bool{
+        self.check_key(k);
+        return self.user_defined.contains(k);
+    }
 
     pub fn get_string(&self,k:&str)->Option<String>{
+        self.check_key(k);
         if let None = self.items.get(k){
             return None;
         }
@@ -231,6 +245,7 @@ impl SimpleArgParse{
     }
     
     pub fn get_int(&self,k:&str)->Option<i128>{
+        self.check_key(k);
         if let None = self.items.get(k){
             return None;
         }
@@ -240,6 +255,7 @@ impl SimpleArgParse{
     }
     
     pub fn get_float(&self,k:&str)->Option<f64>{
+        self.check_key(k);
         if let None = self.items.get(k){
             return None;
         }
@@ -249,6 +265,7 @@ impl SimpleArgParse{
     }
     
     pub fn get_bool(&self,k:&str)->Option<bool>{
+        self.check_key(k);
         if let None = self.items.get(k){
             return None;
         }

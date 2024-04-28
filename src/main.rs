@@ -9,12 +9,33 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 
 
+fn insert_alinged_string(alires:&SequenceProfile,name_to_res:&mut HashMap<String,String>){
+    let mut maxpos:usize = 0;
+    for mm in alires.alignment_mapping.iter(){
+        for mmm in mm.iter(){
+            if mmm.1 > -1{
+                maxpos = maxpos.max(mmm.1 as usize);
+            }
+        }
+    }
+    maxpos += 1;
 
-
-
-
-
-
+    for seqidx in 0..alires.member_sequences.len(){
+        let mut aseq = alires.get_aligned_seq(seqidx);
+        assert!(aseq.len() <= maxpos,"{} {} \n{}",aseq.len(),maxpos,aseq.iter().map(|m| m.to_string()).collect::<Vec<String>>().join(""));
+        while aseq.len() < maxpos{
+            aseq.push('-');
+        }
+        let hh = &alires.headers[seqidx];
+        if name_to_res.contains_key(hh){
+            assert!(name_to_res.get(hh).unwrap().len() == 0,"{}",name_to_res.get(hh).unwrap());
+            name_to_res.insert(
+                hh.clone(),aseq.into_iter().map(|m|m.to_string()).collect::<Vec<String>>().concat()
+            );
+        }
+    }
+    
+}
 
 
 fn main(){
@@ -36,8 +57,8 @@ fn main_(args:Vec<String>){
         ,None,vec![], true),
         
         ("--num_iter",None
-        ,"<int> : Number of alignment iterations. Construct global profile with -1 with this number."
-        ,Some("2"),vec![],false),
+        ,"<int> : Number of alignment iterations. Construct global profile with -1 with this number. Can not be used with tree_guided alignment."
+        ,Some("1"),vec![],false),
         
         ("--gap_open_penalty",None
         ,"<float> : Gap open penalty for DP. Must be negative."
@@ -58,7 +79,7 @@ fn main_(args:Vec<String>){
 
         ("--normalize",None
         ,"<bool or novalue=true> : Normalize profile values before alignment."
-        ,Some("false"),vec![],false),
+        ,Some("true"),vec![],false),
         
         ("--alignment_type",None
         ,"<string> : Alignment type."
@@ -71,14 +92,18 @@ fn main_(args:Vec<String>){
         ("--tree_guided",None
         ,"<bool or novalue=true> : Use guide-tree based alignment."
         ,Some("true"),vec![],false),
+
+        ("--a3m_pairwise",None
+        ,"<bool or novalue=true> : Perform pairwise alignment with top sequense and other sequences and output alignments as A3M format."
+        ,Some("false"),vec![],false),
         
         ("--distance_base",None
         ,"<string> : Estimation method for distance between samples."
-        ,Some("score_with_seed"),vec!["averaged_value","score_with_seed"],false),
+        ,Some("averaged_value"),vec!["averaged_value","score_with_seed"],false),
 
         ("--max_cluster_size",None
         ,"<int> : Limit all-vs-all comparison with this many number of profiles and align hierarchically. Must be > 10."
-        ,None,vec![],false),
+        ,Some("100"),vec![],false),
         
         ("--random_seed",None
         ,"<int> : Seed for random number generator. Must be positive."
@@ -90,7 +115,7 @@ fn main_(args:Vec<String>){
         
         ("--score_type",None
         ,"<string> : Type of scoring function. \"distance_zscore\" or \"dot_product\"."
-        ,Some("distance_zscore"),vec![],false),
+        ,Some("dot_product"),vec![],false),
         
         ("--out_matrix",None
         ,"<string> : Save matrix file of the resulting alignment."
@@ -108,13 +133,15 @@ fn main_(args:Vec<String>){
 
     let tree_type = argparser.get_string("--tree_type").unwrap();
     
-    let infile = argparser.get_string("--in").unwrap().clone();
+    let infiles_ = argparser.get_string("--in").unwrap().clone();
     let outfile = argparser.get_string("--out").unwrap().clone();
     let num_iter:usize = argparser.get_int("--num_iter").unwrap() as usize;
     let gap_open_penalty:f32 = argparser.get_float("--gap_open_penalty").unwrap() as f32;
     let gap_extension_penalty:f32 = argparser.get_float("--gap_extension_penalty").unwrap() as f32;
     let num_threads:usize = argparser.get_int("--num_threads").unwrap() as usize;
     let normalize:bool = argparser.get_bool("--normalize").unwrap();
+
+    let a3m_pairwise:bool = argparser.get_bool("--a3m_pairwise").unwrap();
 
     let tree_guided:bool = argparser.get_bool("--tree_guided").unwrap();
     let max_cluster_size:i64 = argparser.get_int("--max_cluster_size").unwrap() as i64;
@@ -141,6 +168,24 @@ fn main_(args:Vec<String>){
         assert!(max_cluster_size >  10,"--max_cluster_size must be > 10 or -1. {}",max_cluster_size);
     }// -1 の場合 hierarcical align を行わない
 
+    
+    let voidpair:Vec<(&str,&str)> = vec![
+        ("--a3m_pairwise","--tree_guided"),
+        ("--a3m_pairwise","--distance_base"),
+        ("--num_iter","--tree_guided"),
+        ("--gap_penalty_auto_adjust","--gap_open_penalty"),
+        ("--gap_penalty_auto_adjust","--gap_extension_penalty"),
+        ("--gap_penalty_a1_a2","--gap_open_penalty"),
+        ("--gap_penalty_a1_a2","--gap_extension_penalty"),
+    ];
+    for (a,b) in voidpair{
+        if argparser.user_defined(a) && argparser.user_defined(b){
+            panic!("{} and {} can not be used at the same time.",a,b);
+        }    
+    }
+
+    argparser.print_items();
+    
     let mut alignment_type = AlignmentType::Global;
     let typ = argparser.get_string("--alignment_type").unwrap().to_lowercase();
     if typ.as_str() == "global"{
@@ -161,7 +206,6 @@ fn main_(args:Vec<String>){
         panic!("???");
     }
     
-    
     let score_type;
     let typ = argparser.get_string("--score_type").unwrap().to_lowercase();
     if typ.as_str() == "distance_zscore"{
@@ -174,19 +218,22 @@ fn main_(args:Vec<String>){
 
     let mut name_to_res:HashMap<String,String> = HashMap::new();
     
+    let infiles:Vec<String> = infiles_.split(",").into_iter().map(|m|m.to_string()).collect();
     let gmatstats:Vec<GMatStatistics>;
     let mut profile_seq:Option<SequenceProfile> = None;
     unsafe{
-        gmatstats = calc_vec_stats(& vec![infile.clone()]);// 統計値のために一回ファイルを読んでいるが後で変更する
+        gmatstats = calc_vec_stats(&infiles );// 統計値のために一回ファイルを読んでいるが後で変更する
     }
 
-    let mut name_order:Vec<String> = vec![];
-    let gmat1_ = load_multi_gmat(&infile,infile.ends_with(".gz"));
+    let mut name_ordered:Vec<String> = vec![];
+    let mut gmat1_:Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)> = vec![];
+    for ii in infiles.iter(){
+        let mut z = load_multi_gmat(ii,ii.ends_with(".gz"));
+        gmat1_.append(&mut z);
+    }
 
     let veclen = gmat1_[0].2[0].len();
-    let mut saligner:ProfileAligner = 
-    
-    if gap_penalty_auto_adjust{
+    let mut saligner:ProfileAligner = if gap_penalty_auto_adjust{
         ProfileAligner::new(veclen,300,None
         ,alignment_type,score_type,Some(GapPenaltyAutoAdjustParam{
             a1:gap_penalty_a1_a2[0].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2,e)),
@@ -204,43 +251,67 @@ fn main_(args:Vec<String>){
             panic!("Duplicated name {}.",n);
         }
         name_to_res.insert(n.clone(),"".to_owned());
-        name_order.push(n);
+        name_ordered.push(n);
         if normalize{
             gmat::normalize_seqmatrix(&mut (gg.2), &gmatstats);
         }
-        //駄目っぽい。保留。
-        //let ss_biased = gmat::ssbias(&mut tt.2,false);
-        //tt.2 = ss_biased;
-        
         let alen = gg.1.len();
-        // ギャップまだ入って無い
         let seq = SequenceProfile::new(
-            vec![(gg.0,gg.1)],alen,gg.2[0].len(),None,Some(gg.2),None
+            vec![(gg.0,gg.1)],alen,gg.2[0].len(),None,Some(gg.2),gg.3
         );
         allseqs_.push(seq);
     }
 
-    let similarity_sort = false;
     
-    if similarity_sort{
-        //先頭配列に近い順でアラインメントする
-        let seq1 = allseqs_.swap_remove(0);
-        let mut scoresort:Vec<(f32,SequenceProfile)> = vec![];
-        for seq2 in allseqs_.into_iter(){
-            let dpres = saligner.perform_dp(&seq1,&seq2);
-            //let nscore = dpres.1/(seq1.get_alignment_length().min(seq2.get_alignment_length())) as f32;
-            //needleman wunsh の合計だと normalize する必要はない気がするが・・・
-            //うーん
-            //scoresort.push((nscore,seq2));
-            scoresort.push((dpres.score,seq2));
+    if a3m_pairwise{
+        allseqs_.reverse();
+        let firstseq = allseqs_.pop().unwrap();
+        
+        let mut lines:Vec<String> = vec![];
+        lines.push(
+            ">".to_owned()+firstseq.headers[0].as_str()
+        );
+        lines.push(
+            firstseq.member_sequences[0].iter().filter(|c| **c != '-').map(|m| m.to_string()).collect::<Vec<String>>().join("")
+        );
+
+        while allseqs_.len() > 0{
+            let fst = firstseq.clone();
+            let bseq = allseqs_.pop().unwrap();
+            let bname = bseq.headers[0].clone();
+            let seqvec = vec![fst,bseq];
+            let mut ans = saligner.make_msa(seqvec,false);
+            assert!(ans.len() == 1);
+            let (alires,score) = ans.remove(0);
+
+            println!(">{}",bname);
+            println!("score:{}",score);
+
+            insert_alinged_string(&alires, &mut name_to_res);
+
+            let first_aa:Vec<char> = name_to_res.get(&name_ordered[0]).unwrap().chars().into_iter().collect();
+
+            let pres:Vec<char> = name_to_res.get(&bname).unwrap().chars().into_iter().collect();
+            assert_eq!(pres.len(),first_aa.len());
+            let mut pstr:Vec<String> = vec![];
+            for (aa,bb) in first_aa.iter().zip(pres.iter()){
+                if aa == &'-'{
+                    pstr.push(
+                        bb.to_ascii_lowercase().to_string()
+                    );
+                }else{
+                    pstr.push(
+                        bb.to_string()
+                    );
+                }
+            }
+            lines.push(">".to_owned()+bname.as_str());
+            lines.push(pstr.join(""));
+
+            name_to_res.insert(firstseq.headers[0].clone(),"".to_owned());
         }
-        scoresort.sort_by(|a,b|a.0.partial_cmp(&b.0).unwrap());
-        scoresort.reverse();
-        allseqs_ = vec![seq1];
-        for ss in scoresort.into_iter(){
-            eprintln!("{} {:?}",ss.0,ss.1.headers);
-            allseqs_.push(ss.1);
-        }
+        save_lines(&outfile, lines,outfile.ends_with(".gz"));
+        std::process::exit(0);   
     }
 
     assert!(num_threads > 0);
@@ -270,7 +341,7 @@ fn main_(args:Vec<String>){
         };
 
         assert!(ans.len() == 1);
-        eprintln!("score:{}",ans[0].1);
+        println!("score:{}",ans[0].1);
         
         let (alires,_alisc) = ans.pop().unwrap();
         
@@ -280,31 +351,7 @@ fn main_(args:Vec<String>){
         //}
 
         if num_iter == ii+1{
-            let mut maxpos:usize = 0;
-            for mm in alires.alignment_mapping.iter(){
-                for mmm in mm.iter(){
-                    if mmm.1 > -1{
-                        maxpos = maxpos.max(mmm.1 as usize);
-                    }
-                }
-            }
-            maxpos += 1;
-
-            for seqidx in 0..alires.member_sequences.len(){
-                let mut aseq = alires.get_aligned_seq(seqidx);
-                assert!(aseq.len() <= maxpos,"{} {} \n{}",aseq.len(),maxpos,aseq.iter().map(|m| m.to_string()).collect::<Vec<String>>().join(""));
-                while aseq.len() < maxpos{
-                    aseq.push('-');
-                }
-                let hh = &alires.headers[seqidx];
-                if name_to_res.contains_key(hh){
-                    assert!(name_to_res.get(hh).unwrap().len() == 0,"{}",name_to_res.get(hh).unwrap());
-                    name_to_res.insert(
-                        hh.clone(),aseq.into_iter().map(|m|m.to_string()).collect::<Vec<String>>().concat()
-                    );
-                }
-            }
-
+            insert_alinged_string(&alires, &mut name_to_res);
             if let Some(x) = out_matrix_path{
                 ioutil::save_gmat(x,&vec![(0,&alires)], x.ends_with(".gz"));
             }
@@ -313,7 +360,7 @@ fn main_(args:Vec<String>){
         profile_seq = Some(alires);
     }
     let mut results:Vec<String> = vec![];
-    for ii in name_order.iter(){
+    for ii in name_ordered.iter(){
         //println!(">{}",primary_id_to_name.get(ii).unwrap());
         //println!("{}",primary_id_to_res.get(ii).unwrap());
         results.push(

@@ -117,7 +117,7 @@ pub fn save_lines(filename:&str,contents:Vec<String>,gzipped:bool){
 }
 
 pub fn parse_gmat_block(lines:Vec<String>)-> (String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>){
-    let name_matcher:Regex = Regex::new(r">[\s]*([^\s]+)").unwrap();
+    let head_matcher:Regex = Regex::new(r">[\s]*([^\r\n]+)").unwrap();
     let mut seqname = "".to_owned();
     let mut vecsize = -1_i32;
     let mut ret_c:Vec<char> = vec![];
@@ -142,7 +142,7 @@ pub fn parse_gmat_block(lines:Vec<String>)-> (String,Vec<char>,Vec<Vec<f32>>,Opt
             continue;
         }
         if line.starts_with(">"){
-            let cres = name_matcher.captures(&line).unwrap();
+            let cres = head_matcher.captures(&line).unwrap();
             if let Some(xx) = cres.get(1){
                 seqname = xx.as_str().to_string();
             }
