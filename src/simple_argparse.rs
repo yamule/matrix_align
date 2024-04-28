@@ -231,6 +231,18 @@ impl SimpleArgParse{
         }
     }
 
+    pub fn is_generous_false(&self,k:&str)->bool{
+        self.check_key(k);
+        if !self.items.contains_key(k){
+            return true;
+        }
+        let chk = self.items.get(k).unwrap().clone().to_lowercase();
+        if chk == "0" || chk == "false" || chk == "none"|| chk == "nulla"{
+            return true;
+        }
+        return false;
+    }
+
     pub fn user_defined(&self,k:&str)-> bool{
         self.check_key(k);
         return self.user_defined.contains(k);

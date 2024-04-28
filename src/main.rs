@@ -172,6 +172,12 @@ fn main_(args:Vec<String>){
         ("--gap_penalty_a1_a2","--gap_open_penalty"),
     ];
     for (a,b) in voidpair{
+        if argparser.is_generous_false(a){
+            continue;
+        }
+        if argparser.is_generous_false(b){
+            continue;
+        }
         if argparser.user_defined(a) && argparser.user_defined(b){
             panic!("{} and {} can not be used at the same time.",a,b);
         }    
