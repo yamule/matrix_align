@@ -1,5 +1,4 @@
 use self::matrix_process::element_multiply;
-use self::matrix_process::vector_add;
 
 use self::misc::UnionFind;
 
@@ -178,11 +177,9 @@ impl ProfileAligner {
             for ii in 0..aalen{
                     let st = matrix_process::calc_stats(&a.gmat[ii].match_vec);
                     let mut arr = a.gmat[ii].match_vec.clone();
-                    unsafe{
-                        matrix_process::element_add(&mut arr,st.mean*-1.0);
-                        if st.var > 0.0{
-                            matrix_process::element_multiply(&mut arr,1.0/st.var);
-                        }
+                    matrix_process::element_add(&mut arr,st.mean*-1.0);
+                    if st.var > 0.0{
+                        matrix_process::element_multiply(&mut arr,1.0/st.var);
                     }
                     aavec_colnorm.push(arr);
             }
@@ -190,12 +187,12 @@ impl ProfileAligner {
             for ii in 0..bblen{
                 let st = matrix_process::calc_stats(&b.gmat[ii].match_vec);
                 let mut arr = b.gmat[ii].match_vec.clone();
-                unsafe{
-                    matrix_process::element_add(&mut arr,st.mean*-1.0);
-                    if st.var > 0.0{
-                        matrix_process::element_multiply(&mut arr,1.0/st.var);
-                    }
+
+                matrix_process::element_add(&mut arr,st.mean*-1.0);
+                if st.var > 0.0{
+                    matrix_process::element_multiply(&mut arr,1.0/st.var);
                 }
+            
                 bbvec_colnorm.push(arr);
         }
         }
@@ -310,15 +307,13 @@ impl ProfileAligner {
 
         for ii in 1..=aalen{
             for jj in 1..=bblen{
-                let acol = &a.gmat[ii-1];
-                let bcol = &b.gmat[jj-1];
+                let _acol = &a.gmat[ii-1];
+                let _bcol = &b.gmat[jj-1];
 
                 let acol_next = &a.gmat[ii];
                 let bcol_next = &b.gmat[jj];
                 
-                let abweight = 1.0;
-                let abweight_gapa = 1.0;
-                let abweight_gapb = 1.0;
+                let abweight = 1.0; //match state で重みをつけようかと思ったりもした
 
                 let sc:f32 = match_score[ii-1][jj-1]*abweight;
                 
@@ -613,7 +608,7 @@ impl ProfileAligner {
         for (wei,alichar,sprof) in vec![(aweight,&gapper[0],&a),(bweight,&gapper[1],&b)]{
             let mut poscount = 0_usize;
             for alipos in 0..alignment_length{
-                let mut mergeflag = match self.alignment_type{
+                let mergeflag = match self.alignment_type{
                     AlignmentType::Global => {true},
                     AlignmentType::Local =>{
                         if alipos >= mergestart && alipos <= mergeend{
@@ -625,8 +620,6 @@ impl ProfileAligner {
                 };
                 let mut sum_weight = 0.0;
                 let mut sum_weight_del = 0.0;
-                let mut ungapratio = 0.0;
-                let mut gapratio = 0.0;
 
                 let mut match_to_del = 0.0;
                 let mut match_to_match = 1.0;
@@ -637,10 +630,10 @@ impl ProfileAligner {
                 if alipos == 0{
                     if alichar[alipos] != GAP_CHAR{
                         match_to_del = sprof.gmat[poscount].match_to_del;
-                        match_to_match = (1.0-sprof.gmat[poscount].match_to_del);
+                        match_to_match = 1.0-sprof.gmat[poscount].match_to_del;
 
                         del_to_del = sprof.gmat[poscount].del_to_del;
-                        del_to_match = (1.0-sprof.gmat[poscount].del_to_del);
+                        del_to_match = 1.0-sprof.gmat[poscount].del_to_del;
 
                     }else{
                         match_to_del = 1.0;
@@ -652,7 +645,7 @@ impl ProfileAligner {
                         match_to_del = sprof.gmat[poscount].match_to_del;
                         
                         del_to_del = sprof.gmat[poscount].del_to_del;
-                        del_to_match = (1.0-sprof.gmat[poscount].del_to_del);
+                        del_to_match = 1.0-sprof.gmat[poscount].del_to_del;
 
                     }else{
                         if alichar[alipos-1] != GAP_CHAR && alichar[alipos] == GAP_CHAR {
@@ -742,9 +735,7 @@ impl ProfileAligner {
             ret.gmat[alipos].del_to_del = del_to_del/(del_to_del+del_to_match);
 
             if sum_weight > 0.0{
-                unsafe{
-                    element_multiply(&mut ret.gmat[alipos].match_vec,1.0/sum_weight);
-                }
+                element_multiply(&mut ret.gmat[alipos].match_vec,1.0/sum_weight);
             }
             
             assert!(sum_weight+sum_weight_del > 0.0);
@@ -763,7 +754,7 @@ impl ProfileAligner {
     }
 
 
-    pub fn make_msa_with_edge(&mut self,mut sequences: Vec<SequenceProfile>,profile_only:bool,mut edges:Vec<(usize,usize)>,merge_all:bool)
+    pub fn make_msa_with_edge(&mut self,sequences: Vec<SequenceProfile>,profile_only:bool,mut edges:Vec<(usize,usize)>,merge_all:bool)
     -> Vec<Vec<(SequenceProfile,f32)>>{
         let mut uff:UnionFind = UnionFind::new(sequences.len());
         let mut bags:Vec<Option<(SequenceProfile,f32)>> = sequences.into_iter().map(|m|Some((m,0.0))).collect();
@@ -804,7 +795,7 @@ impl ProfileAligner {
             }
         }
         return bags.into_iter().filter(
-                |m| if let Some(x) =  m{true}else{false}
+                |m| if let Some(_x) =  m{true}else{false}
                 ).map(|m|  if let Some(x) = m{vec![(x.0,x.1)]}else{panic!("???");}).collect();
     }
     pub fn make_msa(&mut self,mut sequences: Vec<SequenceProfile>,profile_only:bool)
@@ -871,7 +862,7 @@ impl SequenceProfile{
                 gmat.push(GMatColumn::new(vec_size,None,None));
             }
         }else{
-            for xx in 0..alignment_length{
+            for _ in 0..alignment_length{
                 gmat.push(GMatColumn::new(vec_size,None,None));
             }
             gmat.push(GMatColumn::new(vec_size,None,None));// ギャップ情報だけあるカラム

@@ -68,6 +68,8 @@ pub fn bisecting_kmeans(val:&Vec<&Vec<f32>>,max_member_num:usize,rng:&mut StdRng
                 cluster_mapping_buff.push((cluster_mapping_best.0,rng.gen::<u64>()));
                 let b = cluster_mapping_buff.swap_remove(minidx as usize);
                 cluster_mapping_best = (b.0,minloss_lr);
+                
+                /* //デバッグ用
                 let mut lcount = 0;
                 let mut rcount = 0;
                 
@@ -80,6 +82,7 @@ pub fn bisecting_kmeans(val:&Vec<&Vec<f32>>,max_member_num:usize,rng:&mut StdRng
                     }
                 }
                 //println!("split_tmp:{} {}",lcount,rcount);
+                */
             }
         }
         if (cluster_mapping_best.1).0 >= 0.0{
@@ -112,7 +115,7 @@ pub fn bisecting_kmeans(val:&Vec<&Vec<f32>>,max_member_num:usize,rng:&mut StdRng
 }
 
 //dist_to_anchor と名前が付いているが、Kalign のアルゴリズム上の話であり、単なる座標と考えて OK。
-pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdRng,mut cluster_result:Vec<i8>)-> Result<(f32,f32,Vec<i8>),(Vec<i8>)>{
+pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdRng,mut cluster_result:Vec<i8>)-> Result<(f32,f32,Vec<i8>),Vec<i8>>{
     let _num_seqs:usize = dist_to_anchor.len();
     let num_anchors:usize = dist_to_anchor[0].len();
     let num_samples:usize = sample_ids.len();
@@ -123,9 +126,9 @@ pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdR
             center[jj] += dist_to_anchor[*ss][jj];
         }
     }
-    unsafe{
-        element_multiply(&mut center, 1.0/(num_samples as f32));
-    }
+    
+    element_multiply(&mut center, 1.0/(num_samples as f32));
+    
     let firstsameple = sample_ids[rng.gen_range(0..num_samples)];
     
     let mut leftcenter:Vec<f32> = dist_to_anchor[firstsameple].iter().map(|m| *m).collect();
@@ -146,8 +149,8 @@ pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdR
         return Err(cluster_result);
     }
 
-    let mut lloss = 1000000000.0_f32;
-    let mut rloss = 1000000000.0_f32;
+    let mut lloss;
+    let mut rloss;
     let mut loopcount = 0_i64;
     loop{
         loopcount += 1;
@@ -169,16 +172,12 @@ pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdR
             let ldist = calc_euclid_dist(dist_to_anchor[*ss], &leftcenter);
             let rdist = calc_euclid_dist(dist_to_anchor[*ss], &rightcenter);
             if ldist > rdist{
-                unsafe{
-                    vector_add(&mut right_current,dist_to_anchor[*ss]);
-                }
+                vector_add(&mut right_current,dist_to_anchor[*ss]);
                 rloss += rdist;
                 num_right += 1;
                 cluster_result[*ss] = CLUSTER_RIGHT;
             }else{
-                unsafe{
-                    vector_add(&mut left_current,dist_to_anchor[*ss]);
-                }
+                vector_add(&mut left_current,dist_to_anchor[*ss]);
                 lloss += ldist;
                 num_left += 1;
                 cluster_result[*ss] = CLUSTER_LEFT;
@@ -190,10 +189,10 @@ pub fn split(dist_to_anchor:&Vec<&Vec<f32>>,sample_ids:&Vec<usize>,rng:&mut StdR
             }
             return Err(cluster_result);
         }
-        unsafe{
-            element_multiply(&mut left_current, 1.0/(num_left as f32));
-            element_multiply(&mut right_current, 1.0/(num_right as f32));
-        }
+        
+        element_multiply(&mut left_current, 1.0/(num_left as f32));
+        element_multiply(&mut right_current, 1.0/(num_right as f32));
+    
         if left_current == leftcenter && right_current == rightcenter{
             break;
         }

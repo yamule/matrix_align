@@ -1,5 +1,4 @@
-//use matrix_align;
-
+#![allow(unused_unsafe)]
 
 #[cfg(test)]
 mod tests{
@@ -39,7 +38,6 @@ mod tests{
             if let Some(p) = profile_seq{
                 seqvec.push(p);
             }
-            profile_seq = None;
 
             let gmat1 = gmat1_.clone();
             for mut tt in gmat1.into_iter(){

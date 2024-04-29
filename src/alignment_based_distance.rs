@@ -1,15 +1,10 @@
 
 use super::aligner::SequenceProfile;
-use super::faster_neighbor_joining;
-use super::upgma;
 use std::collections::HashMap;
-use super::matrix_process::calc_euclid_dist;
-use super::gmat::calc_weighted_mean;
 use super::aligner::ProfileAligner;
 use rayon::prelude::*;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
-use super::bisecting_kmeans;
+use rand::Rng;
 use std::collections::HashSet;
 
 pub fn calc_alignment_based_distance_from_seed(sequences:&Vec<SequenceProfile>,aligner:&mut ProfileAligner,
@@ -67,7 +62,7 @@ pub fn calc_alignment_based_distance_from_seed(sequences:&Vec<SequenceProfile>,a
             let s2 = v.1;
             let mut ali = v.2;
             let shorter_length = sequences[s1].get_alignment_length().min(sequences[s2].get_alignment_length()) as f32;
-            let longer_length = sequences[s1].get_alignment_length().max(sequences[s2].get_alignment_length()) as f32;
+            let _longer_length = sequences[s1].get_alignment_length().max(sequences[s2].get_alignment_length()) as f32;
             let res = ali.perform_dp(&sequences[s1],&sequences[s2]);
             let mut positivecount = 0_f32;
             for ss in res.match_scores.iter(){

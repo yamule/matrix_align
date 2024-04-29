@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use self::{matrix_process::*, misc::line_to_hash};
+use self::matrix_process::*;
 use super::*;
 
 #[derive(Debug, PartialEq)]
@@ -202,10 +202,12 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
         }else{
             calc_stats(&evec)
         };
-        let stdev = sstat.var.sqrt()+0.0000001;
-        unsafe{
+        let stdev = sstat.var.sqrt();
+        if stdev > 0.0{
             element_add(&mut evec,-1.0*sstat.mean);
             element_multiply(&mut evec, 1.0/stdev/2.0);
+        }else{
+            element_add(&mut evec,-1.0*sstat.mean);
         }
         ret.push(evec);
     }
@@ -221,10 +223,12 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
         }else{
             calc_stats(&evec)
         };
-        let stdev = sstat.var.sqrt()+0.0000001;
-        unsafe{
+        let stdev = sstat.var.sqrt();
+        if stdev > 0.0{
             element_add(&mut evec,-1.0*sstat.mean);
-           element_multiply(&mut evec, 1.0/stdev/2.0);
+            element_multiply(&mut evec, 1.0/stdev/2.0);
+        }else{
+            element_add(&mut evec,-1.0*sstat.mean);
         }
         for rr in 0..alen{
             ret[rr][cc] += evec[rr];
@@ -242,10 +246,8 @@ pub fn calc_dot_product_matrix(avec:&Vec<&Vec<f32>>,bvec:&Vec<&Vec<f32>>)->Vec<V
     for rr in 0..alen{
         let mut evec:Vec<f32> = vec![];
         for cc in 0..blen{
-            unsafe{
-                let score = matrix_process::dot_product(avec[rr], bvec[cc]);
-                evec.push(score);
-            }
+            let score = matrix_process::dot_product(avec[rr], bvec[cc]);
+            evec.push(score);
         }
         ret.push(evec);
     }
@@ -253,6 +255,8 @@ pub fn calc_dot_product_matrix(avec:&Vec<&Vec<f32>>,bvec:&Vec<&Vec<f32>>)->Vec<V
 }
 #[cfg(test)]
 mod tests{
+    use crate::ioutil;
+
     use super::gmat::{calc_vec_stats,GMatStatistics};
 
     #[test]
@@ -261,12 +265,10 @@ mod tests{
             "./example_files/test1.gmat".to_owned(),
             "./example_files/test2.gmat".to_owned(),
         ];
+        let statoutfile = "nogit/teststats.dat";
+
         unsafe{
             let res = calc_vec_stats(& filenames);
-            let mut sstr:Vec<String> = vec![];
-            for rr in res.iter(){
-                sstr.push(rr.get_string());
-            }
             let mut chk:Vec<GMatStatistics> = vec![];
             chk.push( GMatStatistics{  mean: 10.533,  max: 20.000,  var: 104.382,  min: -5.000,  sum: 158.0,  count: 15 });
             chk.push( GMatStatistics{  mean: 8.400,  max: 20.000,  var: 40.640,  min: -6.000,  sum: 126.0,  count: 15 });
@@ -293,9 +295,16 @@ mod tests{
                 );
                 
             }
+
+            let mut sstr:Vec<String> = vec![];
+            for rr in res.iter(){
+                sstr.push(rr.get_string());
+            }
+            ioutil::save_lines(&statoutfile,sstr, false);
+            let lines = ioutil::load_lines(&statoutfile,false);
             let mut res:Vec<GMatStatistics> = vec![];
-            for ii in 0..sstr.len(){
-                res.push(GMatStatistics::load_string(&sstr[ii]));
+            for ii in 0..lines.len(){
+                res.push(GMatStatistics::load_string(&lines[ii]));
             }
             for ii in 0..chk.len(){
                 assert!(

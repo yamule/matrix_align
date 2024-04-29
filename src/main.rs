@@ -1,3 +1,4 @@
+#![allow(unused_unsafe)]
 use std::collections::*;
 use matrix_align::{matrix_process, simple_argparse};
 use rayon;
@@ -164,6 +165,7 @@ fn main_(args:Vec<String>){
     let voidpair:Vec<(&str,&str)> = vec![
         ("--a3m_pairwise","--tree_guided"),
         ("--in","--in_list"),
+        ("--in_stats","--out_stats"),
         ("--a3m_pairwise","--distance_base"),
         ("--num_iter","--tree_guided"),
         ("--gap_penalty_auto_adjust","--gap_open_penalty"),
@@ -193,7 +195,7 @@ fn main_(args:Vec<String>){
 
     argparser.print_items();
     
-    let mut alignment_type = AlignmentType::Global;
+    let alignment_type;
     let typ = argparser.get_string("--alignment_type").unwrap().to_lowercase();
     if typ.as_str() == "global"{
         alignment_type = AlignmentType::Global;
@@ -359,7 +361,7 @@ fn main_(args:Vec<String>){
         if let Some(p) = profile_seq{
             seqvec.push(p.create_merged_dummy());
         }
-        profile_seq = None;
+
         for ss in allseqs_.iter(){
             seqvec.push(ss.clone());
         }
