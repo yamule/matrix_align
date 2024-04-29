@@ -607,12 +607,12 @@ impl ProfileAligner {
         let mut ex_weights:Vec<(f32,f32,f32,f32,f32,f32)> = vec![(0.0,0.0,0.0,0.0,0.0,0.0);alignment_length+1];
 
         let mut gappoints:HashSet<usize> = HashSet::new();
-        for ii in 0..alignment_length{
-            if gapper[0][ii] == GAP_CHAR && gapper[1][ii] != GAP_CHAR{
-                gappoints.insert(ii);
+        for ii in 0..(alignment_length-1){// 水平垂直方向異なる方向のギャップへの移動がある場合
+            if gapper[0][ii] == GAP_CHAR && gapper[1][ii+1] == GAP_CHAR{
+                gappoints.insert(ii+1);
             }
-            if gapper[0][ii] != GAP_CHAR && gapper[1][ii] == GAP_CHAR{
-                gappoints.insert(ii);
+            if gapper[0][ii+1] == GAP_CHAR && gapper[1][ii] == GAP_CHAR{
+                gappoints.insert(ii+1);
             }
         }
 
@@ -766,7 +766,6 @@ impl ProfileAligner {
                 match_to_match = 0.0;
                 del_to_del = 1.0;
                 del_to_match = 0.0;
-
             }
 
 
