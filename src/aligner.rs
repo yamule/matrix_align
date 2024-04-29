@@ -4,6 +4,7 @@ use self::misc::UnionFind;
 
 use super::*;
 
+use std::collections::HashSet;
 #[allow(unused_imports)]
 use std::time::Instant;
 
@@ -605,6 +606,16 @@ impl ProfileAligner {
         
         let mut ex_weights:Vec<(f32,f32,f32,f32,f32,f32)> = vec![(0.0,0.0,0.0,0.0,0.0,0.0);alignment_length+1];
 
+        let mut gappoints:HashSet<usize> = HashSet::new();
+        for ii in 0..alignment_length{
+            if gapper[0][ii] == GAP_CHAR && gapper[1][ii] != GAP_CHAR{
+                gappoints.insert(ii);
+            }
+            if gapper[0][ii] != GAP_CHAR && gapper[1][ii] == GAP_CHAR{
+                gappoints.insert(ii);
+            }
+        }
+
         for (wei,alichar,sprof) in vec![(aweight,&gapper[0],&a),(bweight,&gapper[1],&b)]{
             let mut poscount = 0_usize;
             for alipos in 0..alignment_length{
@@ -674,7 +685,7 @@ impl ProfileAligner {
                         if alichar[alipos-1] == GAP_CHAR && alichar[alipos] == GAP_CHAR {
                             match_to_match = 0.0;
                             match_to_del = 0.0;
-                            del_to_del = wei;
+                            del_to_del = 1.0;
                             del_to_match = 0.0;
                         }
                        
@@ -722,13 +733,45 @@ impl ProfileAligner {
             let sum_weight = ex_weights[alipos].0;
             let sum_weight_del = ex_weights[alipos].1;
             
-            let match_to_match = ex_weights[alipos].2;
-            let match_to_del = ex_weights[alipos].3;
-            let del_to_match = ex_weights[alipos].4;
-            let del_to_del = ex_weights[alipos].5;
+            let mut match_to_match = ex_weights[alipos].2;
+            let mut match_to_del = ex_weights[alipos].3;
+            let mut del_to_match = ex_weights[alipos].4;
+            let mut del_to_del = ex_weights[alipos].5;
+
+            match self.alignment_type{
+                AlignmentType::Global =>{
+                    
+                },
+                AlignmentType::Local => {//アラインメント開始、終了地点ではギャップペナルティを 0 にする。他にやりようが思い浮かばないため。
+                    if mergestart == alipos && alipos != 0{
+                        match_to_del = 1.0;
+                        match_to_match = 0.0;
+                        del_to_del = 1.0;
+                        del_to_match = 0.0;
+                    }
+                    //自分の前でローカルアラインメントが終わった場合
+                    //alipos == alignment_length ということはありえないが、後でコードを書き換える可能性を考えて念の為
+                    if mergeend+1 == alipos && alipos != alignment_length{
+                        match_to_del = 1.0;
+                        match_to_match = 0.0;
+                        del_to_del = 1.0;
+                        del_to_match = 0.0;
+                    }
+                    
+                }
+            }
+
+            if gappoints.contains(&alipos){// 水平垂直方向異なる方向のギャップへの移動がある場合ギャップペナルティは 0 にする
+                match_to_del = 1.0;
+                match_to_match = 0.0;
+                del_to_del = 1.0;
+                del_to_match = 0.0;
+
+            }
 
 
-            assert!((match_to_del+match_to_match) > 0.0,"{} {} {:?} {:?}",alignment_length,alipos,weight,ex_weights[alipos]);
+            assert!((match_to_del+match_to_match) > 0.0,"{} {}, {} {} {:?} {:?}\n{:?}\n{:?}",mergestart,mergeend,alignment_length,alipos,weight,ex_weights[alipos]
+            ,(gapper[0][alipos-1],gapper[0][alipos]),(gapper[1][alipos-1],gapper[1][alipos]));
             assert!((del_to_del+del_to_match) > 0.0,"{} {} {:?} {:?}",alignment_length,alipos,weight,ex_weights[alipos]);
 
             ret.gmat[alipos].match_to_del = match_to_del/(match_to_del+match_to_match);
