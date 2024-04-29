@@ -246,6 +246,13 @@ fn main_(args:Vec<String>){
         unsafe{
             gmatstats = calc_vec_stats(&infiles );// 統計値のために一回ファイルを読んでいるが後で変更する
         }
+        if let Some(x) = argparser.get_string("--out_stats"){
+            let mut lines:Vec<String> = vec![];
+            for gg in gmatstats.iter(){
+                lines.push(gg.get_string());
+            }
+            ioutil::save_lines(&x, lines, x.ends_with(".gz"));
+        }
     }
 
     let mut name_ordered:Vec<String> = vec![];
