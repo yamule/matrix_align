@@ -116,6 +116,27 @@ pub fn save_lines(filename:&str,contents:Vec<String>,gzipped:bool){
     
 }
 
+pub fn load_lines(filename:&str,gzipped:bool)->Vec<String>{
+    let mut ret:Vec<String> = vec![];
+    let file = File::open(filename).unwrap_or_else(|e| panic!("Loading {} was failed! {:?}",filename,e));
+        
+    let reader: Box<dyn BufRead> = if gzipped {
+        Box::new(BufReader::new(GzDecoder::new(BufReader::new(file))))
+    } else {
+        Box::new(BufReader::new(file))
+    };
+    
+    for (lcount,line) in reader.lines().enumerate() {
+        if let Ok(x) = line{
+            ret.push(x);
+        }else{
+            panic!("File read error at line {}. {:?} ",lcount,line)
+        }
+    }
+    return ret;
+
+}
+
 pub fn parse_gmat_block(lines:Vec<String>)-> (String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>){
     let head_matcher:Regex = Regex::new(r">[\s]*([^\r\n]+)").unwrap();
     let mut seqname = "".to_owned();

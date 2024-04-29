@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 
-use self::matrix_process::*;
-
+use self::{matrix_process::*, misc::line_to_hash};
 use super::*;
 
 #[derive(Debug, PartialEq)]
@@ -13,6 +13,36 @@ pub struct GMatStatistics{
     pub count:usize
 }
 
+impl GMatStatistics{
+    pub fn get_string(&self)->String{
+        return format!(
+            "max:\t{}\tmin:\t{}\tsum:\t{}\tmean:\t{}\tvar:\t{}\tcount:\t{}"
+            ,self.max,self.min,self.sum,self.mean,self.var,self.count
+        );
+    }
+    pub fn load_string(strr:&str) -> GMatStatistics{
+        let hs:HashMap<String,String> = misc::line_to_hash(strr);
+        for kk in vec!["max","min","sum","mean","var","count"]{
+            if !hs.contains_key(kk){
+                panic!("The line must field {} .",kk);
+            }
+        }
+        let mmax:f32 = hs.get("max").unwrap().parse::<f32>().unwrap();
+        let mmin:f32 = hs.get("min").unwrap().parse::<f32>().unwrap();
+        let ssum:f32 = hs.get("sum").unwrap().parse::<f32>().unwrap();
+        let mmean:f32 = hs.get("mean").unwrap().parse::<f32>().unwrap();
+        let vvar:f32 = hs.get("var").unwrap().parse::<f32>().unwrap();
+        let ccount:usize = hs.get("count").unwrap().parse::<usize>().unwrap();
+        return GMatStatistics{
+           max:mmax,
+           min:mmin,
+           sum:ssum,
+           mean:mmean,
+           var:vvar,
+           count:ccount
+        }
+    }
+}
 //calc_vec_stats_ と一部重複しているが、これだけ使うこともあるので
 pub unsafe fn calc_mean(allval:&Vec<&Vec<f32>>)->Vec<f32>{
     let mut ssum:Vec<f32> = vec![];
@@ -115,6 +145,7 @@ pub fn normalize_seqmatrix(vec:&mut Vec<Vec<f32>>, gmatstats:&Vec<GMatStatistics
         normalize(&mut vec[ii], gmatstats);
     }
 }
+
 
 //secondary structure を表現する場所があると数残基シフトの Alternative Alignment が出来てしまうので調整する
 pub fn ssbias(vec:&mut Vec<Vec<f32>>,ignore_last:bool) -> Vec<Vec<f32>>{
@@ -232,11 +263,40 @@ mod tests{
         ];
         unsafe{
             let res = calc_vec_stats(& filenames);
+            let mut sstr:Vec<String> = vec![];
+            for rr in res.iter(){
+                sstr.push(rr.get_string());
+            }
             let mut chk:Vec<GMatStatistics> = vec![];
             chk.push( GMatStatistics{  mean: 10.533,  max: 20.000,  var: 104.382,  min: -5.000,  sum: 158.0,  count: 15 });
             chk.push( GMatStatistics{  mean: 8.400,  max: 20.000,  var: 40.640,  min: -6.000,  sum: 126.0,  count: 15 });
             chk.push( GMatStatistics{  mean: 10.867,  max: 30.000,  var: 46.782,  min: 3.000,  sum: 163.0,  count: 15 });
             chk.push( GMatStatistics{  mean: 12.267,  max: 40.000,  var: 78.329,  min: 2.000,  sum: 184.0,  count: 15 });
+            for ii in 0..chk.len(){
+                assert!(
+                    (chk[ii].max - res[ii].max).abs() < 0.003
+                );
+                assert!(
+                    (chk[ii].min - res[ii].min).abs() < 0.003
+                );
+                assert!(
+                    (chk[ii].mean - res[ii].mean).abs() < 0.003
+                );
+                assert!(
+                    (chk[ii].sum - res[ii].sum).abs() < 0.003
+                );
+                assert!(
+                    (chk[ii].var - res[ii].var).abs() < 0.003
+                );
+                assert!(
+                    (chk[ii].count as f32 - res[ii].count as f32).abs() < 0.003
+                );
+                
+            }
+            let mut res:Vec<GMatStatistics> = vec![];
+            for ii in 0..sstr.len(){
+                res.push(GMatStatistics::load_string(&sstr[ii]));
+            }
             for ii in 0..chk.len(){
                 assert!(
                     (chk[ii].max - res[ii].max).abs() < 0.003

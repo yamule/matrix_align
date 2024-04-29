@@ -50,11 +50,25 @@ fn main_(args:Vec<String>){
         ...\n...\n>seq2\n[amino acid letter at position 1]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at posit\
         ion 2]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 3]\t[value1]\t[value2]\t[value3]...\n...\n\
         ...\n"
-        ,None,vec![], true),
+        ,None,vec![], false),
         
+        ("--in_list",None,
+        "<list file path> : Ascii text file which contains multiple input files's path."
+        ,None,vec![],false
+        ),
+
+        ("--in_stats",None,
+        "<stats file path> : Import statistics from this file instead of calculating them on the fly."
+        ,None,vec![],false
+        ),
+
         ("--out",None
         ,"<output file path> : Output file for alignemt result in multi-fasta format."
-        ,None,vec![], true),
+        ,None,vec![], false),
+
+        ("--out_stats",None
+        ,"<output file path> : Output file for statistics which will be used at normalization process. Program stops after calculating statistical values."
+        ,None,vec![], false),
         
         ("--num_iter",None
         ,"<int> : Number of alignment iterations. Construct global profile with -1 with this number. Can not be used with tree_guided alignment."
@@ -127,28 +141,10 @@ fn main_(args:Vec<String>){
     let mut argparser = simple_argparse::SimpleArgParse::new(allowed_arg_);
     argparser.parse(args);
 
-    let tree_type = argparser.get_string("--tree_type").unwrap();
-    
-    let infiles_ = argparser.get_string("--in").unwrap().clone();
-    let outfile = argparser.get_string("--out").unwrap().clone();
-    let num_iter:usize = argparser.get_int("--num_iter").unwrap() as usize;
-    let gap_open_penalty:f32 = argparser.get_float("--gap_open_penalty").unwrap() as f32;
-    let num_threads:usize = argparser.get_int("--num_threads").unwrap() as usize;
-    let normalize:bool = argparser.get_bool("--normalize").unwrap();
-
-    let a3m_pairwise:bool = argparser.get_bool("--a3m_pairwise").unwrap();
-
-    let tree_guided:bool = argparser.get_bool("--tree_guided").unwrap();
-    let max_cluster_size:i64 = argparser.get_int("--max_cluster_size").unwrap() as i64;
-    let out_matrix_path:&Option<String> = &argparser.get_string("--out_matrix");
-    
-    let gap_penalty_auto_adjust:bool = argparser.get_bool("--gap_penalty_auto_adjust").unwrap();
-    let gap_penalty_a1_a2:Vec<String> = argparser.get_string("--gap_penalty_a1_a2").unwrap().to_string().split(',').map(|m|m.to_owned()).collect();
-    
-    let tree_type = if &tree_type == "NJ"{
+    let tree_type = if argparser.get_string("--tree_type").unwrap() == "NJ"{
         guide_tree_based_alignment::TreeType::TreeNj
     }else{
-        assert!(&tree_type == "UPGMA");
+        assert!(argparser.get_string("--tree_type").unwrap() == "UPGMA");
         guide_tree_based_alignment::TreeType::TreeUPGMA
     };
 
@@ -159,6 +155,7 @@ fn main_(args:Vec<String>){
         StdRng::from_entropy()
     };
 
+    let max_cluster_size = argparser.get_int("--max_cluster_size").unwrap() as i64;
     if max_cluster_size > -1 {
         assert!(max_cluster_size >  10,"--max_cluster_size must be > 10 or -1. {}",max_cluster_size);
     }// -1 の場合 hierarcical align を行わない
@@ -166,6 +163,7 @@ fn main_(args:Vec<String>){
     
     let voidpair:Vec<(&str,&str)> = vec![
         ("--a3m_pairwise","--tree_guided"),
+        ("--in","--in_list"),
         ("--a3m_pairwise","--distance_base"),
         ("--num_iter","--tree_guided"),
         ("--gap_penalty_auto_adjust","--gap_open_penalty"),
@@ -181,6 +179,16 @@ fn main_(args:Vec<String>){
         if argparser.user_defined(a) && argparser.user_defined(b){
             panic!("{} and {} can not be used at the same time.",a,b);
         }    
+    }
+
+    let reqpair:Vec<(&str,&str)> = vec![
+        ("--in","--in_list"),
+        ("--out","--out_stats"),
+    ];
+    for (a,b) in reqpair{
+        if argparser.is_generous_false(a) && argparser.is_generous_false(b) {
+            panic!("One of {} or {} should be set.",a,b);
+        }
     }
 
     argparser.print_items();
@@ -217,11 +225,27 @@ fn main_(args:Vec<String>){
 
     let mut name_to_res:HashMap<String,String> = HashMap::new();
     
-    let infiles:Vec<String> = infiles_.split(",").into_iter().map(|m|m.to_string()).collect();
-    let gmatstats:Vec<GMatStatistics>;
+    let infiles:Vec<String> =  argparser.get_string("--in").unwrap().split(",").into_iter().map(|m|m.to_string()).collect();
+    let mut gmatstats:Vec<GMatStatistics>;
     let mut profile_seq:Option<SequenceProfile> = None;
-    unsafe{
-        gmatstats = calc_vec_stats(&infiles );// 統計値のために一回ファイルを読んでいるが後で変更する
+    if let Some(x) = argparser.get_string("--in_stats"){
+        let lines = ioutil::load_lines(&x,x.ends_with(".gz"));
+        gmatstats = vec![];
+        for ll in lines.iter(){
+            if ll.len() < 2{
+                continue;
+            }
+            if ll.starts_with("#"){
+                continue;
+            }
+            gmatstats.push(
+                GMatStatistics::load_string(ll)
+            );
+        }
+    }else{
+        unsafe{
+            gmatstats = calc_vec_stats(&infiles );// 統計値のために一回ファイルを読んでいるが後で変更する
+        }
     }
 
     let mut name_ordered:Vec<String> = vec![];
@@ -232,14 +256,15 @@ fn main_(args:Vec<String>){
     }
 
     let veclen = gmat1_[0].2[0].len();
-    let mut saligner:ProfileAligner = if gap_penalty_auto_adjust{
+    let mut saligner:ProfileAligner = if argparser.get_bool("--gap_penalty_auto_adjust").unwrap(){
+        let gap_penalty_a1_a2:Vec<String> = argparser.get_string("--gap_penalty_a1_a2").unwrap().to_string().split(',').map(|m|m.to_owned()).collect();
         ProfileAligner::new(veclen,300,None
         ,alignment_type,score_type,Some(GapPenaltyAutoAdjustParam{
             a1:gap_penalty_a1_a2[0].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2,e)),
             a2:gap_penalty_a1_a2[1].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2,e))
         }))
     }else{
-        ProfileAligner::new(veclen,300, Some((gap_open_penalty))
+        ProfileAligner::new(veclen,300, Some(argparser.get_float("--gap_open_penalty").unwrap() as f32)
         ,alignment_type,score_type,None)
     };
     
@@ -251,7 +276,7 @@ fn main_(args:Vec<String>){
         }
         name_to_res.insert(n.clone(),"".to_owned());
         name_ordered.push(n);
-        if normalize{
+        if argparser.get_bool("--normalize").unwrap(){
             gmat::normalize_seqmatrix(&mut (gg.2), &gmatstats);
         }
         let alen = gg.1.len();
@@ -262,7 +287,11 @@ fn main_(args:Vec<String>){
     }
 
     
-    if a3m_pairwise{
+    let num_threads:usize = argparser.get_int("--num_threads").unwrap() as usize;
+    assert!(num_threads > 0);
+    rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global().unwrap();
+
+    if argparser.get_bool("--a3m_pairwise").unwrap(){
         allseqs_.reverse();
         let firstseq = allseqs_.pop().unwrap();
         
@@ -309,12 +338,12 @@ fn main_(args:Vec<String>){
 
             name_to_res.insert(firstseq.headers[0].clone(),"".to_owned());
         }
+        let outfile = argparser.get_string("--out").unwrap();
         save_lines(&outfile, lines,outfile.ends_with(".gz"));
         std::process::exit(0);   
     }
 
-    assert!(num_threads > 0);
-    rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global().unwrap();
+    let num_iter:usize = argparser.get_int("--num_iter").unwrap() as usize;
     for ii in 0..num_iter{
         eprintln!("iter: {}",ii);
 
@@ -328,7 +357,7 @@ fn main_(args:Vec<String>){
             seqvec.push(ss.clone());
         }
         
-        let mut ans = if tree_guided{
+        let mut ans = if argparser.get_bool("--tree_guided").unwrap(){
             if max_cluster_size == -1{
                 guide_tree_based_alignment::tree_guided_alignment(seqvec, &distance_base,&mut saligner,false,num_threads,tree_type,&mut rngg)
             }else{
@@ -351,8 +380,8 @@ fn main_(args:Vec<String>){
 
         if num_iter == ii+1{
             insert_alinged_string(&alires, &mut name_to_res);
-            if let Some(x) = out_matrix_path{
-                ioutil::save_gmat(x,&vec![(0,&alires)], x.ends_with(".gz"));
+            if let Some(x) = argparser.get_string("--out_matrix"){
+                ioutil::save_gmat(&x,&vec![(0,&alires)], x.ends_with(".gz"));
             }
             break;
         }
@@ -366,6 +395,7 @@ fn main_(args:Vec<String>){
             format!(">{}\n{}",ii,name_to_res.get(ii).unwrap())
         );
     }
+    let outfile = argparser.get_string("--out").unwrap();
     save_lines(&outfile, results,outfile.ends_with(".gz"));
     //stattest();
 }

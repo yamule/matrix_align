@@ -1,3 +1,30 @@
+use std::collections::HashMap;
+use regex::Regex;
+
+
+pub fn line_to_hash(strr_:&str) -> HashMap<String, String>{
+    let re = Regex::new(r"[\s]*:[\s]*").unwrap();
+    let strr:String= re.replace_all(strr_,":").to_string();
+    let ptt:Vec<String> =  strr.split_ascii_whitespace().into_iter().map(|m|m.to_owned()).collect();
+    let mut ret:HashMap<String,String> = HashMap::new();
+
+    let re = Regex::new(r"^([^:]+):([^:\s]+)").unwrap();
+    for ii in 0..ptt.len(){
+        if ptt[ii].len() == 0{
+            continue;
+        }
+        let cpp = re.captures(&ptt[ii]);
+        if let Some(x) = cpp{
+            ret.insert(
+                x[1].to_string(),x[2].to_string()
+            );
+        }else{
+            eprintln!("Can not handle text {}\n in\n{}\nwhich is converted to\n{}\n.",ptt[ii],strr_,strr);
+        }
+
+    }
+    return ret;
+}
 
 //b を a 基準で a3m フォーマットの 2 エントリ目以降のエントリ形式にする
 //つまり a でギャップの領域について小文字になる
