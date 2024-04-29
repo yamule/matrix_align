@@ -5,38 +5,11 @@ use matrix_align::gmat::{self, calc_vec_stats, GMatStatistics};
 use matrix_align::aligner::{AlignmentType, GapPenaltyAutoAdjustParam, ProfileAligner, ScoreType, SequenceProfile};
 use matrix_align::ioutil::{self, load_multi_gmat, save_lines};
 use matrix_align::guide_tree_based_alignment::{self, DistanceBase};
+use matrix_align::a3m_pairwise_alignment;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use regex::Regex;
-
-fn insert_alinged_string(alires:&SequenceProfile,name_to_res:&mut HashMap<String,String>){
-    let mut maxpos:usize = 0;
-    for mm in alires.alignment_mapping.iter(){
-        for mmm in mm.iter(){
-            if mmm.1 > -1{
-                maxpos = maxpos.max(mmm.1 as usize);
-            }
-        }
-    }
-    maxpos += 1;
-
-    for seqidx in 0..alires.member_sequences.len(){
-        let mut aseq = alires.get_aligned_seq(seqidx);
-        assert!(aseq.len() <= maxpos,"{} {} \n{}",aseq.len(),maxpos,aseq.iter().map(|m| m.to_string()).collect::<Vec<String>>().join(""));
-        while aseq.len() < maxpos{
-            aseq.push('-');
-        }
-        let hh = &alires.headers[seqidx];
-        if name_to_res.contains_key(hh){
-            assert!(name_to_res.get(hh).unwrap().len() == 0,"{}",name_to_res.get(hh).unwrap());
-            name_to_res.insert(
-                hh.clone(),aseq.into_iter().map(|m|m.to_string()).collect::<Vec<String>>().concat()
-            );
-        }
-    }
-    
-}
-
+use matrix_align::misc::*;
 
 fn main(){
     main_(std::env::args().collect::<Vec<String>>());
@@ -340,6 +313,14 @@ fn main_(mut args:Vec<String>){
     }
 
     if argparser.get_bool("--a3m_pairwise").unwrap(){
+        let mut name_length_order:Vec<(String,usize)> = vec![];
+        for ii in 0..allseqs_.len(){
+            assert!(allseqs_[ii].headers.len() == 1);
+            assert!(allseqs_[ii].member_sequences.len() == 1);// 初期値ギャップも match_scores として計算される想定
+            name_length_order.push(
+                (allseqs_[ii].headers[0].clone(),allseqs_[ii].member_sequences[0].len())
+            );
+        }
         allseqs_.reverse();
         let firstseq = allseqs_.pop().unwrap();
         
@@ -351,41 +332,25 @@ fn main_(mut args:Vec<String>){
             firstseq.member_sequences[0].iter().filter(|c| **c != '-').map(|m| m.to_string()).collect::<Vec<String>>().join("")
         );
 
-        while allseqs_.len() > 0{
-            let fst = firstseq.clone();
-            let bseq = allseqs_.pop().unwrap();
-            let bname = bseq.headers[0].clone();
-            let seqvec = vec![fst,bseq];
-            let mut ans = saligner.make_msa(seqvec,false);
-            assert!(ans.len() == 1);
-            let (alires,score) = ans.remove(0);
+        let mut res = a3m_pairwise_alignment::create_a3m_pairwise_alignment(&saligner,firstseq,allseqs_, num_threads as i128);
 
-            println!(">{}",bname);
-            println!("score:{}",score);
-
-            insert_alinged_string(&alires, &mut name_to_res);
-
-            let first_aa:Vec<char> = name_to_res.get(&name_ordered[0]).unwrap().chars().into_iter().collect();
-
-            let pres:Vec<char> = name_to_res.get(&bname).unwrap().chars().into_iter().collect();
-            assert_eq!(pres.len(),first_aa.len());
-            let mut pstr:Vec<String> = vec![];
-            for (aa,bb) in first_aa.iter().zip(pres.iter()){
-                if aa == &'-'{
-                    pstr.push(
-                        bb.to_ascii_lowercase().to_string()
-                    );
-                }else{
-                    pstr.push(
-                        bb.to_string()
-                    );
+        for nn in name_length_order.iter(){
+            if let Some(p) = res.remove(&nn.0){
+                lines.push(">".to_owned()+&nn.0);
+                lines.push(p.0);
+                println!(">{}",nn.0);
+                println!("score:{}",p.1.score);
+                let mut posicount = 0 as usize;
+                for dd in p.1.match_scores.iter(){
+                    if *dd > 0.0{
+                        posicount += 1;
+                    }
                 }
+                println!("positive_count:{}",posicount);
+                println!("profile_length:{}",nn.1);
             }
-            lines.push(">".to_owned()+bname.as_str());
-            lines.push(pstr.join(""));
-
-            name_to_res.insert(firstseq.headers[0].clone(),"".to_owned());
         }
+        assert!(res.len() == 0);
         let outfile = argparser.get_string("--out").unwrap();
         save_lines(&outfile, lines,outfile.ends_with(".gz"));
         std::process::exit(0);   
@@ -427,7 +392,7 @@ fn main_(mut args:Vec<String>){
         //}
 
         if num_iter == ii+1{
-            insert_alinged_string(&alires, &mut name_to_res);
+            insert_alinged_string(&alires, &mut name_to_res,true);
             if let Some(x) = argparser.get_string("--out_matrix"){
                 ioutil::save_gmat(&x,&vec![(0,&alires)], x.ends_with(".gz"));
             }
