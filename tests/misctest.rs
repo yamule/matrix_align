@@ -1,5 +1,4 @@
-//use matrix_align;
-
+#![allow(unused_unsafe)]
 
 #[cfg(test)]
 mod tests{
@@ -33,13 +32,12 @@ mod tests{
             eprintln!("{}",ii);
 
             let veclen = gmat1_[0].2[0].len();
-            let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,Some((-10.0,-0.5)),AlignmentType::Global,matrix_align::aligner::ScoreType::DistanceZscore,None);
+            let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,Some(-10.0),AlignmentType::Global,matrix_align::aligner::ScoreType::DistanceZscore,None);
             let mut seqvec:Vec<SequenceProfile> = vec![];
             
             if let Some(p) = profile_seq{
                 seqvec.push(p);
             }
-            profile_seq = None;
 
             let gmat1 = gmat1_.clone();
             for mut tt in gmat1.into_iter(){
@@ -127,7 +125,7 @@ mod tests{
         }
 
         let veclen = gmat1_[0].2[0].len();
-        let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,Some((-10.0,-0.5)),AlignmentType::Global,matrix_align::aligner::ScoreType::DistanceZscore,None);
+        let mut saligner:ProfileAligner = ProfileAligner::new(veclen,200,Some(-10.0),AlignmentType::Global,matrix_align::aligner::ScoreType::DistanceZscore,None);
         let mut seqvec:Vec<SequenceProfile> = vec![];
         
         let gmat1 = gmat1_.clone();
@@ -172,5 +170,6 @@ mod tests{
         }
         save_lines(&outfile, results,outfile.ends_with(".gz"));
     }
+
 
 }

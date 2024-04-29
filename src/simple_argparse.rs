@@ -116,9 +116,6 @@ impl SimpleArgParse{
                 args.push(aa);
             }
         }
-        assert!(args.len() > 0);
-        let fst = args.remove(0);
-        assert!(fst.contains("matrix_align"));
         let mut ret:HashMap<String,String> = HashMap::new();
         let mut non_key_count:usize = 0;
         let mut ii:usize = 0;
@@ -229,6 +226,18 @@ impl SimpleArgParse{
         if !self.mapper.contains_key(k){
             panic!("Error in code. {} is not registered as an option.",k);
         }
+    }
+
+    pub fn is_generous_false(&self,k:&str)->bool{
+        self.check_key(k);
+        if !self.items.contains_key(k){
+            return true;
+        }
+        let chk = self.items.get(k).unwrap().clone().to_lowercase();
+        if chk == "0" || chk == "false" || chk == "none"|| chk == "nulla"{
+            return true;
+        }
+        return false;
     }
 
     pub fn user_defined(&self,k:&str)-> bool{

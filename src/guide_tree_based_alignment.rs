@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use super::matrix_process::calc_euclid_dist;
 use super::gmat::calc_weighted_mean;
 use super::aligner::ProfileAligner;
-use rand::seq::index::IndexVecIter;
 use rayon::prelude::*;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -353,7 +352,7 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
         let mut updated_minibatch:Vec<(usize,SequenceProfile,SequenceProfile,f32,f32,ProfileAligner)> = vec![];
         while updated_pool.len() > 0{
             let idx_target = updated_pool.pop().unwrap();
-            if let Some(x) = &profiles[idx_target]{
+            if let Some(_x) = &profiles[idx_target]{
                 assert!(idx_target == 0); //root は merge しない
                 continue;
             }
@@ -399,8 +398,8 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
         for rr in results.into_iter(){
             profiles.push(Some((rr.2,rr.3)));
             let pst = profiles.swap_remove(rr.1);
-            if let Some(x) = pst{
-                panic!("This is not expected ????");// None であるはず
+            if let Some(_x) = pst{
+                panic!("This is not expected. ????");// None であるはず
             }
             if parents[rr.1] > -1{
                 let p = parents[rr.1] as usize;
@@ -417,7 +416,7 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
     
     let mut remained:Vec<(f32,usize)> = vec![];
     for ii in 0..profiles.len(){
-        if let Some(x) = & profiles[ii]{
+        if let Some(_x) = & profiles[ii]{
             remained.push((treenodes[ii].2,ii));
         }
     }

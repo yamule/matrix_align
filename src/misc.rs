@@ -1,3 +1,71 @@
+use std::collections::HashMap;
+use regex::Regex;
+use super::aligner::SequenceProfile;
+
+// Profile 内の配列についてアラインメントされた状態の文字列を作成し、name_to_res として与えられたハッシュマップに
+// ヘッダをキー、アラインメントされた状態の文字列をバリューとして設定して返す。
+// いい方法が思い浮かばない
+pub fn insert_alinged_string(alires:&SequenceProfile,name_to_res:&mut HashMap<String,String>,discard_unregistered:bool){
+    let mut maxpos:usize = 0;
+    for mm in alires.alignment_mapping.iter(){
+        for mmm in mm.iter(){
+            if mmm.1 > -1{
+                maxpos = maxpos.max(mmm.1 as usize);
+            }
+        }
+    }
+    maxpos += 1;
+
+    for seqidx in 0..alires.member_sequences.len(){
+        let mut aseq = alires.get_aligned_seq(seqidx);
+        assert!(aseq.len() <= maxpos,"{} {} \n{}",aseq.len(),maxpos,aseq.iter().map(|m| m.to_string()).collect::<Vec<String>>().join(""));
+        while aseq.len() < maxpos{
+            aseq.push('-');
+        }
+        let hh = &alires.headers[seqidx];
+        if discard_unregistered{
+            if name_to_res.contains_key(hh){
+                assert!(name_to_res.get(hh).unwrap().len() == 0,"{}",name_to_res.get(hh).unwrap());
+                name_to_res.insert(
+                    hh.clone(),aseq.into_iter().map(|m|m.to_string()).collect::<Vec<String>>().concat()
+                );
+            }
+        }else{
+            if !name_to_res.contains_key(hh){
+                name_to_res.insert(
+                    hh.clone(),aseq.into_iter().map(|m|m.to_string()).collect::<Vec<String>>().concat()
+                );
+            }else{
+                panic!("{} was already mapped.",hh);
+            }
+        }
+    }
+    
+}
+
+pub fn line_to_hash(strr_:&str) -> HashMap<String, String>{
+    let re = Regex::new(r"[\s]*:[\s]*").unwrap();
+    let strr:String= re.replace_all(strr_,":").to_string();
+    let ptt:Vec<String> =  strr.split_ascii_whitespace().into_iter().map(|m|m.to_owned()).collect();
+    let mut ret:HashMap<String,String> = HashMap::new();
+
+    let re = Regex::new(r"^([^:]+):([^:\s]+)").unwrap();
+    for ii in 0..ptt.len(){
+        if ptt[ii].len() == 0{
+            continue;
+        }
+        let cpp = re.captures(&ptt[ii]);
+        if let Some(x) = cpp{
+            ret.insert(
+                x[1].to_string(),x[2].to_string()
+            );
+        }else{
+            eprintln!("Can not handle text {}\n in\n{}\nwhich is converted to\n{}\n.",ptt[ii],strr_,strr);
+        }
+
+    }
+    return ret;
+}
 
 //b を a 基準で a3m フォーマットの 2 エントリ目以降のエントリ形式にする
 //つまり a でギャップの領域について小文字になる

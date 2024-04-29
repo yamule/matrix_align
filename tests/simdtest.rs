@@ -1,6 +1,6 @@
+#![allow(unused_unsafe)]
 #[cfg(test)]
 mod simdtest{
-    use std::{collections::HashMap};
     use matrix_align::matrix_process::*;
     use rand::{Rng, SeedableRng};
     use rand::rngs::StdRng;
@@ -97,9 +97,9 @@ mod simdtest{
             is_close_vec(&vec1, &vec1_native,ERROR_TOLERANCE);
             
             let mut vec1 = vec1_orig.clone();
-            let vec2 = vec2_orig.clone();
+            let _vec2 = vec2_orig.clone();
             let mut vec1_native = vec1_orig.clone();
-            let vec2_native = vec2_orig.clone();
+            let _vec2_native = vec2_orig.clone();
             vector_square(&mut vec1);
             vector_square_native(&mut vec1_native);
             is_close_vec(&vec1, &vec1_native,ERROR_TOLERANCE);
@@ -110,11 +110,9 @@ mod simdtest{
             is_close_vec(&vec1, &vec1_native,ERROR_TOLERANCE);
 
             for ii in 1..270{
-;
-
                 let mut vec1_orig:Vec<f32> = vec![];
                 let mut vec2_orig:Vec<f32> = vec![];
-                for jj in 0..ii{
+                for _jj in 0..ii{
                     let a:f32 = rng.gen_range(-2.0..2.0);
                     let b:f32 = rng.gen_range(-2.0..2.0);
                     vec1_orig.push(a);
@@ -190,9 +188,9 @@ mod simdtest{
                 is_close_vec(&vec1, &vec1_native,ERROR_TOLERANCE);
                 
                 let mut vec1 = vec1_orig.clone();
-                let vec2 = vec2_orig.clone();
+                let _vec2 = vec2_orig.clone();
                 let mut vec1_native = vec1_orig.clone();
-                let vec2_native = vec2_orig.clone();
+                let _vec2_native = vec2_orig.clone();
                 vector_square(&mut vec1);
                 vector_square_native(&mut vec1_native);
                 is_close_vec(&vec1, &vec1_native,ERROR_TOLERANCE);

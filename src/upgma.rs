@@ -1,7 +1,3 @@
-
-use std::collections::HashMap;
-use rayon;
-use rayon::prelude::*;
 use super::guide_tree::calc_pos;
 
 

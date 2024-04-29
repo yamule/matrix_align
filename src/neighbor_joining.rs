@@ -186,7 +186,7 @@ pub fn get_newick_string(branches_:&Vec<(i64,i64,f32)>,node_name_map_:&HashMap<u
             }
         }
         assert!(first_node > -1);
-        let (b, m, h) = set_outgroup(first_node as usize,&branches, Some(&node_name_map));
+        let (b, _m, h) = set_outgroup(first_node as usize,&branches, Some(&node_name_map));
         branches = b;
         node_name_map = h.unwrap();
     }else{
@@ -361,6 +361,8 @@ pub fn change_center_branch(centerbranch:usize,branches:&Vec<(i64,i64,f32)>,node
     return (ret,old_new_map,None);
 }
 
+
+#[allow(unused)]
 fn get_child_leaves(targetbranch:usize,branches:&Vec<(i64,i64,f32)>,leaflabels:&HashMap<usize,String>) -> Vec<String>{
     let mut ret:Vec<String> = vec![];
     let mut updated:Vec<usize> = vec![targetbranch];
@@ -486,7 +488,7 @@ fn nj_test(){
         let mut childleaves:Vec<usize> = get_child_leaves(ii,&unrooted, &dummyname).iter().map(|m|m.parse::<usize>().unwrap()).collect();
         childleaves.sort();
         let chklen = unrooted[ii].2;
-        let mut chklen2 = -1.0;
+        let chklen2;
         if !group_checker.contains_key(&childleaves){
             let opp = get_opposite(&childleaves,5);
             chklen2 = *group_checker.get(&opp).unwrap();
@@ -507,7 +509,7 @@ fn nj_test(){
             let mut childleaves:Vec<usize> = get_child_leaves(jj,&changed_branch, &changed_label).iter().map(|m|m.parse::<usize>().unwrap()).collect();
             childleaves.sort();
             let chklen = changed_branch[jj].2;
-            let mut chklen2 = -1.0;
+            let chklen2;
             if !group_checker.contains_key(&childleaves){
                 let opp = get_opposite(&childleaves,5);
                 assert!(group_checker.contains_key(&opp),"??? {:?}\n{:?}",childleaves,opp);
@@ -522,7 +524,7 @@ fn nj_test(){
 }
 
 
-
+#[allow(unused)]
 fn compare_newick_structure(s1: &str, s2: &str) -> bool {
     let mut s1_parts = s1.split(&['(', ')', ',', ':'][..]).filter(|s| !s.is_empty());
     let mut s2_parts = s2.split(&['(', ')', ',', ':'][..]).filter(|s| !s.is_empty());
@@ -560,7 +562,7 @@ fn claude3test() {
     node_name_map.insert(5, "F".to_string());
 
     let newick_string = get_newick_string(&unrooted, &node_name_map);
-    let expected_newick_structure = "(A,((B,C),(D,E),F));";
+    let _expected_newick_structure = "(A,((B,C),(D,E),F));";
     println!("{:?}",newick_string);
     //assert!(compare_newick_structure(&newick_string, expected_newick_structure), "Original Newick string structure does not match the expected structure");
 
@@ -568,7 +570,7 @@ fn claude3test() {
     let outbranch = 3; // Set "D" as the outgroup
     let (new_branches, _, new_node_name_map) = set_outgroup(outbranch, &unrooted, Some(&node_name_map));
     let new_newick_string = get_newick_string(&new_branches, &new_node_name_map.unwrap());
-    let expected_outgroup_newick_structure = "(D,((A,((B,C),F)),E));";
+    let _expected_outgroup_newick_structure = "(D,((A,((B,C),F)),E));";
     //assert!(compare_newick_structure(&new_newick_string, expected_outgroup_newick_structure), "Newick string structure with outgroup 'D' does not match the expected structure");
     println!("{:?}",new_newick_string);
     
@@ -576,7 +578,7 @@ fn claude3test() {
     let centerbranch = 7; // Change the center branch to the branch connecting "A" and "B"
     let (new_branches, _, new_node_name_map) = change_center_branch(centerbranch, &unrooted, Some(&node_name_map));
     let new_newick_string = get_newick_string(&new_branches, &new_node_name_map.unwrap());
-    let expected_center_newick_structure = "(B,(A,((D,E),(F,C))));";
+    let _expected_center_newick_structure = "(B,(A,((D,E),(F,C))));";
     //assert!(compare_newick_structure(&new_newick_string, expected_center_newick_structure), "Newick string structure with center branch changed does not match the expected structure");
     println!("{:?}",new_newick_string);
     
