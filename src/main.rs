@@ -93,8 +93,8 @@ fn main_(mut args:Vec<String>){
         ,Some("averaged_value"),vec!["averaged_value","score_with_seed"],false),
 
         ("--max_cluster_size",None
-        ,"<int> : Limit all-vs-all comparison with this many number of profiles and align hierarchically. Must be > 10."
-        ,Some("100"),vec![],false),
+        ,"<int> : Limit all-vs-all comparison & tree building with this many number of profiles and align hierarchically. Must be > 10 or -1 (no limit)."
+        ,Some("-1"),vec![],false),
         
         ("--random_seed",None
         ,"<int> : Seed for random number generator. Must be positive."
