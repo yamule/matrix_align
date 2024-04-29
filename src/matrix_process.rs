@@ -39,7 +39,7 @@ pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len());
 
     //eprintln!("running avx2");
-    let mut sum = 0.0;
+    let mut sum;
     let mut i = 0;
     unsafe{
         let mut sum_vec = _mm256_setzero_ps();

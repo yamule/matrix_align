@@ -1,4 +1,4 @@
->test1			
+>testmul1			
 A	0	0	0
 B	1	1	1
 C	2	2	2
@@ -8,7 +8,7 @@ F	5	5	5
 G	6	6	6
 H	7	7	7
 I	8	8	8
->test2			
+>testmul2			
 A	0	0	0
 B	1	1	1
 C	2	2	2
@@ -18,7 +18,7 @@ F	5	5	5
 G	6	6	6
 H	7	7	7
 I	8	8	8
->test3			
+>testmul3			
 A	0	0	0
 B	1	1	1
 C	2	2	2

@@ -116,9 +116,6 @@ impl SimpleArgParse{
                 args.push(aa);
             }
         }
-        assert!(args.len() > 0);
-        let fst = args.remove(0);
-        assert!(fst.contains("matrix_align"));
         let mut ret:HashMap<String,String> = HashMap::new();
         let mut non_key_count:usize = 0;
         let mut ii:usize = 0;

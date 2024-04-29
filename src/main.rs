@@ -1,4 +1,3 @@
-#![allow(unused_unsafe)]
 use std::collections::*;
 use matrix_align::{matrix_process, simple_argparse};
 use rayon;
@@ -8,7 +7,7 @@ use matrix_align::ioutil::{self, load_multi_gmat, save_lines};
 use matrix_align::guide_tree_based_alignment::{self, DistanceBase};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
-
+use regex::Regex;
 
 fn insert_alinged_string(alires:&SequenceProfile,name_to_res:&mut HashMap<String,String>){
     let mut maxpos:usize = 0;
@@ -42,7 +41,14 @@ fn insert_alinged_string(alires:&SequenceProfile,name_to_res:&mut HashMap<String
 fn main(){
     main_(std::env::args().collect::<Vec<String>>());
 }
-fn main_(args:Vec<String>){
+
+fn main_(mut args:Vec<String>){
+
+    assert!(args.len() > 0);
+    if args[0].contains("matrix_align"){
+        let _fst = args.remove(0);
+    }
+    
     let allowed_arg_:Vec<(&str,Option<&str>,&str,Option<&str>,Vec<&str>,bool)> = vec![
         ("--in",None
         ,"<input file path> : Text based file which contains general profile matrices for multiple sequences. Something \
@@ -54,7 +60,8 @@ fn main_(args:Vec<String>){
         ,None,vec![], false),
         
         ("--in_list",None,
-        "<list file path> : Ascii text file which contains multiple input files's path."
+        "<list file path> : Ascii text file which contains multiple input files's path. If --in was specified, --in files will be loaded \
+        at first and files in --in_list will be loaded the next."
         ,None,vec![],false
         ),
 
@@ -135,7 +142,7 @@ fn main_(args:Vec<String>){
 
     for aa in args.iter(){
         if aa == "--help" || aa == "-h"{
-            unsafe{matrix_process::check_simd();}
+            matrix_process::check_simd();
         }
     }
 
@@ -164,7 +171,6 @@ fn main_(args:Vec<String>){
     
     let voidpair:Vec<(&str,&str)> = vec![
         ("--a3m_pairwise","--tree_guided"),
-        ("--in","--in_list"),
         ("--in_stats","--out_stats"),
         ("--a3m_pairwise","--distance_base"),
         ("--num_iter","--tree_guided"),
@@ -227,7 +233,31 @@ fn main_(args:Vec<String>){
 
     let mut name_to_res:HashMap<String,String> = HashMap::new();
     
-    let infiles:Vec<String> =  argparser.get_string("--in").unwrap().split(",").into_iter().map(|m|m.to_string()).collect();
+    let mut infiles:Vec<String> =  vec![];
+    if let Some(x) = argparser.get_string("--in"){
+        for xx in x.split(",").into_iter().map(|m|m.to_string()).into_iter(){
+            infiles.push(xx);
+        }
+    }
+
+    if let Some(x) = argparser.get_string("--in_list"){
+        let re = Regex::new(r"[\s]+$").unwrap();
+        for xx in x.split(",").into_iter().map(|m|m.to_string()).into_iter(){
+            let q:Vec<String> = ioutil::load_lines(&xx,xx.ends_with(".gz"));
+            for qq_ in q.into_iter(){
+                let qq = re.replace(&qq_,"").to_string();
+                if qq.len() == 0{
+                    continue;
+                }
+                if qq.starts_with("#"){
+                    continue;
+                }
+                infiles.push(qq);
+            }
+        }
+    }
+
+
     let mut gmatstats:Vec<GMatStatistics>;
     let mut profile_seq:Option<SequenceProfile> = None;
     if let Some(x) = argparser.get_string("--in_stats"){
@@ -246,7 +276,7 @@ fn main_(args:Vec<String>){
         }
     }else{
         unsafe{
-            gmatstats = calc_vec_stats(&infiles );// 統計値のために一回ファイルを読んでいるが後で変更する
+            gmatstats = calc_vec_stats(&infiles);// 統計値のために一回ファイルを読んでいるが後で変更する
         }
         if let Some(x) = argparser.get_string("--out_stats"){
             let mut lines:Vec<String> = vec![];
@@ -298,7 +328,16 @@ fn main_(args:Vec<String>){
     
     let num_threads:usize = argparser.get_int("--num_threads").unwrap() as usize;
     assert!(num_threads > 0);
-    rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global().unwrap();
+    match rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global(){
+        Ok(_)=>{
+
+        },
+        Err(e)=>{
+            eprintln!("=====If you are in test process, this can be ignored.=====");
+            eprintln!("{:?}",e);
+            eprintln!("==========================================================");
+        }
+    }
 
     if argparser.get_bool("--a3m_pairwise").unwrap(){
         allseqs_.reverse();
@@ -407,4 +446,33 @@ fn main_(args:Vec<String>){
     let outfile = argparser.get_string("--out").unwrap();
     save_lines(&outfile, results,outfile.ends_with(".gz"));
     //stattest();
+}
+
+
+#[test]
+fn maintest(){
+    main_(
+        (vec![
+            "--in","example_files/test1.gmat,example_files/test2.gmat,example_files/test3.gmat,example_files/test4.gmat","--out","nogit/normalex.dat"
+        ]).into_iter().map(|m|m.to_owned()).collect()
+    );
+
+    main_(
+        (vec![
+            "--in","example_files/test1.gmat","--out","nogit/list234ex.dat.gz"
+            ,"--in_list","example_files/list234.dat"
+        ]).into_iter().map(|m|m.to_owned()).collect()
+    );
+
+    main_(
+        (vec![
+            "--out","nogit/list1234ex.dat.gz"
+            ,"--in_list","example_files/list1234.dat"
+        ]).into_iter().map(|m|m.to_owned()).collect()
+    );
+    let v1 = ioutil::load_lines("nogit/normalex.dat",false);
+    let v2 = ioutil::load_lines("nogit/list234ex.dat.gz",true);
+    let v3 = ioutil::load_lines("nogit/list1234ex.dat.gz",true);
+    assert_eq!(v1,v2);
+    assert_eq!(v1,v3);
 }
