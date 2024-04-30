@@ -49,6 +49,11 @@ ddev = args.device;
 
 # Load ESM-2 model
 model, alphabet = esm.pretrained.load_model_and_alphabet(model_path)
+if ddev == "cuda":
+    model = model.eval().cuda();
+else:
+    model = model.eval();
+
 batch_converter = alphabet.get_batch_converter()
 
 
@@ -154,7 +159,7 @@ rounder = 7;
 """
 
 fass = loadFasta(infile);
-
+fass = list(reversed(fass))
 # Prepare data (first 2 sequences from ESMStructuralSplitDataset superfamily / 4)
 #fass = [ # デバッグ用
 #    {"name":"protein1", "seq":"MKTVRQERLKSIVRILERSKEPVSGAQLAEELSVSRQVIVQDIAYLRSLGYNIVATPRGYVLAGG"},
@@ -209,6 +214,7 @@ while len(fass) > 0 or len(remained) > 0:
     batch_labels, batch_strs, batch_tokens = batch_converter(data)
     batch_lens = (batch_tokens != alphabet.padding_idx).sum(1)
     data.clear();
+    batch_tokens = torch.utils._pytree.tree_map(lambda x:x.to(ddev),batch_tokens);
     with torch.no_grad():
         results = model(batch_tokens, repr_layers=[33], return_contacts=False);
     token_representations = results["representations"][33];
