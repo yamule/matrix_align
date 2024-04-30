@@ -1,7 +1,8 @@
 use std::collections::*;
 use matrix_align::{matrix_process, simple_argparse};
 use rayon;
-use matrix_align::gmat::{self, calc_vec_stats, GMatStatistics};
+#[allow(unused_imports)]
+use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_legacy, GMatStatistics};
 use matrix_align::aligner::{AlignmentType, GapPenaltyAutoAdjustParam, ProfileAligner, ScoreType, SequenceProfile};
 use matrix_align::ioutil::{self, load_multi_gmat, save_lines};
 use matrix_align::guide_tree_based_alignment::{self, DistanceBase};
@@ -249,7 +250,7 @@ fn main_(mut args:Vec<String>){
         }
     }else{
         unsafe{
-            gmatstats = calc_vec_stats(&infiles);// 統計値のために一回ファイルを読んでいるが後で変更する
+            gmatstats = calc_vec_stats(&infiles);
         }
         if let Some(x) = argparser.get_string("--out_stats"){
             let mut lines:Vec<String> = vec![];

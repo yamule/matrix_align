@@ -120,7 +120,77 @@ pub unsafe fn calc_vec_stats_(allval:Vec<Vec<f32>>)->Vec<GMatStatistics>{
 
 //各カラムの Max とか Min とか計算して返す
 pub unsafe fn calc_vec_stats(filenames:&Vec<String>)->Vec<GMatStatistics>{
-    let mut allval:Vec<Vec<f32>> = vec![];//まあ多分メモリ上に乘るだろう。。。
+    let mut asum:Vec<f32> = vec![];
+    let mut amax:Vec<f32> = vec![];
+    let mut amin:Vec<f32> = vec![];
+    let mut acount:Vec<usize> = vec![];
+    for fname in filenames.into_iter(){
+        let gmat_ = ioutil::load_multi_gmat(fname,fname.ends_with(".gz"));
+        for gmat1 in gmat_.into_iter(){
+            if let Some(x) = gmat1.3{
+                assert!(x.len() -1 == gmat1.2.len(),"File format error? number of ex-weight field should be that of match vec +1.");
+            }
+            let mut st= 0;
+            if asum.len() == 0{
+                asum = gmat1.2[0].clone();
+                amax = gmat1.2[0].clone();
+                amin = gmat1.2[0].clone();
+                acount = vec![1;gmat1.2[0].len()];
+                st = 1;
+            }
+            for ii in st..gmat1.2.len(){
+                for jj in 0..gmat1.2[ii].len(){
+                    asum[jj] += gmat1.2[ii][jj];
+                    amin[jj] = amin[jj].min(gmat1.2[ii][jj]);
+                    amax[jj] = amax[jj].max(gmat1.2[ii][jj]);
+                    acount[jj] += 1;
+                }
+            }
+        }
+    }
+    let vecsiz = asum.len();
+    let mut amean:Vec<f32> = vec![0.0;vecsiz];
+    for jj in 0..vecsiz{
+        amean[jj] = asum[jj]/(acount[jj] as f32);
+    }
+
+    let mut avar:Vec<f32> = vec![0.0;vecsiz];
+    for fname in filenames.into_iter(){
+        let gmat_ = ioutil::load_multi_gmat(fname,fname.ends_with(".gz"));
+        for gmat1 in gmat_.into_iter(){
+            for ii in 0..gmat1.2.len(){
+                for jj in 0..gmat1.2[ii].len(){
+                    let vv = gmat1.2[ii][jj]; 
+                    avar[jj] += (amean[jj]-vv)*(amean[jj]-vv);
+                }
+            }
+        }
+    }
+
+    for jj in 0..vecsiz{
+        avar[jj] /= acount[jj] as f32;
+    }
+
+    let mut ret:Vec<GMatStatistics> = vec![];
+    for jj in 0..vecsiz{
+        ret.push(
+            GMatStatistics{
+                sum:asum[jj],
+                max:amax[jj],
+                min:amin[jj],
+                mean:amean[jj],
+                var:avar[jj],
+                count:acount[jj]
+            }
+
+        );
+    }
+    return ret;
+}
+
+//各カラムの Max とか Min とか計算して返す
+pub unsafe fn calc_vec_stats_legacy(filenames:&Vec<String>)->Vec<GMatStatistics>{
+    let mut allval:Vec<Vec<f32>> = vec![];//まあ多分メモリ上に乘るだろう。。。乗らなかった
     for fname in filenames.into_iter(){
         let gmat_ = ioutil::load_multi_gmat(fname,fname.ends_with(".gz"));
         for mut gmat1 in gmat_.into_iter(){
@@ -129,8 +199,6 @@ pub unsafe fn calc_vec_stats(filenames:&Vec<String>)->Vec<GMatStatistics>{
     }
     return calc_vec_stats_(allval);
 }
-
-
 pub fn normalize(vec:&mut Vec<f32>,gmatstats:&Vec<GMatStatistics>){
     assert_eq!(vec.len(),gmatstats.len());
     for vv in vec.iter_mut().zip(gmatstats.iter()){
@@ -276,22 +344,22 @@ mod tests{
             chk.push( GMatStatistics{  mean: 12.267,  max: 40.000,  var: 78.329,  min: 2.000,  sum: 184.0,  count: 15 });
             for ii in 0..chk.len(){
                 assert!(
-                    (chk[ii].max - res[ii].max).abs() < 0.003
+                    (chk[ii].max - res[ii].max).abs() < 0.003,"{:?} vs {:?}",chk[ii],res[ii]
                 );
                 assert!(
-                    (chk[ii].min - res[ii].min).abs() < 0.003
+                    (chk[ii].min - res[ii].min).abs() < 0.003,"{:?} vs {:?}",chk[ii],res[ii]
                 );
                 assert!(
-                    (chk[ii].mean - res[ii].mean).abs() < 0.003
+                    (chk[ii].mean - res[ii].mean).abs() < 0.003,"{:?} vs {:?}",chk[ii],res[ii]
                 );
                 assert!(
-                    (chk[ii].sum - res[ii].sum).abs() < 0.003
+                    (chk[ii].sum - res[ii].sum).abs() < 0.003,"{:?} vs {:?}",chk[ii],res[ii]
                 );
                 assert!(
-                    (chk[ii].var - res[ii].var).abs() < 0.003
+                    (chk[ii].var - res[ii].var).abs() < 0.003,"{:?} vs {:?}",chk[ii],res[ii]
                 );
                 assert!(
-                    (chk[ii].count as f32 - res[ii].count as f32).abs() < 0.003
+                    (chk[ii].count as f32 - res[ii].count as f32).abs() < 0.003,"{:?} vs {:?}",chk[ii],res[ii]
                 );
                 
             }
@@ -308,22 +376,22 @@ mod tests{
             }
             for ii in 0..chk.len(){
                 assert!(
-                    (chk[ii].max - res[ii].max).abs() < 0.003
+                    (chk[ii].max - res[ii].max).abs() < 0.003,"{:?} vs {:?}",chk[ii],res[ii]
                 );
                 assert!(
-                    (chk[ii].min - res[ii].min).abs() < 0.003
+                    (chk[ii].min - res[ii].min).abs() < 0.003,"{:?} vs {:?}",chk[ii],res[ii]
                 );
                 assert!(
-                    (chk[ii].mean - res[ii].mean).abs() < 0.003
+                    (chk[ii].mean - res[ii].mean).abs() < 0.003,"{:?} vs {:?}",chk[ii],res[ii]
                 );
                 assert!(
-                    (chk[ii].sum - res[ii].sum).abs() < 0.003
+                    (chk[ii].sum - res[ii].sum).abs() < 0.003,"{:?} vs {:?}",chk[ii],res[ii]
                 );
                 assert!(
-                    (chk[ii].var - res[ii].var).abs() < 0.003
+                    (chk[ii].var - res[ii].var).abs() < 0.003,"{:?} vs {:?}",chk[ii],res[ii]
                 );
                 assert!(
-                    (chk[ii].count as f32 - res[ii].count as f32).abs() < 0.003
+                    (chk[ii].count as f32 - res[ii].count as f32).abs() < 0.003,"{:?} vs {:?}",chk[ii],res[ii]
                 );
                 
             }
