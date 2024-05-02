@@ -5,12 +5,9 @@ use super::aligner::ProfileAligner;
 use rayon::prelude::*;
 use super::misc::*;
 
-pub fn create_a3m_pairwise_alignment(aligner:&ProfileAligner,firstseq:SequenceProfile,mut allseqs_:Vec<SequenceProfile>,num_threads:i128)->HashMap<String,(String,DPResult)>{
-    let mut aligners:Vec<ProfileAligner> = vec![];
+pub fn create_a3m_pairwise_alignment(aligners:&mut Vec<ProfileAligner>,firstseq:SequenceProfile,mut allseqs_:Vec<SequenceProfile>)->HashMap<String,(String,DPResult)>{
+    
     let mut ret:HashMap<String,(String,DPResult)> = HashMap::new();
-    for _ in 0..num_threads{
-        aligners.push(aligner.clone());
-    }
 
     println!("Create a3m alignment with {} sequences...",allseqs_.len());
     

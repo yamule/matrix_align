@@ -266,15 +266,16 @@ fn main_(mut args:Vec<String>){
 
     let mut name_ordered:Vec<String> = vec![];
     let mut gmat1_:Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)> = vec![];
-    if !argparser.is_generous_false("--a3m_pairwise"){
-        let fname = infiles.remove(0);
-        let mut z = load_multi_gmat(&fname,fname.ends_with(".gz"));
-        gmat1_.append(&mut z);
-    }else{
+    if argparser.is_generous_false("--a3m_pairwise"){
         for ii in infiles.iter(){
             let mut z = load_multi_gmat(ii,ii.ends_with(".gz"));
             gmat1_.append(&mut z);
         }
+    }else{
+        // a3m pairwise の場合はまずファイル一つだけのロードでよい
+        let fname = infiles.remove(0);
+        let mut z = load_multi_gmat(&fname,fname.ends_with(".gz"));
+        gmat1_.append(&mut z);
     }
 
     let veclen = gmat1_[0].2[0].len();
@@ -326,7 +327,12 @@ fn main_(mut args:Vec<String>){
 
     if argparser.get_bool("--a3m_pairwise").unwrap(){
         
-        let mut firstseq_ = gmat1_.pop().unwrap();
+        let mut firstseq_ = gmat1_.remove(0);
+
+        let mut aligners:Vec<ProfileAligner> = vec![];
+        for _ in 0..num_threads{
+            aligners.push(saligner.clone());
+        }
 
         if argparser.get_bool("--normalize").unwrap(){
             gmat::normalize_seqmatrix(&mut (firstseq_.2), &gmatstats);
@@ -382,7 +388,7 @@ fn main_(mut args:Vec<String>){
                 }
             }
 
-            let mut res = a3m_pairwise_alignment::create_a3m_pairwise_alignment(&saligner,firstseq.clone(),allseqs, num_threads as i128);
+            let mut res = a3m_pairwise_alignment::create_a3m_pairwise_alignment(&mut aligners,firstseq.clone(),allseqs);
 
             for nn in name_length_order.iter(){
                 if let Some(p) = res.remove(&nn.0){
