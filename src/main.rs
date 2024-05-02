@@ -258,14 +258,23 @@ fn main_(mut args:Vec<String>){
                 lines.push(gg.get_string());
             }
             ioutil::save_lines(&x, lines, x.ends_with(".gz"));
+            if !argparser.user_defined("--out"){
+                std::process::exit(0);
+            }
         }
     }
 
     let mut name_ordered:Vec<String> = vec![];
     let mut gmat1_:Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)> = vec![];
-    for ii in infiles.iter(){
-        let mut z = load_multi_gmat(ii,ii.ends_with(".gz"));
+    if !argparser.is_generous_false("--a3m_pairwise"){
+        let fname = infiles.remove(0);
+        let mut z = load_multi_gmat(&fname,fname.ends_with(".gz"));
         gmat1_.append(&mut z);
+    }else{
+        for ii in infiles.iter(){
+            let mut z = load_multi_gmat(ii,ii.ends_with(".gz"));
+            gmat1_.append(&mut z);
+        }
     }
 
     let veclen = gmat1_[0].2[0].len();
@@ -280,6 +289,124 @@ fn main_(mut args:Vec<String>){
         ProfileAligner::new(veclen,300, Some(argparser.get_float("--gap_open_penalty").unwrap() as f32)
         ,alignment_type,score_type,None)
     };
+
+
+    let num_threads:usize = argparser.get_int("--num_threads").unwrap() as usize;
+    assert!(num_threads > 0);
+    match rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global(){
+        Ok(_)=>{
+
+        },
+        Err(e)=>{
+            eprintln!("=====If you are in test process, this can be ignored.=====");
+            eprintln!("{:?}",e);
+            eprintln!("==========================================================");
+        }
+    }
+
+
+    let seqprepare = |mut gg:(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)
+        ,name_to_res:&mut HashMap<String,String>,name_ordered: &mut Vec<String>|
+         -> SequenceProfile{
+        let n = gg.0.clone();
+        if name_to_res.contains_key(&n){
+            panic!("Duplicated name {}.",n);
+        }
+        name_to_res.insert(n.clone(),"".to_owned());
+        name_ordered.push(n);
+        if argparser.get_bool("--normalize").unwrap(){
+            gmat::normalize_seqmatrix(&mut (gg.2), &gmatstats);
+        }
+        let alen = gg.1.len();
+        let seq = SequenceProfile::new(
+            vec![(gg.0,gg.1)],alen,gg.2[0].len(),None,Some(gg.2),gg.3
+        );
+        return seq;
+    };
+
+    if argparser.get_bool("--a3m_pairwise").unwrap(){
+        
+        let mut firstseq_ = gmat1_.pop().unwrap();
+
+        if argparser.get_bool("--normalize").unwrap(){
+            gmat::normalize_seqmatrix(&mut (firstseq_.2), &gmatstats);
+        }
+        let alen = firstseq_.1.len();
+        let firstseq = SequenceProfile::new(
+            vec![(firstseq_.0,firstseq_.1)],alen,firstseq_.2[0].len(),None,Some(firstseq_.2),firstseq_.3
+        );
+
+        let mut lines:Vec<String> = vec![];
+        lines.push(
+            ">".to_owned()+firstseq.headers[0].as_str()
+        );
+        lines.push(
+            firstseq.member_sequences[0].iter().filter(|c| **c != '-').map(|m| m.to_string()).collect::<Vec<String>>().join("")
+        );
+
+        let mut name_length_order:Vec<(String,usize)> = vec![];
+        
+        let mut allseqs_:VecDeque<SequenceProfile> = VecDeque::new();
+        for gg in gmat1_.into_iter(){
+            allseqs_.push_back(seqprepare(gg,&mut name_to_res,&mut name_ordered));
+        }
+
+        infiles.reverse();//pop するので逆順にする
+        while infiles.len() > 0 || allseqs_.len() > 0{
+            while infiles.len() > 0{
+                let ii = infiles.pop().unwrap();
+                let z = load_multi_gmat(&ii,ii.ends_with(".gz"));
+                for seq in z.into_iter(){
+                    allseqs_.push_back(
+                        seqprepare(seq,&mut name_to_res,&mut name_ordered)
+                    );
+                }
+                if allseqs_.len() >= num_threads{ //用意された Threads 分はメモリに乗る想定
+                    break;
+                }
+            }
+            
+            let mut allseqs:Vec<SequenceProfile> = vec![];
+            
+            while allseqs_.len() > 0{
+                let ss = allseqs_.pop_front().unwrap();
+
+                assert!(ss.headers.len() == 1);
+                assert!(ss.member_sequences.len() == 1);// 初期値ギャップも match_scores として計算される想定
+                name_length_order.push(
+                    (ss.headers[0].clone(),ss.member_sequences[0].len())
+                );
+                allseqs.push(ss);
+                if allseqs.len() >= num_threads{
+                    break;
+                }
+            }
+
+            let mut res = a3m_pairwise_alignment::create_a3m_pairwise_alignment(&saligner,firstseq.clone(),allseqs, num_threads as i128);
+
+            for nn in name_length_order.iter(){
+                if let Some(p) = res.remove(&nn.0){
+                    lines.push(">".to_owned()+&nn.0);
+                    lines.push(p.0);
+                    println!(">{}",nn.0);
+                    println!("score:{}",p.1.score);
+                    let mut posicount = 0 as usize;
+                    for dd in p.1.match_scores.iter(){
+                        if *dd > 0.0{
+                            posicount += 1;
+                        }
+                    }
+                    println!("positive_count:{}",posicount);
+                    println!("profile_length:{}",nn.1);
+                }
+            }
+            assert!(res.len() == 0);
+        }
+        //結果は全部メモリに乗る想定
+        let outfile = argparser.get_string("--out").unwrap();
+        save_lines(&outfile, lines,outfile.ends_with(".gz"));
+        std::process::exit(0);   
+    }
     
     let mut allseqs_:Vec<SequenceProfile> = vec![];
     for mut gg in gmat1_.into_iter(){
@@ -300,62 +427,6 @@ fn main_(mut args:Vec<String>){
     }
 
     
-    let num_threads:usize = argparser.get_int("--num_threads").unwrap() as usize;
-    assert!(num_threads > 0);
-    match rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global(){
-        Ok(_)=>{
-
-        },
-        Err(e)=>{
-            eprintln!("=====If you are in test process, this can be ignored.=====");
-            eprintln!("{:?}",e);
-            eprintln!("==========================================================");
-        }
-    }
-
-    if argparser.get_bool("--a3m_pairwise").unwrap(){
-        let mut name_length_order:Vec<(String,usize)> = vec![];
-        for ii in 0..allseqs_.len(){
-            assert!(allseqs_[ii].headers.len() == 1);
-            assert!(allseqs_[ii].member_sequences.len() == 1);// 初期値ギャップも match_scores として計算される想定
-            name_length_order.push(
-                (allseqs_[ii].headers[0].clone(),allseqs_[ii].member_sequences[0].len())
-            );
-        }
-        allseqs_.reverse();
-        let firstseq = allseqs_.pop().unwrap();
-        
-        let mut lines:Vec<String> = vec![];
-        lines.push(
-            ">".to_owned()+firstseq.headers[0].as_str()
-        );
-        lines.push(
-            firstseq.member_sequences[0].iter().filter(|c| **c != '-').map(|m| m.to_string()).collect::<Vec<String>>().join("")
-        );
-
-        let mut res = a3m_pairwise_alignment::create_a3m_pairwise_alignment(&saligner,firstseq,allseqs_, num_threads as i128);
-
-        for nn in name_length_order.iter(){
-            if let Some(p) = res.remove(&nn.0){
-                lines.push(">".to_owned()+&nn.0);
-                lines.push(p.0);
-                println!(">{}",nn.0);
-                println!("score:{}",p.1.score);
-                let mut posicount = 0 as usize;
-                for dd in p.1.match_scores.iter(){
-                    if *dd > 0.0{
-                        posicount += 1;
-                    }
-                }
-                println!("positive_count:{}",posicount);
-                println!("profile_length:{}",nn.1);
-            }
-        }
-        assert!(res.len() == 0);
-        let outfile = argparser.get_string("--out").unwrap();
-        save_lines(&outfile, lines,outfile.ends_with(".gz"));
-        std::process::exit(0);   
-    }
 
     let num_iter:usize = argparser.get_int("--num_iter").unwrap() as usize;
     for ii in 0..num_iter{

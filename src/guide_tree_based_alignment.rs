@@ -381,17 +381,26 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
             let mut adist = v.3;
             let mut bdist = v.4;
             let mut ali = v.5;
-
+            
             if adist < 0.0 || bdist < 0.0{
                 eprintln!("Negative branch length was found: {} {}",adist,bdist);
-                let minlen = adist.min(bdist)-0.00001;
+                let minlen = adist.min(bdist)-0.01;
                 adist -= minlen;
                 bdist -= minlen;
                 eprintln!("Changed to: {} {}",adist,bdist);
             }
 
-            let res = align_and_merge_with_weight(&mut ali,ap,bp,bdist/(adist+bdist),adist/(adist+bdist)
-        );
+            let mut aweight = bdist/(adist+bdist);
+            let mut bweight = adist/(adist+bdist);
+
+            if aweight < 0.01 || bweight < 0.01{ //ウエイトが小さすぎると 0 除算が起こることがある
+                eprintln!("The weight of a profile is too small: {} {}",aweight,bweight);
+                aweight = aweight.max(0.01);
+                bweight = bweight.max(0.01);
+                eprintln!("Changed to: {} {}",aweight,bweight);
+            }
+
+            let res = align_and_merge_with_weight(&mut ali,ap,bp,aweight,bweight);
             (ali,uu,res.0,res.1)            
         }).collect();
         
