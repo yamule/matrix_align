@@ -769,8 +769,7 @@ impl ProfileAligner {
             }
 
 
-            assert!((match_to_del+match_to_match) > 0.0,"{} {}, {} {} {:?} {:?}\n{:?}\n{:?}",mergestart,mergeend,alignment_length,alipos,weight,ex_weights[alipos]
-            ,(gapper[0][alipos-1],gapper[0][alipos]),(gapper[1][alipos-1],gapper[1][alipos]));
+            assert!((match_to_del+match_to_match) > 0.0,"{} {}, {} {} {:?} {:?}",mergestart,mergeend,alignment_length,alipos,weight,ex_weights[alipos]);
             assert!((del_to_del+del_to_match) > 0.0,"{} {} {:?} {:?}",alignment_length,alipos,weight,ex_weights[alipos]);
 
             ret.gmat[alipos].match_to_del = match_to_del/(match_to_del+match_to_match);
