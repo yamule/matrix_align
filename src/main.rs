@@ -1,7 +1,6 @@
 use std::collections::*;
 use matrix_align::{matrix_process, simple_argparse};
 use rayon;
-use rayon::prelude::*;
 #[allow(unused_imports)]
 use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_legacy, GMatStatistics};
 use matrix_align::aligner::{AlignmentType, GapPenaltyAutoAdjustParam, ProfileAligner, ScoreType, SequenceProfile};
@@ -364,40 +363,22 @@ fn main_(mut args:Vec<String>){
             allseqs_.push_back(seqprepare(gg,&mut name_to_res,&mut name_ordered));
         }
 
-        infiles.reverse();//pop するので逆順にする
+        let mut infiles:VecDeque<String> = infiles.into_iter().collect();
+
         while infiles.len() > 0 || allseqs_.len() > 0{
-            while infiles.len() > 0{
-                let mut z = vec![];
+            while infiles.len() > 0 && allseqs_.len() < num_threads{
+                let z;
                 if argparser.get_bool("--parallel_load").unwrap(){
-                    let mut loader_minibatch:Vec<(usize,String)> = vec![];
-                    while infiles.len() >0{ 
-                        let ii = infiles.pop().unwrap();
-                        loader_minibatch.push((loader_minibatch.len(),ii));
-                        if loader_minibatch.len() >= num_threads{
-                            break;
-                        }
-                    }
-                    let mut res:Vec<(usize,Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)>)> = loader_minibatch.into_par_iter().map(|v|{
-                        let fileindex = v.0;
-                        let filename = v.1;
-                        let pres = load_multi_gmat(&filename,filename.ends_with(".gz"));
-                        return (fileindex,pres);
-                    }).collect();
-                    res.sort_by(|a,b| (a.0.cmp(&b.0)));
-                    for mut rr in res.into_iter(){
-                        z.append(&mut rr.1);
-                    }
+                    //align する場合は全部読み込む。num_max_samples は無関係
+                    z = parallel_load_multi_gmat(&mut infiles, num_threads, num_threads);
                 }else{
-                    let ii = infiles.pop().unwrap();
+                    let ii = infiles.pop_front().unwrap();
                     z = load_multi_gmat(&ii,ii.ends_with(".gz"));
                 }
                 for seq in z.into_iter(){
                     allseqs_.push_back(
                         seqprepare(seq,&mut name_to_res,&mut name_ordered)
                     );
-                }
-                if allseqs_.len() >= num_threads{ //用意された Threads 分はメモリに乗る想定
-                    break;
                 }
             }
             
