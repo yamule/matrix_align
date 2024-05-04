@@ -1,6 +1,7 @@
 use std::collections::*;
 use matrix_align::{matrix_process, simple_argparse};
 use rayon;
+use rayon::prelude::*;
 #[allow(unused_imports)]
 use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_legacy, GMatStatistics};
 use matrix_align::aligner::{AlignmentType, GapPenaltyAutoAdjustParam, ProfileAligner, ScoreType, SequenceProfile};
@@ -111,7 +112,11 @@ fn main_(mut args:Vec<String>){
         
         ("--out_matrix",None
         ,"<string> : Save matrix file of the resulting alignment."
-        ,None,vec![],false)
+        ,None,vec![],false),
+
+        ("--parallel_load",None
+        ,"<bool or novalue=true> : Load multiple files parallely. Set False if each file is too large."
+        ,Some("true"),vec![],false),
     ];
 
     for aa in args.iter(){
@@ -360,8 +365,30 @@ fn main_(mut args:Vec<String>){
         infiles.reverse();//pop するので逆順にする
         while infiles.len() > 0 || allseqs_.len() > 0{
             while infiles.len() > 0{
-                let ii = infiles.pop().unwrap();
-                let z = load_multi_gmat(&ii,ii.ends_with(".gz"));
+                let mut z = vec![];
+                if argparser.get_bool("--parallel_load").unwrap(){
+                    let mut loader_minibatch:Vec<(usize,String)> = vec![];
+                    while infiles.len() >0{ 
+                        let ii = infiles.pop().unwrap();
+                        loader_minibatch.push((loader_minibatch.len(),ii));
+                        if loader_minibatch.len() >= num_threads{
+                            break;
+                        }
+                    }
+                    let mut res:Vec<(usize,Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)>)> = loader_minibatch.into_par_iter().map(|v|{
+                        let fileindex = v.0;
+                        let filename = v.1;
+                        let pres = load_multi_gmat(&filename,filename.ends_with(".gz"));
+                        return (fileindex,pres);
+                    }).collect();
+                    res.sort_by(|a,b| (a.0.cmp(&b.0)));
+                    for mut rr in res.into_iter(){
+                        z.append(&mut rr.1);
+                    }
+                }else{
+                    let ii = infiles.pop().unwrap();
+                    z = load_multi_gmat(&ii,ii.ends_with(".gz"));
+                }
                 for seq in z.into_iter(){
                     allseqs_.push_back(
                         seqprepare(seq,&mut name_to_res,&mut name_ordered)
