@@ -5,7 +5,7 @@ use rayon::prelude::*;
 #[allow(unused_imports)]
 use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_legacy, GMatStatistics};
 use matrix_align::aligner::{AlignmentType, GapPenaltyAutoAdjustParam, ProfileAligner, ScoreType, SequenceProfile};
-use matrix_align::ioutil::{self, load_multi_gmat, save_lines};
+use matrix_align::ioutil::{self, load_multi_gmat, parallel_load_multi_gmat, save_lines};
 use matrix_align::guide_tree_based_alignment::{self, DistanceBase};
 use matrix_align::a3m_pairwise_alignment;
 use rand::SeedableRng;
@@ -237,6 +237,20 @@ fn main_(mut args:Vec<String>){
     }
 
 
+    let num_threads:usize = argparser.get_int("--num_threads").unwrap() as usize;
+    assert!(num_threads > 0);
+
+    match rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global(){
+        Ok(_)=>{
+
+        },
+        Err(e)=>{
+            eprintln!("=====If you are in test process, this can be ignored.=====");
+            eprintln!("{:?}",e);
+            eprintln!("==========================================================");
+        }
+    }
+
     let mut gmatstats:Vec<GMatStatistics>;
     let mut profile_seq:Option<SequenceProfile> = None;
     if let Some(x) = argparser.get_string("--in_stats"){
@@ -255,7 +269,7 @@ fn main_(mut args:Vec<String>){
         }
     }else{
         unsafe{
-            gmatstats = calc_vec_stats(&infiles);
+            gmatstats = calc_vec_stats(&infiles,if argparser.get_bool("--parallel_load").unwrap(){num_threads}else{1});
         }
         if let Some(x) = argparser.get_string("--out_stats"){
             let mut lines:Vec<String> = vec![];
@@ -269,18 +283,20 @@ fn main_(mut args:Vec<String>){
         }
     }
 
+
     let mut name_ordered:Vec<String> = vec![];
     let mut gmat1_:Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)> = vec![];
-    if argparser.is_generous_false("--a3m_pairwise"){
-        for ii in infiles.iter(){
-            let mut z = load_multi_gmat(ii,ii.ends_with(".gz"));
-            gmat1_.append(&mut z);
-        }
-    }else{
+    if argparser.get_bool("--a3m_pairwise").unwrap(){
         // a3m pairwise の場合はまずファイル一つだけのロードでよい
         let fname = infiles.remove(0);
         let mut z = load_multi_gmat(&fname,fname.ends_with(".gz"));
         gmat1_.append(&mut z);
+    }else{
+        let mut ppin:VecDeque<String> = infiles.iter().map(|m|m.clone()).collect();
+        while ppin.len() > 0{
+            let mut z = parallel_load_multi_gmat(&mut ppin,num_threads,num_threads);
+            gmat1_.append(&mut z);
+        }
     }
 
     let veclen = gmat1_[0].2[0].len();
@@ -295,20 +311,6 @@ fn main_(mut args:Vec<String>){
         ProfileAligner::new(veclen,300, Some(argparser.get_float("--gap_open_penalty").unwrap() as f32)
         ,alignment_type,score_type,None)
     };
-
-
-    let num_threads:usize = argparser.get_int("--num_threads").unwrap() as usize;
-    assert!(num_threads > 0);
-    match rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global(){
-        Ok(_)=>{
-
-        },
-        Err(e)=>{
-            eprintln!("=====If you are in test process, this can be ignored.=====");
-            eprintln!("{:?}",e);
-            eprintln!("==========================================================");
-        }
-    }
 
 
     let seqprepare = |mut gg:(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)

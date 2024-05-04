@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use std::collections::{HashMap, VecDeque};
 use self::matrix_process::*;
 use super::*;
 
@@ -119,13 +118,16 @@ pub unsafe fn calc_vec_stats_(allval:Vec<Vec<f32>>)->Vec<GMatStatistics>{
 }
 
 //各カラムの Max とか Min とか計算して返す
-pub unsafe fn calc_vec_stats(filenames:&Vec<String>)->Vec<GMatStatistics>{
+pub unsafe fn calc_vec_stats(filenames_:&Vec<String>,num_threads:usize)->Vec<GMatStatistics>{
     let mut asum:Vec<f32> = vec![];
     let mut amax:Vec<f32> = vec![];
     let mut amin:Vec<f32> = vec![];
     let mut acount:Vec<usize> = vec![];
-    for fname in filenames.into_iter(){
-        let gmat_ = ioutil::load_multi_gmat(fname,fname.ends_with(".gz"));
+    let mut filenames:VecDeque<String> = filenames_.iter().map(|m|m.clone()).collect();
+
+    while filenames.len() > 0{
+        let gmat_= ioutil::parallel_load_multi_gmat(&mut filenames, num_threads, num_threads);
+        
         for gmat1 in gmat_.into_iter(){
             if let Some(x) = gmat1.3{
                 assert!(x.len() -1 == gmat1.2.len(),"File format error? number of ex-weight field should be that of match vec +1.");
@@ -154,9 +156,12 @@ pub unsafe fn calc_vec_stats(filenames:&Vec<String>)->Vec<GMatStatistics>{
         amean[jj] = asum[jj]/(acount[jj] as f32);
     }
 
+
     let mut avar:Vec<f32> = vec![0.0;vecsiz];
-    for fname in filenames.into_iter(){
-        let gmat_ = ioutil::load_multi_gmat(fname,fname.ends_with(".gz"));
+    let mut filenames:VecDeque<String> = filenames_.iter().map(|m|m.clone()).collect();
+    while filenames.len() > 0{
+        let gmat_= ioutil::parallel_load_multi_gmat(&mut filenames, num_threads, num_threads);
+        
         for gmat1 in gmat_.into_iter(){
             for ii in 0..gmat1.2.len(){
                 for jj in 0..gmat1.2[ii].len(){
@@ -336,7 +341,7 @@ mod tests{
         let statoutfile = "nogit/teststats.dat";
 
         unsafe{
-            let res = calc_vec_stats(& filenames);
+            let res = calc_vec_stats(& filenames,2);
             let mut chk:Vec<GMatStatistics> = vec![];
             chk.push( GMatStatistics{  mean: 10.533,  max: 20.000,  var: 104.382,  min: -5.000,  sum: 158.0,  count: 15 });
             chk.push( GMatStatistics{  mean: 8.400,  max: 20.000,  var: 40.640,  min: -6.000,  sum: 126.0,  count: 15 });

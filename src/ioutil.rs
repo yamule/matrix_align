@@ -1,11 +1,14 @@
 use flate2::bufread::GzDecoder;
 use flate2::Compression;
 use flate2::write::GzEncoder;
+use std::collections::VecDeque;
 use std::io::{BufWriter,Write,BufReader,BufRead};
 use std::fs::File;
 use std::vec;
 use regex::Regex;
 use super::aligner::SequenceProfile;
+use rayon;
+use rayon::prelude::*;
 
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -226,6 +229,36 @@ pub fn load_multi_gmat(filename:&str,gzipped:bool)-> Vec<(String,Vec<char>,Vec<V
         ret.push(parse_gmat_block(linebuff));
     }
     return ret;
+}
+
+//max_samples を超えるまで gmat を読み込んで返す。一つのファイルに複数の gmat が保存されている場合 max_samples を超えることがある。
+pub fn parallel_load_multi_gmat(filenames:&mut VecDeque<String>,max_samples:usize,num_threads:usize)-> Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)>{
+    let mut ret:Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)> = vec![];
+    while filenames.len() > 0{
+        let mut loader_minibatch:Vec<(usize,String)> = vec![];
+        while filenames.len() >0{ 
+            let ii = filenames.pop_front().unwrap();
+            loader_minibatch.push((loader_minibatch.len(),ii));
+            if loader_minibatch.len() >= num_threads{
+                break;
+            }
+        }
+        let mut res:Vec<(usize,Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)>)> = loader_minibatch.into_par_iter().map(|v|{
+            let fileindex = v.0;
+            let filename = v.1;
+            let pres = load_multi_gmat(&filename,filename.ends_with(".gz"));
+            return (fileindex,pres);
+        }).collect();
+        res.sort_by(|a,b| (a.0.cmp(&b.0)));
+        for mut rr in res.into_iter(){
+            ret.append(&mut rr.1);
+        }
+        if ret.len() >= max_samples{
+            break;
+        }
+    }
+    return ret;
+
 }
 
 pub fn save_gmat(filename:&str,seqs:&Vec<(usize,&SequenceProfile)>,gzipped:bool){

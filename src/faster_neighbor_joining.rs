@@ -123,7 +123,29 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,_num_threads:usize) -> Vec<(i64
             pair_to_other[pos] = distall-node_to_other[ii]-node_to_other[jj]+dist[pos];
         }
     }
+
+    let mut lmax = 0.0_f32;
+    let mut pair_to_other_check = vec![0.0;pair_to_other.len()];
+    for ii in 0..leafnum{
+        for jj in (ii+1)..leafnum{
+            let pos = calc_pos(ii,jj);
+            for kk in 0..leafnum{
+                if kk == ii || kk == jj{
+                    continue;
+                }
+                for ll in (kk+1)..leafnum{
+                    if ll == ii || ll == jj{
+                        continue;
+                    }
+                    let lpos = calc_pos(kk,ll);
+                    pair_to_other_check[pos] += dist[lpos];
+                }
+            }
+            lmax = lmax.max((pair_to_other[pos]-pair_to_other_check[pos]).abs());
+        }
+    }
     
+    println!("maxdiff:{}",lmax);
     for ii in 0..leafnum{
         for jj in (ii+1)..leafnum{
             let pos = calc_pos(ii,jj);
@@ -163,15 +185,18 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,_num_threads:usize) -> Vec<(i64
         //println!("{:?}",distall);
         //println!("node: {:?}",node_to_other);
         //println!("pair_to_other: {:?}",pair_to_other);
-        //println!("score: {:?}",score);
-        //println!("newnode: {:?}",newnode);
+        println!("newnode: {:?}",newnode);
         //println!("dist: {:?}",dist);
-        //println!("minindex: {:?}",minindex);
-        
+        println!("maxnode: {}",maxnode);
+        println!("maxindex: {:?}",maxindex);
+        if current_leafnum < 995{
+            panic!();
+        }
         //println!(">>>");
         if maxnode < 0.0{
             eprintln!("WARNING: Internal node length is negative. {}",maxnode);
             //assert!(maxnode >= 0.0);
+            panic!();
         }
         a.0 = maxindex.0;
         b.0 = maxindex.1;
