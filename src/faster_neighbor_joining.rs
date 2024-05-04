@@ -124,6 +124,7 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,_num_threads:usize) -> Vec<(i64
         }
     }
 
+    /*
     let mut lmax = 0.0_f32;
     let mut pair_to_other_check = vec![0.0;pair_to_other.len()];
     for ii in 0..leafnum{
@@ -146,6 +147,8 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,_num_threads:usize) -> Vec<(i64
     }
     
     println!("maxdiff:{}",lmax);
+    */
+
     for ii in 0..leafnum{
         for jj in (ii+1)..leafnum{
             let pos = calc_pos(ii,jj);
@@ -185,18 +188,19 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>,_num_threads:usize) -> Vec<(i64
         //println!("{:?}",distall);
         //println!("node: {:?}",node_to_other);
         //println!("pair_to_other: {:?}",pair_to_other);
-        println!("newnode: {:?}",newnode);
+        //println!("newnode: {:?}",newnode);
         //println!("dist: {:?}",dist);
-        println!("maxnode: {}",maxnode);
-        println!("maxindex: {:?}",maxindex);
-        if current_leafnum < 995{
-            panic!();
-        }
+        //println!("maxnode: {}",maxnode);
+        //println!("maxindex: {:?}",maxindex);
+        //if current_leafnum < 995{
+        //    panic!();
+        //}
         //println!(">>>");
+        
         if maxnode < 0.0{
             eprintln!("WARNING: Internal node length is negative. {}",maxnode);
             //assert!(maxnode >= 0.0);
-            panic!();
+            //panic!();
         }
         a.0 = maxindex.0;
         b.0 = maxindex.1;
