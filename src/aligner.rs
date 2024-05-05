@@ -236,7 +236,12 @@ impl ProfileAligner {
                     zmin = zmin.min(match_score[rr][cc]);
                 }
             }
-            gap_open_penalty  = zmax*self.auto_adjust_param.a2*-1.0+zmin*self.auto_adjust_param.a2;
+            if zmin > 0.0{
+                eprintln!("Minimum match value is positive. {}\nThe value will be not used for gap penalty auto adjust.",zmin);   
+                gap_open_penalty  = zmax*self.auto_adjust_param.a2*-1.0;
+            }else{
+                gap_open_penalty  = zmax*self.auto_adjust_param.a2*-1.0+zmin*self.auto_adjust_param.a2;
+            }
             //println!("Adjusted gap penalty open:{}",gap_open_penalty);
         }
 
