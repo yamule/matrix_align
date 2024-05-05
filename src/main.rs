@@ -62,7 +62,7 @@ fn main_(mut args:Vec<String>){
         
         ("--gap_penalty_auto_adjust",None
         ,"<bool or novalue=true> : Adjust gap penalty automaticall. <gap open penalty> = <maximum matching score>*a1*-1.0 + \
-        <minimum matching score>*a2; <gap extension penalty> = <gap open penalty>*0.05;"
+        <minimum matching score>*a2; If <minimum matching score> is positive, a2 will be set as 0.0 ."
         ,Some("true"),vec![],false),
         
         ("--gap_penalty_a1_a2",None
