@@ -24,13 +24,13 @@ pub enum DistanceBase{
 }
 
 
-pub fn create_distence_tree(val:&Vec<&Vec<f32>>,num_threads:usize,typ:TreeType)-> Vec<(i64,i64,f32)>{
+pub fn create_distence_tree(val:&Vec<&Vec<f32>>,num_threads:usize,typ:TreeType)-> Vec<(i64,i64,f64)>{
     let vsiz:usize = val.len();
-    let mut dist:Vec<f32> = vec![];
+    let mut dist:Vec<f64> = vec![];
     println!("calc_distance...");
     for ii in 0..vsiz{
         for jj in 0..ii{
-            dist.push(calc_euclid_dist(val[ii], val[jj]));
+            dist.push(calc_euclid_dist(val[ii], val[jj]) as f64);
         }
         //neigbor_joining モジュールの仕様上
         dist.push(0.0);
@@ -359,8 +359,8 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
             let idx_child_a = treenodes[idx_target].0 as usize;
             let idx_child_b = treenodes[idx_target].1 as usize;
             //println!("{}<< {} {}",idx_target,idx_child_a,idx_child_b);
-            let adist = treenodes[idx_child_a].2;
-            let bdist = treenodes[idx_child_b].2;
+            let adist = treenodes[idx_child_a].2 as f32;
+            let bdist = treenodes[idx_child_b].2 as f32;
 
             profiles.push(None);
             let profile_child_a = profiles.swap_remove(idx_child_a).unwrap();
@@ -426,7 +426,7 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
     let mut remained:Vec<(f32,usize)> = vec![];
     for ii in 0..profiles.len(){
         if let Some(_x) = & profiles[ii]{
-            remained.push((treenodes[ii].2,ii));
+            remained.push((treenodes[ii].2 as f32,ii));
         }
     }
     if remained.len() == 1{//rooted tree
@@ -447,7 +447,7 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
     let ap = profiles.swap_remove(aa).unwrap().0;
     profiles.push(None);
     let bp = profiles.swap_remove(bb).unwrap().0;
-    let res = align_and_merge_with_weight(aligner,ap,bp,bdist/(adist+bdist),adist/(adist+bdist));
+    let res = align_and_merge_with_weight(aligner,ap,bp,(bdist/(adist+bdist)) as f32,(adist/(adist+bdist)) as f32);
     if remained.len() == 2{
         return vec![(res.0,res.1)];
     }

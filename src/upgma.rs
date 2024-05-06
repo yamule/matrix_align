@@ -3,9 +3,9 @@ use super::guide_tree::calc_pos;
 
 
 //
-pub fn get_next_pair(dist:&Vec<f32>,is_dead:&Vec<bool>)->((usize,usize),f32){
+pub fn get_next_pair(dist:&Vec<f64>,is_dead:&Vec<bool>)->((usize,usize),f64){
     let vlen = is_dead.len();
-    let mut kmin:f32 = std::f32::MAX;
+    let mut kmin:f64 = std::f64::MAX;
     let mut pair:(usize,usize) = (0,0);
     for ii in 0..vlen{
         if is_dead[ii]{
@@ -28,11 +28,11 @@ pub fn get_next_pair(dist:&Vec<f32>,is_dead:&Vec<bool>)->((usize,usize),f32){
 
 
 //calc_pos でペアの距離が得られるような distance matrix を渡し、UPGMA の系統樹を返す。最終ノード が Root Node;
-pub fn generate_unrooted_tree(dist:&mut Vec<f32>)->Vec<(i64,i64,f32)>{
+pub fn generate_unrooted_tree(dist:&mut Vec<f64>)->Vec<(i64,i64,f64)>{
     let leafnum:usize = ((-1.0+(1.0 as f64 +8.0*dist.len() as f64).sqrt()+0.0001) as usize)/2;
     let mut cluster_member:Vec<usize> = vec![1;leafnum];
     let mut is_dead:Vec<bool> = vec![false;leafnum];
-    let mut min_candidate:Vec<(f32,usize)> = vec![(std::f32::MAX,0);leafnum];
+    let mut min_candidate:Vec<(f64,usize)> = vec![(std::f64::MAX,0);leafnum];
     for ii in 0..leafnum{
         for jj in (ii+1)..leafnum{
             let ppos = calc_pos(ii, jj);
@@ -47,7 +47,7 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>)->Vec<(i64,i64,f32)>{
             }
         }
     }
-    let mut ret:Vec<(i64,i64,f32)> = vec![];
+    let mut ret:Vec<(i64,i64,f64)> = vec![];
     let mut merged_map:Vec<usize> = (0..leafnum).into_iter().collect();//現在 dist 上の index に割り当てられている node が ret 上のどの要素か
     for ii in 0..leafnum{
         ret.push((ii as i64,-1,-1.0));
@@ -55,7 +55,7 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>)->Vec<(i64,i64,f32)>{
 
     loop{
         //let mut nextpair = get_next_pair(&dist,&is_dead);
-        let mut minval = std::f32::MAX;
+        let mut minval = std::f64::MAX;
         let mut minpair:(usize,usize) = (0,0);
         for jj in 0..leafnum{
             if is_dead[jj]{
@@ -66,7 +66,7 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>)->Vec<(i64,i64,f32)>{
                 minpair = (jj,min_candidate[jj].1);
             }
         }
-        if minval == std::f32::MAX{
+        if minval == std::f64::MAX{
             break;
         }
         
@@ -75,7 +75,7 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>)->Vec<(i64,i64,f32)>{
         let a = ((nextpair.0).0).min((nextpair.0).1);
         let b = ((nextpair.0).0).max((nextpair.0).1);
         is_dead[b] = true;
-        min_candidate[b].0 = std::f32::MAX;
+        min_candidate[b].0 = std::f64::MAX;
 
         //最終ノードが Root Node であるはず
         ret.push(
@@ -91,12 +91,12 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>)->Vec<(i64,i64,f32)>{
             }
             let ppos1 = calc_pos(a, jj);
             let ppos2 = calc_pos(b, jj);
-            let ddist = (dist[ppos1]*(cluster_member[a] as f32)+dist[ppos2]*(cluster_member[b] as f32))/
-            ((cluster_member[a] as f32)+(cluster_member[b] as f32));
+            let ddist = (dist[ppos1]*(cluster_member[a] as f64)+dist[ppos2]*(cluster_member[b] as f64))/
+            ((cluster_member[a] as f64)+(cluster_member[b] as f64));
 
             dist[ppos1] = ddist;
             if min_candidate[jj].1 == a || min_candidate[jj].1 == b{
-                let mut minval = std::f32::MAX;
+                let mut minval = std::f64::MAX;
                 let mut minidx = 0_usize;
                 for kk in 0..leafnum{
                     if jj == kk || is_dead[kk]{
@@ -114,7 +114,7 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>)->Vec<(i64,i64,f32)>{
         }
         
         cluster_member[a] = cluster_member[a]+cluster_member[b];
-        let mut minval = std::f32::MAX;
+        let mut minval = std::f64::MAX;
         let mut minidx = 0_usize;
         for jj in 0..leafnum{
             if is_dead[jj]{
@@ -133,7 +133,7 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>)->Vec<(i64,i64,f32)>{
         min_candidate[a].1 = minidx;
     }
     //id、親から与えられた距離
-    let mut updater:Vec<(usize,f32)> = vec![];
+    let mut updater:Vec<(usize,f64)> = vec![];
     let mut currentindex = ret.len()-1;
     let mut currentval = ret[currentindex].2;
     updater.push((ret[currentindex].0 as usize,currentval/2.0));
@@ -147,7 +147,7 @@ pub fn generate_unrooted_tree(dist:&mut Vec<f32>)->Vec<(i64,i64,f32)>{
             continue;
         }
         assert!(ret[currentindex].0 != -1);
-        assert!(ret[currentindex].2 != std::f32::MAX);
+        assert!(ret[currentindex].2 != std::f64::MAX);
 
         currentval = ret[currentindex].2;
         let pval = p.1 - currentval/2.0;
@@ -170,7 +170,7 @@ fn upgmatest(){
         23.0,21.0,39.0,43.0, 0.0 
     ];
     let res = generate_unrooted_tree(&mut dist);
-    let ans:Vec<(i64,i64,f32)> = vec![
+    let ans:Vec<(i64,i64,f64)> = vec![
         (0,-1,8.5),
         (1,-1,8.5),
         (2,-1,14.0),
