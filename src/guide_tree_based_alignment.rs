@@ -382,16 +382,20 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
             let mut bdist = v.4;
             let mut ali = v.5;
             
-            if adist < 0.0 || bdist < 0.0{
-                eprintln!("Negative branch length was found: {} {}",adist,bdist);
+            if adist <= 0.0 || bdist <= 0.0{
+                eprintln!("Negative or zero branch length was found: {} {}",adist,bdist);
                 let minlen = adist.min(bdist)-0.01;
                 adist -= minlen;
                 bdist -= minlen;
                 eprintln!("Changed to: {} {}",adist,bdist);
             }
-
+            
             let mut aweight = bdist/(adist+bdist);
             let mut bweight = adist/(adist+bdist);
+
+            if aweight.is_nan() || bweight.is_nan(){
+                panic!("Irregular weight was found: adist {} bdist {} aweight {} bweight {} sumdist {}",adist,bdist,aweight,bweight,adist+bdist);
+            }
 
             if aweight < 0.01 || bweight < 0.01{ //ウエイトが小さすぎると 0 除算が起こることがある
                 eprintln!("The weight of a profile is too small: {} {}",aweight,bweight);
