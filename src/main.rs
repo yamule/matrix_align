@@ -116,6 +116,10 @@ fn main_(mut args:Vec<String>){
         ("--parallel_load",None
         ,"<bool or novalue=true> : Load multiple files parallely. Set False if each file is too large."
         ,Some("true"),vec![],false),
+
+        ("--gap_penalty_dynamic_bias",None
+        ,"<bool or novalue=true> : Adjust gap penalty depending on transition state (deletion -> deletion, match->deletion.) Recommended to set false if input contains local sequence search hits."
+        ,Some("true"),vec![],false),
     ];
 
     for aa in args.iter(){
@@ -305,10 +309,11 @@ fn main_(mut args:Vec<String>){
         ,alignment_type,score_type,Some(GapPenaltyAutoAdjustParam{
             a1:gap_penalty_a1_a2[0].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2,e)),
             a2:gap_penalty_a1_a2[1].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2,e))
-        }))
+        })
+        ,argparser.get_bool("--gap_penalty_dynamic_bias").unwrap())
     }else{
         ProfileAligner::new(veclen,300, Some(argparser.get_float("--gap_open_penalty").unwrap() as f32)
-        ,alignment_type,score_type,None)
+        ,alignment_type,score_type,None,argparser.get_bool("--gap_penalty_dynamic_bias").unwrap())
     };
 
 

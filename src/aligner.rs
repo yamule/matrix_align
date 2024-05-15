@@ -96,11 +96,14 @@ pub struct ProfileAligner{
     pub score_type:ScoreType,
     pub col_norm:bool,
     pub gap_penalty_auto_adjust:bool,
+    pub gap_penalty_dynamic_bias:bool,
     pub auto_adjust_param:GapPenaltyAutoAdjustParam,
 }
 impl ProfileAligner {
     pub fn new(vec_size:usize,buff_len:usize,gap_open_penaty_:Option<f32>
-        ,alignment_type:AlignmentType,score_type:ScoreType,gap_penalty_auto_adjust_:Option<GapPenaltyAutoAdjustParam>)->ProfileAligner{
+        ,alignment_type:AlignmentType,score_type:ScoreType
+        ,gap_penalty_auto_adjust_:Option<GapPenaltyAutoAdjustParam>
+        ,gap_penalty_dynamic_bias:bool)->ProfileAligner{
         
         let mut gap_open_penalty:f32 = 0.0;
         let mut autoadjustflag = false;
@@ -146,6 +149,7 @@ impl ProfileAligner {
             ,col_norm:col_norm
             ,gap_penalty_auto_adjust:autoadjustflag
             ,auto_adjust_param:gap_penalty_auto_adjust
+            ,gap_penalty_dynamic_bias:gap_penalty_dynamic_bias
         };
         ret.reconstruct_matrix(buff_len, buff_len);
         return ret;
@@ -252,9 +256,20 @@ impl ProfileAligner {
         for ii in 0..=aalen{
             if ii != 0{
                 
+                let gobias = if self.gap_penalty_dynamic_bias{
+                    1.0-b.gmat[0].match_to_del
+                }else{
+                    1.0
+                };
+                let gebias = if self.gap_penalty_dynamic_bias{
+                    1.0-b.gmat[0].del_to_del
+                }else{
+                    0.05 //ToDo 初期値設定
+                };
+
                 match self.alignment_type{
                     AlignmentType::Global => {
-                        currentpenal = (1.0-b.gmat[0].match_to_del)*gap_open_penalty+(1.0-b.gmat[0].del_to_del)*gap_open_penalty*(ii as f32 - 1.0);
+                        currentpenal =gobias*gap_open_penalty+gebias*gap_open_penalty*(ii as f32 - 1.0);
                     },
                     AlignmentType::Local => {
                         currentpenal = 0.0;
@@ -275,9 +290,21 @@ impl ProfileAligner {
         let mut currentpenal;
         for ii in 0..=bblen{
             if ii != 0{
+
+                let gobias = if self.gap_penalty_dynamic_bias{
+                    1.0-a.gmat[0].match_to_del
+                }else{
+                    1.0
+                };
+                let gebias = if self.gap_penalty_dynamic_bias{
+                    1.0-a.gmat[0].del_to_del
+                }else{
+                    0.05 //ToDo 初期値設定
+                };
+
                 match self.alignment_type{
                     AlignmentType::Global => {
-                        currentpenal = (1.0-a.gmat[0].match_to_del)*gap_open_penalty+(1.0-a.gmat[0].del_to_del)*gap_open_penalty*(ii as f32 - 1.0);
+                        currentpenal = gobias*gap_open_penalty+gebias*gap_open_penalty*(ii as f32 - 1.0);
                     },
                     AlignmentType::Local => {
                         currentpenal = 0.0;
@@ -319,6 +346,31 @@ impl ProfileAligner {
                 let acol_next = &a.gmat[ii];
                 let bcol_next = &b.gmat[jj];
                 
+
+
+                let gobias_a = if self.gap_penalty_dynamic_bias{
+                    1.0-acol_next.match_to_del
+                }else{
+                    1.0
+                };
+                let gebias_a = if self.gap_penalty_dynamic_bias{
+                    1.0-acol_next.del_to_del
+                }else{
+                    0.05 //ToDo 初期値設定
+                };
+
+
+                let gobias_b = if self.gap_penalty_dynamic_bias{
+                    1.0-bcol_next.match_to_del
+                }else{
+                    1.0
+                };
+                let gebias_b = if self.gap_penalty_dynamic_bias{
+                    1.0- bcol_next.del_to_del
+                }else{
+                    0.05 //ToDo 初期値設定
+                };
+
                 let abweight = 1.0; //match state で重みをつけようかと思ったりもした
 
                 let sc:f32 = match_score[ii-1][jj-1]*abweight;
@@ -328,16 +380,16 @@ impl ProfileAligner {
                 let diag_u:f32 = self.dp_matrix[ii-1][jj-1][DIREC_UP as usize] + sc;
                 
                 let lef_m:f32 = self.dp_matrix[ii-1][jj][DIREC_UPLEFT as usize]
-                + (1.0-bcol_next.match_to_del)*gap_open_penalty;
+                + gobias_b*gap_open_penalty;
                 let lef_l:f32 = self.dp_matrix[ii-1][jj][DIREC_LEFT as usize]
-                + (1.0- bcol_next.del_to_del)*gap_open_penalty;
+                + gebias_b*gap_open_penalty;
                 let lef_u:f32 = std::f32::NEG_INFINITY;
 
                 let up_m:f32 = self.dp_matrix[ii][jj-1][DIREC_UPLEFT as usize]
-                + (1.0-acol_next.match_to_del)*gap_open_penalty;
+                + gobias_a*gap_open_penalty;
                 let up_l:f32 = std::f32::NEG_INFINITY;
                 let up_u:f32 = self.dp_matrix[ii][jj-1][DIREC_UP as usize]
-                + (1.0-acol_next.del_to_del)*gap_open_penalty;
+                + gebias_a*gap_open_penalty;
 
                 let px = vec![
                     (DIREC_UPLEFT,(diag_m,diag_l,diag_u)),
