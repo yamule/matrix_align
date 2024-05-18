@@ -1,6 +1,6 @@
 
 use super::aligner::SequenceProfile;
-use super::faster_neighbor_joining;
+use super::much_faster_neighbor_joining;
 use super::upgma;
 use std::collections::HashMap;
 use super::matrix_process::calc_euclid_dist;
@@ -26,23 +26,31 @@ pub enum DistanceBase{
 
 pub fn create_distence_tree(val:&Vec<&Vec<f32>>,num_threads:usize,typ:TreeType)-> Vec<(i64,i64,f64)>{
     let vsiz:usize = val.len();
-    let mut dist:Vec<f64> = vec![];
     println!("calc_distance...");
-    for ii in 0..vsiz{
-        for jj in 0..ii{
-            dist.push(calc_euclid_dist(val[ii], val[jj]) as f64);
-        }
-        //neigbor_joining モジュールの仕様上
-        dist.push(0.0);
-    }
     match typ{
         TreeType::TreeNj =>{
             println!("calc_nj_tree...");
-            //println!("{:?}",dist);
-            return faster_neighbor_joining::generate_unrooted_tree(&mut dist,num_threads);
+            let mut dist:Vec<Vec<f64>> = vec![vec![0.0;vsiz];vsiz];
+            for ii in 0..vsiz{
+                for jj in 0..ii{
+                    let ddist = calc_euclid_dist(val[ii], val[jj]) as f64;
+                    dist[ii][jj] = ddist;
+                    dist[jj][ii] = ddist;
+                }
+            }
+            return much_faster_neighbor_joining::generate_unrooted_tree(dist,num_threads);
         },
         TreeType::TreeUPGMA =>{
             println!("calc_upgma_tree...");
+
+            let mut dist:Vec<f64> = vec![];
+            for ii in 0..vsiz{
+                for jj in 0..ii{
+                    dist.push(calc_euclid_dist(val[ii], val[jj]) as f64);
+                }
+                //neigbor_joining モジュールの仕様上
+                dist.push(0.0);
+            }
             //println!("{:?}",dist);
             let ret =  upgma::generate_unrooted_tree(&mut dist);
             return ret;
@@ -232,7 +240,7 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
 
 
     let mut node_to_seq:HashMap<usize,usize> = HashMap::new();
-    let parents:Vec<i64> = faster_neighbor_joining::get_parent_branch(&treenodes);
+    let parents:Vec<i64> = much_faster_neighbor_joining::get_parent_branch(&treenodes);
 
     if use_upgma{
         for ii in 0..treenodes.len(){
@@ -282,10 +290,10 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
         }else{
             let (outree,oldmap, _) = if is_leaf{
                 //println!("leaf");
-                faster_neighbor_joining::set_outgroup(maxnode, &treenodes,None)
+                much_faster_neighbor_joining::set_outgroup(maxnode, &treenodes,None)
             }else{
                 //println!("internal");
-                faster_neighbor_joining::change_center_branch(maxnode, &treenodes,None)
+                much_faster_neighbor_joining::change_center_branch(maxnode, &treenodes,None)
             };
 
             treenodes = outree;
@@ -302,7 +310,7 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
     }
 
     let mut flagcounter:Vec<i64> = vec![0;treenodes.len()]; //0 は子ノードが全て計算されたもの
-    let parents:Vec<i64> = faster_neighbor_joining::get_parent_branch(&treenodes);
+    let parents:Vec<i64> = much_faster_neighbor_joining::get_parent_branch(&treenodes);
     for ii in 0..treenodes.len(){
         if treenodes[ii].0 > -1{
             if treenodes[ii].0 == ii as i64{
