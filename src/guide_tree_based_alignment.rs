@@ -344,6 +344,35 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
     for _ in 0..num_threads{
         aligners.push(aligner.clone());
     }
+
+
+
+    let dist_to_weight = |mut adist:f32,mut bdist:f32|->(f32,f32){
+
+        if adist <= 0.0 || bdist <= 0.0{
+            eprintln!("Negative or zero branch length was found: {} {}",adist,bdist);
+            let minlen = adist.min(bdist)-0.01;
+            adist -= minlen;
+            bdist -= minlen;
+            eprintln!("Changed to: {} {}",adist,bdist);
+        }
+        
+        let mut aweight = bdist/(adist+bdist);
+        let mut bweight = adist/(adist+bdist);
+
+        if aweight.is_nan() || bweight.is_nan(){
+            panic!("Irregular weight was found: adist {} bdist {} aweight {} bweight {} sumdist {}",adist,bdist,aweight,bweight,adist+bdist);
+        }
+
+        if aweight < 0.01 || bweight < 0.01{ //ウエイトが小さすぎると 0 除算が起こることがある
+            eprintln!("The weight of a profile is too small: {} {}",aweight,bweight);
+            aweight = aweight.max(0.01);
+            bweight = bweight.max(0.01);
+            eprintln!("Changed to: {} {}",aweight,bweight);
+        }
+        return (aweight,bweight);
+    };
+
     println!("align");
     //println!("{:?}",treenodes);
     //unrooted の場合最終的に 3 つノードが残る
@@ -378,32 +407,10 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
             let uu = v.0;
             let ap = v.1;
             let bp = v.2;
-            let mut adist = v.3;
-            let mut bdist = v.4;
+            let adist = v.3;
+            let bdist = v.4;
             let mut ali = v.5;
-            
-            if adist <= 0.0 || bdist <= 0.0{
-                eprintln!("Negative or zero branch length was found: {} {}",adist,bdist);
-                let minlen = adist.min(bdist)-0.01;
-                adist -= minlen;
-                bdist -= minlen;
-                eprintln!("Changed to: {} {}",adist,bdist);
-            }
-            
-            let mut aweight = bdist/(adist+bdist);
-            let mut bweight = adist/(adist+bdist);
-
-            if aweight.is_nan() || bweight.is_nan(){
-                panic!("Irregular weight was found: adist {} bdist {} aweight {} bweight {} sumdist {}",adist,bdist,aweight,bweight,adist+bdist);
-            }
-
-            if aweight < 0.01 || bweight < 0.01{ //ウエイトが小さすぎると 0 除算が起こることがある
-                eprintln!("The weight of a profile is too small: {} {}",aweight,bweight);
-                aweight = aweight.max(0.01);
-                bweight = bweight.max(0.01);
-                eprintln!("Changed to: {} {}",aweight,bweight);
-            }
-
+            let (aweight,bweight) = dist_to_weight(adist,bdist);
             let res = align_and_merge_with_weight(&mut ali,ap,bp,aweight,bweight);
             (ali,uu,res.0,res.1)            
         }).collect();
@@ -447,11 +454,13 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
     let adist = treenodes[aa].2;
     let bdist = treenodes[bb].2;
 
+    let (aweight,bweight) = dist_to_weight(adist as f32 ,bdist as f32);
+
     profiles.push(None);
     let ap = profiles.swap_remove(aa).unwrap().0;
     profiles.push(None);
     let bp = profiles.swap_remove(bb).unwrap().0;
-    let res = align_and_merge_with_weight(aligner,ap,bp,(bdist/(adist+bdist)) as f32,(adist/(adist+bdist)) as f32);
+    let res = align_and_merge_with_weight(aligner,ap,bp,aweight,bweight);
     if remained.len() == 2{
         return vec![(res.0,res.1)];
     }
