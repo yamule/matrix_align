@@ -133,17 +133,11 @@ pub fn generate_unrooted_tree(mut dist:Vec<Vec<f64>>,num_threads:usize) -> Vec<(
     }
 
     let splitmat = |mut matt:Vec<Vec<f64>>|->Vec<Vec<(usize,Vec<f64>)>>{
-        let mut ret:Vec<Vec<(usize,Vec<f64>)>> = vec![vec![]];
-        let psiz = (matt.len()/num_threads).max(1);
+        let mut ret:Vec<Vec<(usize,Vec<f64>)>> = vec![vec![];num_threads];
         while matt.len() > 0{
             let idx = matt.len()-1;
             let d = matt.pop().unwrap();
-            let mut rlen = ret.len();
-            if ret[rlen-1].len() >= psiz{
-                ret.push(vec![]);
-                rlen = ret.len();
-            }
-            ret[rlen-1].push((idx,d));
+            ret[matt.len()%num_threads].push((idx,d));
         }
         return ret;
     };
