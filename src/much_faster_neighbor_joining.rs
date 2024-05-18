@@ -94,15 +94,18 @@ pub fn get_next_neighbor(dist:&Vec<Vec<f64>>,is_dead:&Vec<bool>,num_threads:usiz
 
 //子 1 のインデクス、子 2 のインデクス、自分自身の長さを返す
 ///合計枝長が最短になる状態であるので、親子関係に系統学的な意味はないと思う
-pub fn generate_unrooted_tree(dist:&mut Vec<Vec<f64>>,_num_threads:usize) -> Vec<(i64,i64,f64)>{
+pub fn generate_unrooted_tree(mut dist:Vec<Vec<f64>>,num_threads:usize) -> Vec<(i64,i64,f64)>{
     let leafnum:usize = dist.len();
     //今の所 dist 以外の rowidx >= colidx は更新されない。
 
     let mut pair_to_other:Vec<Vec<f64>> = vec![vec![0.0;dist[0].len()];dist.len()];
     let mut node_to_other:Vec<f64> = vec![0.0;dist.len()];
     let mut distall = 0.0;
-    let mut newnode:Vec<Vec<f64>> = vec![vec![0.0;dist[0].len()];dist.len()];
+    let mut newnode_branch_length:Vec<Vec<f64>> = vec![vec![0.0;dist[0].len()];dist.len()];
     let mut current_leafnum = leafnum;
+
+    assert!(num_threads > 0);
+    
     for ii in 0..leafnum{
         let mut mine = 0.0;
         for jj in 0..leafnum{
@@ -124,10 +127,39 @@ pub fn generate_unrooted_tree(dist:&mut Vec<Vec<f64>>,_num_threads:usize) -> Vec
 
     for ii in 0..leafnum{
         for jj in (ii+1)..leafnum{
-            newnode[ii][jj] = (distall -pair_to_other[ii][jj]-pair_to_other[ii][jj]/(current_leafnum as f64 -2.0-1.0)*2.0
+            newnode_branch_length[ii][jj] = (distall -pair_to_other[ii][jj]-pair_to_other[ii][jj]/(current_leafnum as f64 -2.0-1.0)*2.0
                 - (current_leafnum as f64 -2.0)*dist[ii][jj] -dist[ii][jj])/(current_leafnum as f64 -2.0)/2.0;
         }
     }
+
+    let splitmat = |mut matt:Vec<Vec<f64>>|->Vec<Vec<(usize,Vec<f64>)>>{
+        let mut ret:Vec<Vec<(usize,Vec<f64>)>> = vec![vec![]];
+        let psiz = (matt.len()/num_threads).max(1);
+        while matt.len() > 0{
+            let idx = matt.len()-1;
+            let d = matt.pop().unwrap();
+            let mut rlen = ret.len();
+            if ret[rlen-1].len() >= psiz{
+                ret.push(vec![]);
+                rlen = ret.len();
+            }
+            ret[rlen-1].push((idx,d));
+        }
+        return ret;
+    };
+
+    let mergemat = |matt:Vec<Vec<(usize,Vec<f64>)>>| -> Vec<Vec<f64>>{
+        let mut p:Vec<(usize,Vec<f64>)> = vec![];
+        for mut dd in matt.into_iter(){
+            p.append(&mut dd);
+        }
+        p.sort_by(|a,b|{
+            a.0.cmp(&b.0)
+        });
+        let ret:Vec<Vec<f64>> = p.into_iter().map(|m| m.1).collect();
+        return ret;
+    };
+
 
     let mut is_dead:Vec<bool> = vec![false;leafnum];
     let mut idmap:Vec<usize> = (0..leafnum).collect();
@@ -138,22 +170,42 @@ pub fn generate_unrooted_tree(dist:&mut Vec<Vec<f64>>,_num_threads:usize) -> Vec
         let mut b = (0,0.0);
         
         let mut maxindex = (0,0);
-        let mut maxnode = std::f64::NEG_INFINITY;
-        for ii in 0..leafnum{
-            if is_dead[ii] {
-                continue;
-            }
-            for jj in (ii+1)..leafnum{
-                if is_dead[jj]{
-                    continue;
+        let mut newnode_maxlength = std::f64::NEG_INFINITY;
+
+        let sdist = splitmat(dist);
+        let results:Vec<(f64,(usize,usize),Vec<(usize,Vec<f64>)>)> = sdist.into_par_iter().map(
+            |split_distmat:Vec<(usize,Vec<f64>)>|->(f64,(usize,usize),Vec<(usize,Vec<f64>)>){
+                let mut maxindex_s = (0,0);
+                let mut newnode_maxlength_s = std::f64::NEG_INFINITY;
+                for ii_ in 0..split_distmat.len(){
+                    let ii = split_distmat[ii_].0;
+                    if is_dead[ii] {
+                        continue;
+                    }
+                    for jj in (ii+1)..split_distmat[ii_].1.len(){
+                        if is_dead[jj]{
+                            continue;
+                        }
+                        if newnode_branch_length[ii][jj] > newnode_maxlength_s{
+                            newnode_maxlength_s = newnode_branch_length[ii][jj];
+                            maxindex_s = (ii,jj);
+                        }
+                    }
                 }
-                if newnode[ii][jj] > maxnode{
-                    maxnode = newnode[ii][jj];
-                    maxindex = (ii,jj);
-                }
+                return (newnode_maxlength_s,maxindex_s,split_distmat);
             }
+        ).collect();
+
+        let mut distmat_:Vec<Vec<(usize,Vec<f64>)>> = vec![];
+        for rr in results.into_iter(){
+            if rr.0 > newnode_maxlength{
+                newnode_maxlength = rr.0;
+                maxindex = rr.1;
+            }
+            distmat_.push(rr.2);
         }
-        
+        dist = mergemat(distmat_);
+
         //println!("{:?}",distall);
         //println!("node: {:?}",node_to_other);
         //println!("pair_to_other: {:?}",pair_to_other);
@@ -166,21 +218,22 @@ pub fn generate_unrooted_tree(dist:&mut Vec<Vec<f64>>,_num_threads:usize) -> Vec
         //}
         //println!(">>>");
         
-        if maxnode < 0.0{
-            eprintln!("WARNING: Internal node length is negative. {}",maxnode);
+        if newnode_maxlength < 0.0{
+            eprintln!("WARNING: Internal node length is negative. {}",newnode_maxlength);
             //assert!(maxnode >= 0.0);
             //panic!();
         }
         a.0 = maxindex.0;
         b.0 = maxindex.1;
-        a.1 = (node_to_other[a.0] - newnode[maxindex.0][maxindex.1]*(current_leafnum as f64-2.0) - dist[maxindex.0][maxindex.1] - pair_to_other[maxindex.0][maxindex.1]/(current_leafnum as f64 -2.0-1.0))/(current_leafnum as f64 -2.0);
-        b.1 = (node_to_other[b.0] - newnode[maxindex.0][maxindex.1]*(current_leafnum as f64-2.0) - dist[maxindex.0][maxindex.1] - pair_to_other[maxindex.0][maxindex.1]/(current_leafnum as f64 -2.0-1.0))/(current_leafnum as f64 -2.0);
+        a.1 = (node_to_other[a.0] - newnode_branch_length[maxindex.0][maxindex.1]*(current_leafnum as f64-2.0) - dist[maxindex.0][maxindex.1] - pair_to_other[maxindex.0][maxindex.1]/(current_leafnum as f64 -2.0-1.0))/(current_leafnum as f64 -2.0);
+        b.1 = (node_to_other[b.0] - newnode_branch_length[maxindex.0][maxindex.1]*(current_leafnum as f64-2.0) - dist[maxindex.0][maxindex.1] - pair_to_other[maxindex.0][maxindex.1]/(current_leafnum as f64 -2.0-1.0))/(current_leafnum as f64 -2.0);
         
         let newid = a.0;
         let mergeddist = dist[maxindex.0][maxindex.1];
 
         let mut merged_to_other = 0.0;
         //let mut newdist:Vec<f64> = vec![];
+
         for ii in 0..leafnum{
             if is_dead[ii]{
                 continue;
@@ -204,30 +257,49 @@ pub fn generate_unrooted_tree(dist:&mut Vec<Vec<f64>>,_num_threads:usize) -> Vec
         current_leafnum -= 1;
         is_dead[b.0] = true;
 
-        for ii in 0..leafnum{
-            if is_dead[ii]{
-                continue;
-            }
-            for jj in (ii+1)..leafnum{
-                if is_dead[jj]{
+        let sppair = splitmat(pair_to_other);
+
+        let pairres:Vec<Vec<(usize,Vec<f64>)>> = sppair.into_par_iter().map(
+           |mut pair_to_other_s: Vec<(usize,Vec<f64>)>| -> Vec<(usize,Vec<f64>)>{
+            for ii_ in 0..pair_to_other_s.len(){
+                let ii = pair_to_other_s[ii_].0;
+                if is_dead[ii]{
                     continue;
                 }
-                pair_to_other[ii][jj] = distall-node_to_other[ii]-node_to_other[jj]+dist[ii][jj];
-            }
-        }
-        for ii in 0..leafnum{
-            if is_dead[ii]{
-                continue;
-            }
-            for jj in (ii+1)..leafnum{
-                if is_dead[jj]{
-                    continue;
+                for jj in (ii+1)..pair_to_other_s[ii_].1.len(){
+                    if is_dead[jj]{
+                        continue;
+                    }
+                    pair_to_other_s[ii_].1[jj] = distall-node_to_other[ii]-node_to_other[jj]+dist[ii][jj];
                 }
-                newnode[ii][jj] = (distall -pair_to_other[ii][jj]-pair_to_other[ii][jj]/(current_leafnum as f64 -2.0-1.0)*2.0
-                - (current_leafnum as f64 -2.0)*dist[ii][jj] -dist[ii][jj])/(current_leafnum as f64 -2.0)/2.0;
-                
             }
+            return pair_to_other_s;
         }
+        ).collect();
+
+        pair_to_other = mergemat(pairres);
+
+        let spnewlength = splitmat(newnode_branch_length);
+        let updatenew:Vec<Vec<(usize,Vec<f64>)>> = spnewlength.into_par_iter().map(|mut newnode_branch_length_s:Vec<(usize,Vec<f64>)>|
+        ->Vec<(usize,Vec<f64>)>{
+                for ii_ in 0..newnode_branch_length_s.len(){
+                    let ii = newnode_branch_length_s[ii_].0;
+                    if is_dead[ii]{
+                        continue;
+                    }
+                    for jj in (ii+1)..newnode_branch_length_s[ii_].1.len(){
+                        if is_dead[jj]{
+                            continue;
+                        }
+                        newnode_branch_length_s[ii_].1[jj] = (distall -pair_to_other[ii][jj]-pair_to_other[ii][jj]/(current_leafnum as f64 -2.0-1.0)*2.0
+                        - (current_leafnum as f64 -2.0)*dist[ii][jj] -dist[ii][jj])/(current_leafnum as f64 -2.0)/2.0;
+                    }
+                }
+                return newnode_branch_length_s;
+            }
+        ).collect();
+
+        newnode_branch_length = mergemat(updatenew);
 
         // Leaf でない場合、子の平均長も含んだ仮枝長
         ret[idmap[a.0]].2 = a.1;        
@@ -527,7 +599,7 @@ pub fn get_opposite(targetids:&Vec<usize>,maxid:usize)->Vec<usize>{
 #[test]
 
 fn much_faster_small_nj_test(){
-    let mut dist:Vec<Vec<f64>> = vec![
+    let dist:Vec<Vec<f64>> = vec![
         vec![ 0.0, 5.0, 7.0,11.0,12.0],
         vec![ 5.0, 0.0, 8.0,12.0,13.0],
         vec![ 7.0, 8.0, 0.0,10.0,11.0],
@@ -535,7 +607,7 @@ fn much_faster_small_nj_test(){
         vec![12.0,13.0,11.0, 3.0, 0.0]
     ];
 
-    let unrooted = generate_unrooted_tree(&mut dist,4);
+    let unrooted = generate_unrooted_tree(dist,4);
     let mut dummyname:HashMap<usize,String> = HashMap::new();
     for ii in 0..5{
         dummyname.insert(ii,ii.to_string());
@@ -546,7 +618,7 @@ fn much_faster_small_nj_test(){
 }
 #[test]
 fn much_faster_nj_test(){
-    let mut dist:Vec<Vec<f64>> = vec![
+    let dist:Vec<Vec<f64>> = vec![
         vec![ 0.0, 7.0, 8.0,11.0,13.0,16.0,13.0,17.0],
         vec![ 7.0, 0.0, 5.0, 8.0,10.0,13.0,10.0,14.0],
         vec![ 8.0, 5.0, 0.0, 5.0, 7.0,10.0, 7.0,11.0],
@@ -556,7 +628,7 @@ fn much_faster_nj_test(){
         vec![13.0,10.0, 7.0, 8.0, 6.0, 9.0, 0.0, 8.0],
         vec![17.0,14.0,11.0,12.0,10.0,13.0, 8.0, 0.0]
     ];
-    let unrooted = generate_unrooted_tree(&mut dist,4);
+    let unrooted = generate_unrooted_tree(dist,4);
     //println!("{:?}",unrooted);
     let mut dummyname:HashMap<usize,String> = HashMap::new();
     for ii in 0..8{
@@ -574,7 +646,7 @@ fn much_faster_nj_test(){
     // ((raccoon:19.19959,bear:6.80041):0.84600,((sea_lion:11.99700, seal:12.00300):7.52973,((monkey:100.85930,cat:47.14069):20.59201, weasel:18.87953):2.09460):3.87382,dog:25.46154);
     //(Bovine:0.69395,(Gibbon:0.36079,(Orang:0.33636,(Gorilla:0.17147,(Chimp:0.19268, Human:0.11927):0.08386):0.06124):0.15057):0.54939,Mouse:1.21460):0.10;
     //(Bovine:0.69395,(Hylobates:0.36079,(Pongo:0.33636,(G._Gorilla:0.17147, (P._paniscus:0.19268,H._sapiens:0.11927):0.08386):0.06124):0.15057):0.54939, Rodent:1.21460); 
-    let mut dist:Vec<Vec<f64>> = vec![
+    let dist:Vec<Vec<f64>> = vec![
         vec![0.0  ,0.2  ,0.65 ,1.675,1.775,1.4  ],
         vec![0.2  ,0.0  ,0.65 ,1.675,1.775,1.4  ],
         vec![0.65 ,0.65 ,  0.0,1.425,1.525,1.15 ],
@@ -583,7 +655,7 @@ fn much_faster_nj_test(){
         vec![1.4  ,1.4  ,1.15 ,1.275,1.375,0.0  ]
     ];
 
-    let unrooted = generate_unrooted_tree(&mut dist,4);
+    let unrooted = generate_unrooted_tree(dist,4);
     //println!("{:?}",unrooted);
     let mut dummyname:HashMap<usize,String> = HashMap::new();
     for ii in 0..6{
@@ -665,7 +737,7 @@ fn compare_newick_structure(s1: &str, s2: &str) -> bool {
 
 #[test]
 fn much_faster_claude3test() {
-    let mut dist:Vec<Vec<f64>> = vec![
+    let dist:Vec<Vec<f64>> = vec![
         vec![0.0  ,0.2  ,0.65 ,1.675,1.775,1.4  ],
         vec![0.2  ,0.0  ,0.65 ,1.675,1.775,1.4  ],
         vec![0.65 ,0.65 ,  0.0,1.425,1.525,1.15 ],
@@ -674,7 +746,7 @@ fn much_faster_claude3test() {
         vec![1.4  ,1.4  ,1.15 ,1.275,1.375,0.0  ]
     ];
 
-    let unrooted = generate_unrooted_tree(&mut dist,4);
+    let unrooted = generate_unrooted_tree(dist,4);
 
     let mut node_name_map: HashMap<usize, String> = HashMap::new();
     node_name_map.insert(0, "A".to_string());
