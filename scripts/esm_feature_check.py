@@ -112,7 +112,7 @@ data = [];
 samples = [];
 used = {};
 if num_samples > len(fass):
-    sys.stderr.write("Number of sequences are lower than num_samples. {} vs {}".format(len(fass),num_samples));
+    sys.stderr.write("Number of sequences are lower than num_samples. {} vs {}\n".format(len(fass),num_samples));
     samples.extend(fass);
 else:
     while len(samples) < num_samples:
@@ -165,11 +165,13 @@ while len(samples) > 0:
                (1,1), (25,25), (50,50), (100,100), (200,200),
                (0,1), ( 0,25), ( 0,50), (  0,100), (  0,200),
     ];
-    shifter = [
-        (0,0), (1,0),
-               (1,1),
-               (0,1)
-    ];
+
+    #shifter = [
+    #    (0,0), (1,0),
+    #           (1,1),
+    #           (0,1)
+    #];
+    
     base_value = {};
     for sii,sss in enumerate(list(shifter)):
         data_fragment = [];
@@ -203,10 +205,11 @@ while len(samples) > 0:
             if sii == 0:
                 assert sss[0] == 0 and sss[1] == 0;
                 base_value[batch_labels[i]] = ress;
-                buffs = [];
                 for ii in range(ress.shape[0]):
-                    buffs.append("{:.7}".format(ress[ii]));
-                lines.append("\t".join(buffs));
+                    buffs = [];
+                    for jj in range(ress.shape[1]):
+                        buffs.append("{:.7}".format(ress[ii,jj]));
+                    lines.append("\t".join(buffs));
             else:
                 for ii in range(ress.shape[0]):
                     diff = np.abs(base_value[batch_labels[i]][sss[0]+ii] - ress[ii]);
@@ -218,6 +221,19 @@ while len(samples) > 0:
 if normalize:
     normalizeout.close();
     vsum = np.zeros_like(value_diff_sum,dtype=np.float64);
+    vcount = 0;
+    with open(normalizerfile)as fin:
+        for ll in fin:
+            ll = re.sub(r"[\r\n]","",ll);
+            if len(ll) == 0:
+                continue;
+            ptt = re.split(r"\t",ll);
+            assert len(ptt) == vsum.shape[0];
+            vcount += 1;
+            for ii in range(len(ptt)):
+                vsum[ii] += float(ptt[ii]);
+    vave = vsum/float(vcount);
+    vvar = np.zeros_like(value_diff_sum,dtype=np.float64);
     with open(normalizerfile)as fin:
         for ll in fin:
             ll = re.sub(r"[\r\n]","",ll);
@@ -226,13 +242,34 @@ if normalize:
             ptt = re.split(r"\t",ll);
             assert len(ptt) == vsum.shape[0];
             for ii in range(len(ptt)):
-                vsum[ii] += float(ptt[0]);
-                
-res = [];
-for ii in range(value_diff_sum.shape[0]):
-    res.append([ii,value_diff_sum[ii]]);
-res = list(sorted(res,key=lambda x:x[1]));
-with open(outfile,"wt") as fout:
-    for rr in list(res):
-        fout.write(str(rr[0])+"\t"+str(rr[1])+"\n");
+                bf = float(ptt[ii]);
+                vvar[ii] += (bf-vave[ii])*(bf-vave[ii]);
+    vvar = vvar/float(vcount);
+    vstd = np.sqrt(vvar);
+    #os.remove(normalizerfile);
+    with open(outfile+".stats","wt") as fout:
+        for ii in range(vvar.shape[0]):
+            fout.write("index:\t{}\tsum:\t{}\tvar:\t{}\tcount:{}\n".format(ii,vsum[ii],vvar[ii],vcount));
+
+    res = [];
+    for ii in range(value_diff_sum.shape[0]):
+        if vstd[ii] == 0.0:
+            sys.stderr.write("STD  in column "+str(ii+1)+" is zero???\n");
+            res.append([ii,value_diff_sum[ii]]);
+        else:
+            res.append([ii,value_diff_sum[ii]/vstd[ii]]);
+            
+    res = list(sorted(res,key=lambda x:x[1]));
+    with open(outfile,"wt") as fout:
+        for rr in list(res):
+            fout.write(str(rr[0])+"\t"+str(rr[1])+"\n");
+
+else:
+    res = [];
+    for ii in range(value_diff_sum.shape[0]):
+        res.append([ii,value_diff_sum[ii]]);
+    res = list(sorted(res,key=lambda x:x[1]));
+    with open(outfile,"wt") as fout:
+        for rr in list(res):
+            fout.write(str(rr[0])+"\t"+str(rr[1])+"\n");
 
