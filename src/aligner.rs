@@ -184,7 +184,7 @@ impl ProfileAligner {
                     let mut arr = a.gmat[ii].match_vec.clone();
                     matrix_process::element_add(&mut arr,st.mean*-1.0);
                     if st.var > 0.0{
-                        matrix_process::element_multiply(&mut arr,1.0/st.var);
+                        matrix_process::element_multiply(&mut arr,1.0/st.var.sqrt());
                     }
                     aavec_colnorm.push(arr);
             }
@@ -195,7 +195,7 @@ impl ProfileAligner {
 
                 matrix_process::element_add(&mut arr,st.mean*-1.0);
                 if st.var > 0.0{
-                    matrix_process::element_multiply(&mut arr,1.0/st.var);
+                    matrix_process::element_multiply(&mut arr,1.0/st.var.sqrt());
                 }
             
                 bbvec_colnorm.push(arr);

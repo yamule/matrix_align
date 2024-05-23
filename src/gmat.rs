@@ -208,7 +208,7 @@ pub fn normalize(vec:&mut Vec<f32>,gmatstats:&Vec<GMatStatistics>){
     assert_eq!(vec.len(),gmatstats.len());
     for vv in vec.iter_mut().zip(gmatstats.iter()){
         assert!(vv.1.var > 0.0);
-        *vv.0 = (*vv.0 -vv.1.mean)/vv.1.var;
+        *vv.0 = (*vv.0 -vv.1.mean)/vv.1.var.sqrt();
     }
 }
 
