@@ -150,3 +150,20 @@ TM-score= 0.59524 (if normalized by length of Chain_2, i.e., LN=139, d0=4.38)
 MLSEETIRVIKSTVPLLKEHGTEITARMFELLFSKYPKTKELFAGA----------SE--EQPKKLANAIIAYATYIDRLEELDNAISTIARSHVRRNVKPEHYPLVKECLLQAIEEVLNPGEEVLKAWEEAYDFLAKTLITLEKKLYSQP
 
 Total CPU time is  0.00 seconds
+
+
+
+esm2_650m_value_absdiff_swiss10000.dat
+esm2_650m_value_absdiff_swiss10000.dat.stats
+
+python scripts/esm_feature_check.py --infile uniprot_sprot.fasta.gz  --outfile esm_value_absdiff_swiss10000.dat  --random_seed 123 --device cuda --num_samples 10000 --model_path ＜ウエイトを保存したディレクトリへのパス＞/esm2_t33_650M_UR50D.pt --normalize True
+として、断片化に影響を受ける値のインデクスをとった。
+esm650m_value_absdiff_swiss10000.dat
+の 2 カラム目の値が小さいほうが、配列の末端のアミノ酸が削れた際に値が変わりにくいもの。
+cut -f 1 matrix_align/example_files/esm2_650m_example_output/esm2_650m_value_absdiff_swiss10000.dat |head -n 1024 > matrix_align/example_files/esm2_650m_example_output/esm2_650m_robust_index.dat
+とし、トップ 1024 のインデクスをとった。
+
+uniprot_sprot.fasta.gz は 20240523 に
+https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz
+から DL した。
+
