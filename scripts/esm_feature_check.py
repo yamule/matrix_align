@@ -106,9 +106,9 @@ for ff in list(fass_):
     sseq = re.sub(r"[^A-Z]","",ff["seq"].upper());
     if len(sseq) < min_fragment_length+1: # 1 残基は削るので
         continue;
+    sseq = re.sub(r"[JUZBOX]","X",sseq);
     fass.append(ff);
 
-data = [];
 samples = [];
 used = {};
 if num_samples > len(fass):
@@ -142,6 +142,8 @@ if normalize:
     normalizeout = open(normalizerfile,"wt");
 value_diff_sum = None;
 while len(samples) > 0:
+    data = [];
+    print("remained",len(samples));
     while len(data) < batch_size:
         if len(samples) == 0:
             break;
@@ -150,11 +152,11 @@ while len(samples) > 0:
         if len(sseq) > max_length:
             if random.random() > 0.5:
                 data.append([
-                    ff["name"],seqq[:max_length]
+                    ff["name"],sseq[:max_length]
                 ]);
             else:
                 data.append([
-                    ff["name"],seqq[-max_length:]
+                    ff["name"],sseq[-max_length:]
                 ]);
         else:
             data.append([
@@ -171,7 +173,7 @@ while len(samples) > 0:
     #           (1,1),
     #           (0,1)
     #];
-    
+
     base_value = {};
     for sii,sss in enumerate(list(shifter)):
         data_fragment = [];
