@@ -30,6 +30,7 @@ parser.add_argument("--model_path",required= True);
 parser.add_argument("--shift_length",required= True,help='次の断片を作る際の移動量',type=int);
 parser.add_argument("--cut_length",required= True,help='断片化された際の境界の残基についてはいくつか削除する',type=int);
 parser.add_argument("--device",required=True);
+parser.add_argument("--retain_index",required=False,help='保持する値のインデクスがリストされたファイルのパス',default=None);
 parser.add_argument("--batch_size",required=False,default=20,type=int);
 parser.add_argument("--round",required=False,default=7,help='小数点以下で丸める際の桁数',type=int);
 
@@ -46,6 +47,20 @@ infile = args.infile;
 outfile = args.outfile;
 rounder = args.round;
 ddev = args.device;
+
+retain_index = None;
+retain_index_max = -1;
+if args.retain_index is not None:
+    retain_index = set();
+    with open(args.retain_index,"rt") as fin:
+        for ll in fin:
+            ptt = re.split(r"[\s,]+",ll);
+            for pp in ptt:
+                if len(pp) == 0:
+                    continue;
+                p = int(pp);
+                retain_index_max = max([p,retain_index_max])
+                retain_index.add(p);
 
 # Load ESM-2 model
 model, alphabet = esm.pretrained.load_model_and_alphabet(model_path)
@@ -244,16 +259,29 @@ while len(fass) > 0 or len(remained) > 0:
             #print("\t".join([str(x) for x in repres]));
             replen_ = len(repres[0]);
             if replen is None:
-                replen = replen_;
+                if retain_index is None:
+                    replen = replen_;
+                else:
+                    replen = len(retain_index);
                 format_string = ("\t{:."+str(rounder)+"}")*replen;
             else:
-                assert replen == replen_;
+                if retain_index is None:
+                    assert replen == replen_;
             linebuff = [];
             linebuff.append(">"+seqname+" "+seq_desc[seqname]+"\n");
             
             for jj in range(len(repres)):
                 linebuff.append(full_seq[seqname][jj]);
-                linebuff.append(format_string.format(*repres[jj]))
+                if retain_index is None:
+                    linebuff.append(format_string.format(*repres[jj]));
+                else:
+                    rre = [];
+                    for kk in range(len(repres[jj])):
+                        if kk in retain_index:
+                            rre.append(repres[jj,kk]);
+                    if retain_index is not None:
+                        assert len(retain_index) == len(rre), "Wrong --retain_index file is provided."
+                    linebuff.append(format_string.format(*rre));
                 #for mm in range(replen):
                 #    linebuff.append(format_string.format(repres[jj][mm]));
                 linebuff.append("\n");
