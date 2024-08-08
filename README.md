@@ -1,5 +1,7 @@
 # GMalign
 
+Pointer to the state which had used in CASP16.
+
 ## Compile
 ```
 # normal
