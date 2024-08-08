@@ -1,6 +1,6 @@
 # GMalign
 
-Pointer to the state which had used in CASP16.
+Pointer to the state which had been used in CASP16.
 
 ## Compile
 ```
