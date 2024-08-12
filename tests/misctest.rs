@@ -23,7 +23,7 @@ mod tests{
         let gmatstats:Vec<GMatStatistics>;
         let mut profile_seq:Option<SequenceProfile> = None;
         unsafe{
-            gmatstats = calc_vec_stats(& vec![infile.clone()],4);
+            gmatstats = calc_vec_stats(& vec![infile.clone()],4,None);
         }
         
         let mut name_order:Vec<String> = vec![];
@@ -103,7 +103,7 @@ mod tests{
         let gmatstats:Vec<GMatStatistics>;
 
         unsafe{
-            gmatstats = calc_vec_stats(& vec![infile.clone()],2);
+            gmatstats = calc_vec_stats(& vec![infile.clone()],2,None);
         }
         
         let mut name_order:Vec<String> = vec![];

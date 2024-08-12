@@ -1,5 +1,5 @@
 use std::collections::*;
-use matrix_align::{matrix_process, simple_argparse};
+use matrix_align::{matrix_process, scoring_matrix, simple_argparse};
 use rayon;
 #[allow(unused_imports)]
 use matrix_align::gmat::{self, calc_vec_stats, calc_vec_stats_legacy, GMatStatistics};
@@ -11,6 +11,19 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use regex::Regex;
 use matrix_align::misc::*;
+
+
+fn create_gmat_from_fasta(fastafile:&str,smatname:&str)-> Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)>{
+    let seq = ioutil::SeqData::load_fasta(fastafile,false);
+    let smat = if smatname == "BLOSUM62"{
+        scoring_matrix::get_blosum62_matrix()
+    }else{
+        panic!("Currently, only BLOSUM62 can be used as a scoring matrix.");
+    };
+    
+    let gmat1_ = ioutil::fasta_to_gmat(&seq, &smat);
+    return gmat1_;
+}
 
 fn main(){
     main_(std::env::args().collect::<Vec<String>>());
@@ -32,6 +45,14 @@ fn main_(mut args:Vec<String>){
         ion 2]\t[value1]\t[value2]\t[value3]...\n[amino acid letter at position 3]\t[value1]\t[value2]\t[value3]...\n...\n\
         ...\n"
         ,None,vec![], false),
+
+        ("--in_fasta",None
+        ,"<input file path> : Fasta format file. Matrix values were assigned according to the --scoring_matrix option."
+        ,None,vec![], false),
+        
+        ("--scoring_matrix",None
+        ,"<string> : Name of the prepared scoring matrix. Currently, only BLOSUM62 is allowed. "
+        ,Some("BLOSUM62"),vec!["BLOSUM62"], false),
         
         ("--in_list",None,
         "<list file path> : Ascii text file which contains multiple input files's path. If --in was specified, --in files will be loaded \
@@ -171,13 +192,20 @@ fn main_(mut args:Vec<String>){
         }    
     }
 
-    let reqpair:Vec<(&str,&str)> = vec![
-        ("--in","--in_list"),
-        ("--out","--out_stats"),
+    let reqpair:Vec<Vec<&str>> = vec![
+        vec!["--in","--in_list","--in_fasta"],
+        vec!["--out","--out_stats"],
     ];
-    for (a,b) in reqpair{
-        if argparser.is_generous_false(a) && argparser.is_generous_false(b) {
-            panic!("One of {} or {} should be set.",a,b);
+
+    for v in reqpair{
+        let mut chk = false;
+        for vv in v.iter(){
+            if argparser.is_generous_false(vv){
+                chk = true;
+            }
+        }
+        if !chk{
+            panic!("One of {:?} should be set.",v);
         }
     }
 
@@ -271,10 +299,21 @@ fn main_(mut args:Vec<String>){
             );
         }
     }else{
+        // normalize のための統計値計算
         unsafe{
-            gmatstats = calc_vec_stats(&infiles,if argparser.get_bool("--parallel_load").unwrap(){num_threads}else{1});
+            gmatstats = if argparser.user_defined("--in_fasta"){
+                let gmat1_ = create_gmat_from_fasta(&argparser.get_string("--in_fasta").unwrap(), &argparser.get_string("--scoring_matrix").unwrap());
+                let mut passme:Vec<&Vec<Vec<f32>>> = vec![];
+                for gg in gmat1_.iter(){
+                    passme.push(&gg.2);
+                }
+                calc_vec_stats(&infiles,if argparser.get_bool("--parallel_load").unwrap(){num_threads}else{1},Some(&passme))
+            }else{
+                calc_vec_stats(&infiles,if argparser.get_bool("--parallel_load").unwrap(){num_threads}else{1},None)
+            };
         }
         if let Some(x) = argparser.get_string("--out_stats"){
+            assert!(infiles.len() > 0,"--in or --in_list must be specified to use --out_stats.");
             let mut lines:Vec<String> = vec![];
             for gg in gmatstats.iter(){
                 lines.push(gg.get_string());
@@ -289,7 +328,9 @@ fn main_(mut args:Vec<String>){
 
     let mut name_ordered:Vec<String> = vec![];
     let mut gmat1_:Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)> = vec![];
-    if argparser.get_bool("--a3m_pairwise").unwrap(){
+    if argparser.user_defined("--in_fasta"){
+        gmat1_ = create_gmat_from_fasta(&argparser.get_string("--in_fasta").unwrap(), &argparser.get_string("--scoring_matrix").unwrap());
+    }else if argparser.get_bool("--a3m_pairwise").unwrap(){
         // a3m pairwise の場合はまずファイル一つだけのロードでよい
         let fname = infiles.remove(0);
         let mut z = load_multi_gmat(&fname,fname.ends_with(".gz"));

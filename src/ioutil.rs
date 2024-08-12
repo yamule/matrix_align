@@ -1,7 +1,7 @@
 use flate2::bufread::GzDecoder;
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufWriter,Write,BufReader,BufRead};
 use std::fs::File;
 use std::vec;
@@ -259,6 +259,36 @@ pub fn parallel_load_multi_gmat(filenames:&mut VecDeque<String>,max_samples:usiz
     }
     return ret;
 
+}
+
+pub fn fasta_to_gmat(seq:&Vec<SeqData>,smat:&HashMap<String,Vec<f32>>)-> Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)>{
+    let mut gmat1_:Vec<(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)> = vec![];
+    for ss in seq.iter(){
+        let name = ss.name.clone();
+        let mut values:Vec<Vec<f32>> = vec![];
+        let mut cc:Vec<char> = vec![];
+        let mut cs:Vec<String> = vec![];// 単に char 化して to_string するのが面倒かと思って作っているだけ
+        for sss in ss.seq.iter(){
+            if sss.len() > 1{
+                eprintln!("Only single char is allowed for representation. {} was changed to X.",sss);
+                cc.push('X');
+            }else if !smat.contains_key(sss){
+                eprintln!("The value for {} is not defined. {} was changed to X.",sss,sss);
+                cc.push('X');
+            }else{
+                let c:Vec<char> = sss.chars().into_iter().collect();
+                cc.push(c[0]);
+                cs.push(sss.clone());
+            }
+        }
+        for c in cs.iter(){
+            values.push(smat.get(c).unwrap().clone());
+        }
+        gmat1_.push((
+            name,cc,values,None
+        ));
+    }
+    return gmat1_;
 }
 
 pub fn save_gmat(filename:&str,seqs:&Vec<(usize,&SequenceProfile)>,gzipped:bool){

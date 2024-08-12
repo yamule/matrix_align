@@ -117,16 +117,36 @@ pub unsafe fn calc_vec_stats_(allval:Vec<Vec<f32>>)->Vec<GMatStatistics>{
     return ret;
 }
 
-//各カラムの Max とか Min とか計算して返す
-pub unsafe fn calc_vec_stats(filenames_:&Vec<String>,num_threads:usize)->Vec<GMatStatistics>{
+//各カラムの Max とか Min とか計算して返す。メモリ節約のために二回読み込んでいるので注意、
+pub unsafe fn calc_vec_stats(filenames_:&Vec<String>,num_threads:usize,precomputed:Option<&Vec<&Vec<Vec<f32>>>>)->Vec<GMatStatistics>{
     let mut asum:Vec<f32> = vec![];
     let mut amax:Vec<f32> = vec![];
     let mut amin:Vec<f32> = vec![];
     let mut acount:Vec<usize> = vec![];
     let mut filenames:VecDeque<String> = filenames_.iter().map(|m|m.clone()).collect();
 
+    if let Some(x) = precomputed{
+        for xx in x.iter(){
+            let mut st= 0;
+            if asum.len() == 0{
+                asum = xx[0].clone();
+                amax = xx[0].clone();
+                amin = xx[0].clone();
+                acount = vec![1;xx[0].len()];
+                st = 1;
+            }
+            for ii in st..xx.len(){
+                for jj in 0..xx[ii].len(){
+                    asum[jj] += xx[ii][jj];
+                    amin[jj] = amin[jj].min(xx[ii][jj]);
+                    amax[jj] = amax[jj].max(xx[ii][jj]);
+                    acount[jj] += 1;
+                }
+            }
+        }
+    }
     while filenames.len() > 0{
-        let gmat_= ioutil::parallel_load_multi_gmat(&mut filenames, num_threads, num_threads);
+        let gmat_ = ioutil::parallel_load_multi_gmat(&mut filenames, num_threads, num_threads);
         
         for gmat1 in gmat_.into_iter(){
             if let Some(x) = gmat1.3{
@@ -150,15 +170,27 @@ pub unsafe fn calc_vec_stats(filenames_:&Vec<String>,num_threads:usize)->Vec<GMa
             }
         }
     }
+
     let vecsiz = asum.len();
     let mut amean:Vec<f32> = vec![0.0;vecsiz];
     for jj in 0..vecsiz{
         amean[jj] = asum[jj]/(acount[jj] as f32);
     }
 
-
     let mut avar:Vec<f32> = vec![0.0;vecsiz];
     let mut filenames:VecDeque<String> = filenames_.iter().map(|m|m.clone()).collect();
+
+    if let Some(x) = precomputed{
+        for xx in x.iter(){
+            for ii in 0..xx.len(){
+                for jj in 0..xx[ii].len(){
+                    let vv = xx[ii][jj]; 
+                    avar[jj] += (amean[jj]-vv)*(amean[jj]-vv);
+                }
+            }
+        }
+    }
+
     while filenames.len() > 0{
         let gmat_= ioutil::parallel_load_multi_gmat(&mut filenames, num_threads, num_threads);
         
@@ -190,6 +222,7 @@ pub unsafe fn calc_vec_stats(filenames_:&Vec<String>,num_threads:usize)->Vec<GMa
 
         );
     }
+
     return ret;
 }
 
@@ -341,7 +374,7 @@ mod tests{
         let statoutfile = "nogit/teststats.dat";
 
         unsafe{
-            let res = calc_vec_stats(& filenames,2);
+            let res = calc_vec_stats(& filenames,2,None);
             let mut chk:Vec<GMatStatistics> = vec![];
             chk.push( GMatStatistics{  mean: 10.533,  max: 20.000,  var: 104.382,  min: -5.000,  sum: 158.0,  count: 15 });
             chk.push( GMatStatistics{  mean: 8.400,  max: 20.000,  var: 40.640,  min: -6.000,  sum: 126.0,  count: 15 });
