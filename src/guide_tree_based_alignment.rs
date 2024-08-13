@@ -20,7 +20,7 @@ pub enum TreeType{
 
 #[derive(Copy,Clone)]
 pub enum DistanceBase{
-    AveragedValue,ScoreWithSeed
+    AveragedValue,ScoreWithSeed(usize)
 }
 
 
@@ -106,9 +106,9 @@ pub fn hierarchical_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dist
                 }
             }
         },
-        DistanceBase::ScoreWithSeed => {
+        DistanceBase::ScoreWithSeed(x) => {
             virtual_coordinate = alignment_based_distance::calc_alignment_based_distance_from_seed(
-                &sequences, aligner, 5, num_threads_, rngg
+                &sequences, aligner, *x, num_threads_, rngg
             );
         }
     }
@@ -214,9 +214,9 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
                 }
             }
         },
-        DistanceBase::ScoreWithSeed => {
+        DistanceBase::ScoreWithSeed(x) => {
             virtual_coordinate = alignment_based_distance::calc_alignment_based_distance_from_seed(
-                &sequences, aligner, 5,num_threads, rngg
+                &sequences, aligner, *x,num_threads, rngg
             );
         }
     } 
@@ -232,7 +232,6 @@ pub fn tree_guided_alignment(sequences:Vec<SequenceProfile>,distance_base:&Dista
     if use_upgma{
         treenodes = create_distence_tree(&virtual_coordinate.iter().map(|m|m).collect(),num_threads,TreeType::TreeUPGMA);
     }else{
-        
         treenodes = create_distence_tree(&virtual_coordinate.iter().map(|m|m).collect(),num_threads,TreeType::TreeNj);
     }
     //println!("{:?}",treenodes);

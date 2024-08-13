@@ -54,10 +54,10 @@ impl SimpleArgParse{
             desc += ":\t";
             desc += descstring;
             if let Some(x) = defvalue{
-                desc += format!(" Default {}.",x).as_str();
+                desc += format!(" Default '{}'.",x).as_str();
             }
             if acc.len() > 0{
-                desc += format!(" Acceptable values are {}.",acc.join(",")).as_str();
+                desc += format!(" Acceptable values are '{}'.",acc.join("','")).as_str();
             }
             if req{
                 desc += " Required."

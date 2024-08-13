@@ -111,8 +111,12 @@ fn main_(mut args:Vec<String>){
         ,Some("false"),vec![],false),
         
         ("--distance_base",None
-        ,"<string> : Estimation method for distance between samples."
+        ,"<string> : Estimation method for distance between samples. Note: 'score_with_seed' uses sum of 'positive match score', not an usual alignment score."
         ,Some("averaged_value"),vec!["averaged_value","score_with_seed"],false),
+
+        ("--num_seed_seqs",None
+        ,"<int> : Number of seed sequences for distance estimation with 'score_with_seed'."
+        ,Some("5"),vec![],false),
 
         ("--max_cluster_size",None
         ,"<int> : Limit all-vs-all comparison & tree building with this many number of profiles and align hierarchically. Must be > 10 or -1 (no limit)."
@@ -192,6 +196,10 @@ fn main_(mut args:Vec<String>){
         }    
     }
 
+    if argparser.user_defined("--num_seed_seqs"){
+        assert!(argparser.get_string("--distance_base").unwrap() == "score_with_seed","--num_seed_seqs must be set with '--distance_base score_with_seed'.");
+    }
+
     let reqpair:Vec<Vec<&str>> = vec![
         vec!["--in","--in_list","--in_fasta"],
         vec!["--out","--out_stats"],
@@ -224,7 +232,8 @@ fn main_(mut args:Vec<String>){
     let distance_base;
     let typ = argparser.get_string("--distance_base").unwrap().to_lowercase();
     if typ.as_str() == "score_with_seed"{
-        distance_base = DistanceBase::ScoreWithSeed;
+        let num_seed_seqs = argparser.get_int("--num_seed_seqs").unwrap() as usize;
+        distance_base = DistanceBase::ScoreWithSeed(num_seed_seqs);
     }else if typ.as_str() == "averaged_value"{
         distance_base = DistanceBase::AveragedValue;
     }else{

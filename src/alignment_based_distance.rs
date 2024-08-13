@@ -80,7 +80,7 @@ pub fn calc_alignment_based_distance_from_seed(sequences:&Vec<SequenceProfile>,a
         }
 
     }
-    
+
     return ret;
 }
 
