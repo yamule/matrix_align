@@ -179,16 +179,23 @@ impl ProfileAligner {
         let mut bbvec_colnorm:Vec<Vec<f32>> = vec![];
 
         if self.col_norm{
+            let mut errorcolumn:Vec<usize> = vec![];
             for ii in 0..aalen{
                     let st = matrix_process::calc_stats(&a.gmat[ii].match_vec);
                     let mut arr = a.gmat[ii].match_vec.clone();
                     matrix_process::element_add(&mut arr,st.mean*-1.0);
                     if (1.0/st.var.sqrt()).is_finite(){
                         matrix_process::element_multiply(&mut arr,1.0/st.var.sqrt());
+                    }else{
+                        errorcolumn.push(ii);
                     }
                     aavec_colnorm.push(arr);
             }
+            if errorcolumn.len() > 0{
+                eprintln!("Column {:?} in profile 1 had too small variance. The normalization is insufficient.",errorcolumn);
+            }
 
+            let mut errorcolumn:Vec<usize> = vec![];
             for ii in 0..bblen{
                 let st = matrix_process::calc_stats(&b.gmat[ii].match_vec);
                 let mut arr = b.gmat[ii].match_vec.clone();
@@ -196,10 +203,14 @@ impl ProfileAligner {
                 matrix_process::element_add(&mut arr,st.mean*-1.0);
                 if (1.0/st.var.sqrt()).is_finite(){
                     matrix_process::element_multiply(&mut arr,1.0/st.var.sqrt());
+                }else{
+                    errorcolumn.push(ii);
                 }
-            
                 bbvec_colnorm.push(arr);
-        }
+            }
+            if errorcolumn.len() > 0{
+                eprintln!("Column {:?} in profile 2 had too small variance. The normalization is insufficient.",errorcolumn);
+            }
         }
         for ii in 0..aalen{
             if self.col_norm{
@@ -785,6 +796,8 @@ impl ProfileAligner {
                 ex_weights[alipos].5 += del_to_del;
             }
         }
+        let mut errorcolumn:Vec<usize> = vec![];
+        let mut errorsum:f64 = 0.0;
         for alipos in 0..alignment_length{
             
             let sum_weight = ex_weights[alipos].0;
@@ -834,14 +847,22 @@ impl ProfileAligner {
 
             if (1.0/sum_weight).is_finite(){
                 element_multiply(&mut ret.gmat[alipos].match_vec,1.0/sum_weight);
+            }else{
+                let chk = ret.gmat[alipos].match_vec.iter().map(|a|(*a as f64).abs()).sum::<f64>();
+                errorsum += chk;
+                errorcolumn.push(alipos);
             }
             
-            assert!(sum_weight+sum_weight_del > 0.0);
+            assert!((1.0/(sum_weight+sum_weight_del)).is_finite());
 
             ret.gmat[alipos].match_ratio = sum_weight/(sum_weight+sum_weight_del);
             ret.gmat[alipos].del_ratio = sum_weight_del/(sum_weight+sum_weight_del);
         }
 
+        if errorcolumn.len() > 0{
+            eprintln!("Column {:?} has too small match_state weight.",errorcolumn);
+            eprintln!("Checker value is {} (which must be small).",errorsum);
+        }
         ret.gmat[alignment_length].match_to_del = 0.0;
         ret.gmat[alignment_length].del_to_del = 0.95;
         ret.seq_weights.clear();
