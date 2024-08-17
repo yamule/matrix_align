@@ -70,7 +70,11 @@ pub fn calc_alignment_based_distance_from_seed(sequences:&Vec<SequenceProfile>,a
                     positivecount += *ss;
                 }
             }
+            // 色々検討したがそもそもこの方法は不安定なので使わない方が良さそう
             (s1,s2,ali,positivecount/(shorter_length as f32))
+            //(s1,s2,ali,shorter_length as f32 + _longer_length as f32)
+            //(s1,s2,ali,positivecount)
+            //(s1,s2,ali,res.score)
         }).collect();
         
         for rr in results.into_iter(){

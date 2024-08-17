@@ -183,7 +183,7 @@ impl ProfileAligner {
                     let st = matrix_process::calc_stats(&a.gmat[ii].match_vec);
                     let mut arr = a.gmat[ii].match_vec.clone();
                     matrix_process::element_add(&mut arr,st.mean*-1.0);
-                    if st.var > 0.0{
+                    if (1.0/st.var.sqrt()).is_finite(){
                         matrix_process::element_multiply(&mut arr,1.0/st.var.sqrt());
                     }
                     aavec_colnorm.push(arr);
@@ -194,7 +194,7 @@ impl ProfileAligner {
                 let mut arr = b.gmat[ii].match_vec.clone();
 
                 matrix_process::element_add(&mut arr,st.mean*-1.0);
-                if st.var > 0.0{
+                if (1.0/st.var.sqrt()).is_finite(){
                     matrix_process::element_multiply(&mut arr,1.0/st.var.sqrt());
                 }
             
@@ -832,7 +832,7 @@ impl ProfileAligner {
             ret.gmat[alipos].match_to_del = match_to_del/(match_to_del+match_to_match);
             ret.gmat[alipos].del_to_del = del_to_del/(del_to_del+del_to_match);
 
-            if sum_weight > 0.0{
+            if (1.0/sum_weight).is_finite(){
                 element_multiply(&mut ret.gmat[alipos].match_vec,1.0/sum_weight);
             }
             

@@ -239,8 +239,10 @@ pub unsafe fn calc_vec_stats_legacy(filenames:&Vec<String>)->Vec<GMatStatistics>
 }
 pub fn normalize(vec:&mut Vec<f32>,gmatstats:&Vec<GMatStatistics>){
     assert_eq!(vec.len(),gmatstats.len());
-    for vv in vec.iter_mut().zip(gmatstats.iter()){
-        assert!(vv.1.var > 0.0);
+    for (ii,vv) in vec.iter_mut().zip(gmatstats.iter()).enumerate(){
+        if !(1.0/vv.1.var.sqrt()).is_finite(){  
+            panic!("Variance of column {} is too small! {} ",ii+1,vv.1.var);
+        }
         *vv.0 = (*vv.0 -vv.1.mean)/vv.1.var.sqrt();
     }
 }
@@ -309,7 +311,7 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
             calc_stats(&evec)
         };
         let stdev = sstat.var.sqrt();
-        if stdev > 0.0{
+        if (1.0/stdev/2.0).is_finite(){
             element_add(&mut evec,-1.0*sstat.mean);
             element_multiply(&mut evec, 1.0/stdev/2.0);
         }else{
@@ -330,9 +332,9 @@ pub fn calc_dist_zscore_matrix(avec:& Vec<&Vec<f32>>,bvec:& Vec<&Vec<f32>>,aweig
             calc_stats(&evec)
         };
         let stdev = sstat.var.sqrt();
-        if stdev > 0.0{
+        if (1.0/stdev/2.0).is_finite(){
             element_add(&mut evec,-1.0*sstat.mean);
-            element_multiply(&mut evec, 1.0/stdev/2.0);
+            element_multiply(&mut evec, 1.0/stdev/2.0);// 両側のスコアが取られるので 2 で割る
         }else{
             element_add(&mut evec,-1.0*sstat.mean);
         }
