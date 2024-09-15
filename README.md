@@ -42,10 +42,12 @@ find nogit/run_example/esmout|grep mat.gz|tail -n 9 > nogit/run_example/esmout_l
 ```
 target/release/matrix_align --in nogit/run_example/esmout/seq_0.mat.gz --in_list nogit/run_example/esmout_list.dat --out nogit/run_example/example_res.a3m  --num_threads 32 --a3m_pairwise true --alignment_type local --score_type dot_product --normalize true
 ```
-with this command, score/profile_length > 300 may be homologous proteins.
+A3m alignment file will be saved in nogit/run_example/example_res.a3m.
+With this command, score/profile_length > 300 may be homologous proteins.
 
 ### Generate MSA
 ```
 target/release/matrix_align --in nogit/run_example/esmout/seq_0.mat.gz,nogit/run_example/esmout/seq_1.mat.gz,nogit/run_example/esmout/seq_2.mat.gz,nogit/run_example/esmout/seq_3.mat.gz --out nogit/run_example/example_res.msa  --num_threads 32 --a3m_pairwise false --alignment_type global --score_type dot_product --normalize true --tree_type NJ --distance_base averaged_value
 ```
-with this command, "score" does not represent much.
+Msa will be saved in nogit/run_example/example_res.msa.
+With this command, "score" does not represent something much.
