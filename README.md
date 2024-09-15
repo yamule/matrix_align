@@ -1,4 +1,4 @@
-# GMalign
+# GPSM-align (General Position Specific Matrix aligner)
 
 ## Compile
 ```
