@@ -3,7 +3,9 @@ References: Fox NK, Brenner SE, Chandonia JM. 2014. Nucleic Acids Research 42:D3
 Chandonia JM, Guan L, Lin S, Yu C, Fox NK, Brenner SE. 2022. Nucleic Acids Research 50:D553–559. doi: 10.1093/nar/gkab1054. (citing information)
 
 からのデータを
-ESM2-650M にかけて特徴量を抽出した。
+ESM2-650M 
+Rives, Alexander, et al. "Biological structure and function emerge from scaling unsupervised learning to 250 million protein sequences." Proceedings of the National Academy of Sciences 118.15 (2021): e2016239118.
+にかけて特徴量を抽出した。
 
 TMALIGN のアラインメント
 >d6iyia_.pdb
@@ -165,5 +167,9 @@ cut -f 1 matrix_align/example_files/esm2_650m_example_output/esm2_650m_value_abs
 
 uniprot_sprot.fasta.gz は 20240523 に
 https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz
+UniProt: the universal protein knowledgebase in 2021. Nucleic acids research, 2021, 49.D1: D480-D489.
 から DL した。
+
+
+
 

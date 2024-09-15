@@ -24,13 +24,12 @@ def check_bool(v):
 
 parser = argparse.ArgumentParser();
 parser.add_argument("--infile",help='Multi-FASTA フォーマットのファイル',required= True) ;
-parser.add_argument("--outfile",required= True) ;
+parser.add_argument("--outdir",required= True) ;
 parser.add_argument("--crop_length",required= True,help='断片化後の長さ',type=int);
-parser.add_argument("--model_path",required= True);
 parser.add_argument("--shift_length",required= True,help='次の断片を作る際の移動量',type=int);
+parser.add_argument("--model_path",required= True);
 parser.add_argument("--cut_length",required= True,help='断片化された際の境界の残基についてはいくつか削除する',type=int);
 parser.add_argument("--device",required=True);
-parser.add_argument("--retain_index",required=False,help='保持する値のインデクスがリストされたファイルのパス',default=None);
 parser.add_argument("--batch_size",required=False,default=20,type=int);
 parser.add_argument("--round",required=False,default=7,help='小数点以下で丸める際の桁数',type=int);
 
@@ -44,23 +43,9 @@ batch_size = args.batch_size; # model に与える配列数
 cut_length = args.cut_length; # 複数に分割された際に分割点に近い部分のデータをどれくらい捨てるか
 
 infile = args.infile;
-outfile = args.outfile;
+outdir = args.outdir;
 rounder = args.round;
 ddev = args.device;
-
-retain_index = None;
-retain_index_max = -1;
-if args.retain_index is not None:
-    retain_index = set();
-    with open(args.retain_index,"rt") as fin:
-        for ll in fin:
-            ptt = re.split(r"[\s,]+",ll);
-            for pp in ptt:
-                if len(pp) == 0:
-                    continue;
-                p = int(pp);
-                retain_index_max = max([p,retain_index_max])
-                retain_index.add(p);
 
 # Load ESM-2 model
 model, alphabet = esm.pretrained.load_model_and_alphabet(model_path)
@@ -68,7 +53,8 @@ if ddev == "cuda":
     model = model.eval().cuda();
 else:
     model = model.eval();
-
+if not os.path.exists(outdir):
+    os.mkdir(outdir);
 batch_converter = alphabet.get_batch_converter()
 
 
@@ -192,12 +178,9 @@ buff = {};
 seq_fragment = {};
 remained = [];
 data = [];
-if outfile.endswith(".gz"):
-    fout = gzip.open(outfile,"wt");
-else:
-    fout = open(outfile,"wt");
 format_string = None;
 replen = None;
+seqcount = 0;
 while len(fass) > 0 or len(remained) > 0:
     while len(data) < batch_size:
         if len(remained) == 0:
@@ -255,38 +238,27 @@ while len(fass) > 0 or len(remained) > 0:
                 plist.append(seq_fragment[seqname][jj]);
             completed.append(seqname);
             repres = merge_representations(plist,crop_length,cut_length);
-            print("processed:",seqname,"fragments:",len(plist),flush=True);
             #print("\t".join([str(x) for x in repres]));
             replen_ = len(repres[0]);
             if replen is None:
-                if retain_index is None:
-                    replen = replen_;
-                else:
-                    replen = len(retain_index);
+                replen = replen_;
                 format_string = ("\t{:."+str(rounder)+"}")*replen;
             else:
-                if retain_index is None:
-                    assert replen == replen_;
+                assert replen == replen_;
             linebuff = [];
             linebuff.append(">"+seqname+" "+seq_desc[seqname]+"\n");
             
             for jj in range(len(repres)):
                 linebuff.append(full_seq[seqname][jj]);
-                if retain_index is None:
-                    linebuff.append(format_string.format(*repres[jj]));
-                else:
-                    rre = [];
-                    for kk in range(len(repres[jj])):
-                        if kk in retain_index:
-                            rre.append(repres[jj,kk]);
-                    if retain_index is not None:
-                        assert len(retain_index) == len(rre), "Wrong --retain_index file is provided."
-                    linebuff.append(format_string.format(*rre));
-                #for mm in range(replen):
-                #    linebuff.append(format_string.format(repres[jj][mm]));
+                linebuff.append(format_string.format(*repres[jj]));
                 linebuff.append("\n");
-            
-            fout.write("".join(linebuff));
+
+            outfile = os.path.join(outdir,"seq_"+str(seqcount)+".mat.gz");
+            seqcount += 1;
+            with gzip.open(outfile,"wt") as fout:
+                fout.write("".join(linebuff));
+            print("processed:",seqname,"fragments:",len(plist),"save_as:",outfile,flush=True);
+
             del linebuff;
     for cc in completed:
         seq_fragment.pop(cc);
