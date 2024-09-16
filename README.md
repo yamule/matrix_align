@@ -1,6 +1,8 @@
 # GPSM-align (General Position Specific * Matrix aligner)
 Create multiple sequence alignment (MSA) with some position specific values of proteins. e.g. sequence representaion of protein language models, position specific scoring matrix, hmm profiles, and so on.
 
+## This software is still under the development. Some logics and parameters will be changed.
+
 ## Compile
 ```
 # normal
