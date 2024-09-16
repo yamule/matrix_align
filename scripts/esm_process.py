@@ -7,9 +7,7 @@ import gc;
 
 # タンパク質配列を ESM にかける際に、長いタンパク質についても分割して処理し、切断部周辺はいくつかスキップして重複部分は平均 Representation として
 # 出力するスクリプト
-
-
-
+# 
 
 import argparse;
 
@@ -24,13 +22,14 @@ def check_bool(v):
 
 parser = argparse.ArgumentParser();
 parser.add_argument("--infile",help='Multi-FASTA フォーマットのファイル',required= True) ;
-parser.add_argument("--outdir",required= True) ;
-parser.add_argument("--crop_length",required= True,help='断片化後の長さ',type=int);
-parser.add_argument("--shift_length",required= True,help='次の断片を作る際の移動量',type=int);
-parser.add_argument("--model_path",required= True);
-parser.add_argument("--cut_length",required= True,help='断片化された際の境界の残基についてはいくつか削除する',type=int);
+parser.add_argument("--outdir",required=True) ;
+parser.add_argument("--crop_length",required=True,help='断片化後の長さ',type=int);
+parser.add_argument("--shift_length",required=True,help='次の断片を作る際の移動量',type=int);
+parser.add_argument("--model_path",required=True);
+parser.add_argument("--cut_length",required=True,help='断片化された際の境界の残基についてはいくつか削除する',type=int);
 parser.add_argument("--device",required=True);
 parser.add_argument("--batch_size",required=False,default=20,type=int);
+parser.add_argument("--save_with_seqname",required=False,default=False,type=check_bool);
 parser.add_argument("--round",required=False,default=7,help='小数点以下で丸める際の桁数',type=int);
 
 args = parser.parse_args();
@@ -41,6 +40,7 @@ crop_length = args.crop_length; # esm に渡す文字列の最大長
 shift_length = args.shift_length; # 複数に分割される際の開始点の移動量
 batch_size = args.batch_size; # model に与える配列数
 cut_length = args.cut_length; # 複数に分割された際に分割点に近い部分のデータをどれくらい捨てるか
+save_with_seqname = args.save_with_seqname;
 
 infile = args.infile;
 outdir = args.outdir;
@@ -169,6 +169,7 @@ fass = list(reversed(fass))
 full_seq = {};
 seq_desc = {};
 for ff in fass:
+    ff["seq"] = re.sub(r"[JUZBOX]","X",ff["seq"].upper());
     if ff["name"] in full_seq:
         sys.stderr.write("Duplicated name found. "+ff["name"]+"\n");
         raise Exception();
@@ -252,8 +253,19 @@ while len(fass) > 0 or len(remained) > 0:
                 linebuff.append(full_seq[seqname][jj]);
                 linebuff.append(format_string.format(*repres[jj]));
                 linebuff.append("\n");
+            if save_with_seqname:
+                baseseqname = re.sub(r"[^A-Za-z0-9.]","_",seqname);
+                filename = baseseqname+".mat.gz";
+                outfile = os.path.join(outdir,filename);
+                ccount = 0;
+                while os.path.exists(outfile):
+                    filename = baseseqname+"."+str(ccount)+".mat.gz";
+                    outfile = os.path.join(outdir,filename);
+                    ccouint += 1;
+            else:
+                filename = "seq_"+str(seqcount)+".mat.gz";
+                outfile = os.path.join(outdir,filename);
 
-            outfile = os.path.join(outdir,"seq_"+str(seqcount)+".mat.gz");
             seqcount += 1;
             with gzip.open(outfile,"wt") as fout:
                 fout.write("".join(linebuff));
