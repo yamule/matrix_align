@@ -15,3 +15,4 @@ pub mod alignment_based_distance;
 pub mod simple_argparse;
 pub mod a3m_pairwise_alignment;
 pub mod scoring_matrix;
+pub mod gumbel;
