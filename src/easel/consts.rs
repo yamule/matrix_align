@@ -1,0 +1,2 @@
+pub const eslSMALLX1:f64 = 5e-9;
+pub const eslCONST_PI:f64 = 3.14159265358979323846264338328;

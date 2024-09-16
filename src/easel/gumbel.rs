@@ -1,7 +1,7 @@
 use rand::distributions::Open01;
 use rand::Rng;
 use std::f64::consts::PI;
-
+use super::consts::*;
 // translated from hmmer source code by ChatGPT
 pub mod gumbel {
     use super::*;
@@ -9,45 +9,25 @@ pub mod gumbel {
     /// Returns the probability density at `x`, `P(S=x)`.
     pub fn pdf(x: f64, mu: f64, lambda: f64) -> f64 {
         let y = lambda * (x - mu);
-        if y < -6.5 || y > 710.0 {
-            0.0
-        } else {
-            lambda * ((-y - (-y).exp()).exp())
-        }
+        return lambda * ((-y - (-y).exp()).exp());
     }
 
     /// Returns the log of the pdf at `x`, `log P(S=x)`.
     pub fn logpdf(x: f64, mu: f64, lambda: f64) -> f64 {
         let y = lambda * (x - mu);
-        if y < -708.0 || y > 708.0 {
-            f64::NEG_INFINITY
-        } else {
-            lambda.ln() - y - (-y).exp()
-        }
+        return lambda.ln() - y - (-y).exp();
     }
 
     /// Returns the cumulative distribution at `x`, `P(S ≤ x)`.
     pub fn cdf(x: f64, mu: f64, lambda: f64) -> f64 {
         let y = lambda * (x - mu);
-        if y < -6.5 {
-            0.0
-        } else if y > 36.0 {
-            1.0
-        } else {
-            (-(-y).exp()).exp()
-        }
+        return (-(-y).exp()).exp();
     }
 
     /// Returns the log of the cdf at `x`, `log P(S ≤ x)`.
     pub fn logcdf(x: f64, mu: f64, lambda: f64) -> f64 {
         let y = lambda * (x - mu);
-        if y < -708.0 {
-            f64::NEG_INFINITY
-        } else if y > 708.0 {
-            0.0
-        } else {
-            -(-y).exp()
-        }
+        return -(-y).exp();
     }
 
     /// Returns right tail mass above `x`, `P(S > x)`.
@@ -55,7 +35,7 @@ pub mod gumbel {
         let y = lambda * (x - mu);
         let ey = -(-y).exp();
 
-        if ey.abs() < 1e-15 {
+        if ey.abs() < eslSMALLX1 {
             -ey
         } else {
             1.0 - ey.exp()
@@ -67,34 +47,34 @@ pub mod gumbel {
         let y = lambda * (x - mu);
         let ey = -(-y).exp();
 
-        if ey.abs() < 1e-15 {
-            -y
-        } else if ey.exp().abs() < 1e-15 {
-            -ey.exp()
+        if ey.abs() < eslSMALLX1 {
+            return -y;
+        } else if ey.exp().abs() < eslSMALLX1 {
+            return -ey.exp();
         } else {
-            (1.0 - ey.exp()).ln()
+            return (1.0 - ey.exp()).ln();
         }
     }
 
     /// Calculates the inverse CDF for a Gumbel distribution.
     pub fn invcdf(p: f64, mu: f64, lambda: f64) -> f64 {
-        mu - ((-p.ln()).ln()) / lambda
+        return mu - (((-p.ln()).ln()) / lambda);
     }
 
     /// Calculates the score at which the right tail's mass is `p`.
     pub fn invsurv(p: f64, mu: f64, lambda: f64) -> f64 {
-        let log_part = if p < 1e-15 {
+        let log_part = if p < eslSMALLX1 {
             (p.powf(p) - 1.0) / p
         } else {
             (- (1.0 - p).ln()).ln()
         };
 
-        mu - log_part / lambda
+        return mu - (log_part / lambda);
     }
 
     /// Returns a Gumbel-distributed random sample `x`.
     pub fn sample<R: Rng + ?Sized>(rng: &mut R, mu: f64, lambda: f64) -> f64 {
-        let Open01(p) = rng.sample(Open01);
+        let p = rng.sample(Open01);
         invcdf(p, mu, lambda)
     }
 
@@ -138,9 +118,10 @@ pub mod gumbel {
 
         // If Newton-Raphson failed, use bisection method
         if i == 100 {
+            eprintln!("fit_complete(): Newton/Raphson failed; switchover to bisection\n");
             // Bisection method
             let mut left = 0.0;
-            let mut right = PI / (6.0 * variance).sqrt();
+            let mut right = eslCONST_PI / (6.0 * variance).sqrt();
             let (mut fx, _) = lawless416(x, lambda);
             while fx > 0.0 {
                 right *= 2.0;
