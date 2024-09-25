@@ -1,11 +1,11 @@
-import torch
-import esm
+import torch;
 import sys,re,os,gzip
 import copy;
 import numpy as np;
 import gc;
 
-# タンパク質配列を ESM にかける際に、長いタンパク質についても分割して処理し、切断部周辺はいくつかスキップして重複部分は平均 Representation として
+
+# タンパク質配列を ProtT5 にかける際に、長いタンパク質についても分割して処理し、切断部周辺はいくつかスキップして重複部分は平均 Representation として
 # 出力するスクリプト
 # 
 
@@ -25,40 +25,47 @@ parser.add_argument("--infile",help='Multi-FASTA フォーマットのファイ�
 parser.add_argument("--outdir",required=True) ;
 parser.add_argument("--crop_length",required=True,help='断片化後の長さ',type=int);
 parser.add_argument("--shift_length",required=True,help='次の断片を作る際の移動量',type=int);
-parser.add_argument("--model_path",required=True);
+parser.add_argument("--model_dir_path",required=True);
 parser.add_argument("--cut_length",required=True,help='断片化された際の境界の残基についてはいくつか削除する',type=int);
 parser.add_argument("--device",required=True);
-parser.add_argument("--batch_size",required=False,default=20,type=int);
-parser.add_argument("--target_layer",required=True,type=int); # esm2_tXX の XX の部分だと思う。
+parser.add_argument("--batch_size",required=False,default=5,type=int);
 parser.add_argument("--save_with_seqname",required=False,default=False,type=check_bool);
 parser.add_argument("--round",required=False,default=7,help='小数点以下で丸める際の桁数',type=int);
+parser.add_argument("--model_type",help='t5 or bert',required= True) ;
 
 args = parser.parse_args();
 
 print(args);
-model_path = args.model_path;
+model_dir_path = args.model_dir_path;
 crop_length = args.crop_length; # esm に渡す文字列の最大長
 shift_length = args.shift_length; # 複数に分割される際の開始点の移動量
 batch_size = args.batch_size; # model に与える配列数
 cut_length = args.cut_length; # 複数に分割された際に分割点に近い部分のデータをどれくらい捨てるか
 save_with_seqname = args.save_with_seqname;
+model_type = args.model_type.lower();
 
 infile = args.infile;
 outdir = args.outdir;
 rounder = args.round;
-target_layer = args.target_layer;
 ddev = args.device;
 
-# Load ESM-2 model
-model, alphabet = esm.pretrained.load_model_and_alphabet(model_path)
+# Load ProtT5 model
+if model_type == 't5':
+    from transformers import T5Tokenizer, T5EncoderModel;
+    tokenizer = T5Tokenizer.from_pretrained(model_dir_path,do_lower_case=False)
+    model = T5EncoderModel.from_pretrained(model_dir_path).to(ddev)
+elif model_type == 'bert':
+    from transformers import BertTokenizer, TFBertModel;
+    tokenizer = BertTokenizer.from_pretrained(model_dir_path,do_lower_case=False)
+    model = TFBertModel.from_pretrained(model_dir_path).to(ddev)
+
 if ddev == "cuda":
     model = model.eval().cuda();
 else:
     model = model.eval();
+
 if not os.path.exists(outdir):
     os.mkdir(outdir);
-batch_converter = alphabet.get_batch_converter()
-
 
 def loadFasta(filename):
     if filename.endswith("gz"):
@@ -141,11 +148,6 @@ def merge_representations(replist_,crop_length,cut_length):
     
     return values/counter[:,None];
 
-# sys.stderr.write(str(alphabet.to_dict())+"\n");
-i_to_a = {};
-for kk,vv in alphabet.to_dict().items():
-    i_to_a[vv] = kk; # 重複は気にしない
-
 """
 デバッグ用
 crop_length = 600; # esm に渡す文字列の最大長
@@ -185,6 +187,7 @@ format_string = None;
 replen = None;
 seqcount = 0;
 while len(fass) > 0 or len(remained) > 0:
+
     while len(data) < batch_size:
         if len(remained) == 0:
             break;
@@ -208,26 +211,37 @@ while len(fass) > 0 or len(remained) > 0:
                 remained.append([
                     fragmentname,seqq
                 ]);
-    
 
     print("remained","fragment:",len(remained),"full:",len(fass));
+    
+    sequence_examples = [];
+    sequence_names = [];
+    sequence_length = [];
+    for dd in list(data):
+        sequence_examples.append(
+           " ".join(list(dd[1]))
+        );
+        sequence_length.append(len(dd[1]));
+        sequence_names.append(dd[0]);
 
-    batch_labels, batch_strs, batch_tokens = batch_converter(data)
-    batch_lens = (batch_tokens != alphabet.padding_idx).sum(1)
+    ids = tokenizer(sequence_examples, add_special_tokens=True, padding="longest")
+    input_ids = torch.tensor(ids['input_ids']).to(ddev)
+    attention_mask = torch.tensor(ids['attention_mask']).to(ddev)
+    embedding_repr = model(input_ids=input_ids, attention_mask=attention_mask)
     data.clear();
-    batch_tokens = torch.utils._pytree.tree_map(lambda x:x.to(ddev),batch_tokens);
+    
     with torch.no_grad():
-        results = model(batch_tokens, repr_layers=[target_layer], return_contacts=False);
-    token_representations = results["representations"][target_layer];
-    del results;
+        embedding_repr = model(input_ids=input_ids, attention_mask=attention_mask)
+    
     # Generate per-sequence representations via averaging
     # NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
-    for i, tokens_len in enumerate(batch_lens):
-        mat = re.search(r"(.+)##([^#]+)$",batch_labels[i]);
+    for i, tokens_len in enumerate(sequence_length):
+        mat = re.search(r"(.+)##([^#]+)$",sequence_names[i]);
         assert mat is not None;
         sname = mat.group(1);
-        seq_fragment[sname][batch_labels[i]][1] = copy.deepcopy(token_representations[i, 1 : tokens_len - 1].to("cpu").numpy());
-
+        seq_fragment[sname][sequence_names[i]][1] = copy.deepcopy(embedding_repr.last_hidden_state[i, 0 : tokens_len].to("cpu").numpy());
+    del embedding_repr;
+    
     completed = [];
     for seqname in list(seq_fragment.keys()):
         flag = True;
