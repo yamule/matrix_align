@@ -131,8 +131,7 @@ if rowwise_normalization:
             );
 
 vsiz = 0;
-h5table = None;
-h5out = None;
+allvalues = [];
 numfiles = len(allfiles);
 name_desc = [];
 nsample_current = numfiles;
@@ -142,17 +141,12 @@ for ii in range(numfiles):
     c = load_mat(aa);
     if vsiz == 0:
         vsiz = len(c[0]["value"][0]);
-        houtname = os.path.join(outdir,"temp.h5");
-        h5out = h5py.File(houtname,"w");
-        h5table = h5out.create_dataset("tmp", (nsample_current,vsiz),compression="gzip", maxshape=(None,vsiz));
+        
     for cc in list(c):
         name_desc.append(
             (cc["name"],re.split(r"[\s]+",cc["desc"])[0])
         );
         sample_counter += 1;
-        if sample_counter > nsample_current:
-            h5table.resize((sample_counter+100,vsiz));
-            nsample_current = sample_counter+100;
         ssum = [0.0 for jj in range(vsiz)];
         for vv in list(cc["value"]):
             for vii in range(vsiz):
@@ -165,18 +159,19 @@ for ii in range(numfiles):
                     ssum[vii] += vv[vii];
         for vii in range(vsiz):
             ssum[vii] /= len(cc["value"]);
-        h5table[sample_counter -1,:] = np.array(ssum);
-h5out.close();
+        allvalues.append(np.array(ssum));
 
-h5in = h5py.File(houtname,"r");
-h5table = h5in["tmp"];
+houtname = os.path.join(outdir,"averaged.dat");
+with open(houtname,"wt") as fout:
+    for ii in range(sample_counter):
+        fout.write("\t".join(name_desc[ii])+"\t"+"\t".join(["{:.7f}".format(x) for x in allvalues[ii].tolist()])+"\n");
 
 def dot_product(a,b):
     assert len(a.shape) == 1;
     assert len(b.shape) == 1;
     return (a*b).sum();
 
-def cos_dist(a,b):
+def cos_sim(a,b):
     assert len(a.shape) == 1;
     assert len(b.shape) == 1;
     anorm = np.sqrt((a*a).sum());
@@ -208,10 +203,10 @@ all_results = [];
 for ii in range(sample_counter):
     query_name = name_desc[ii][0];
     query_desc = name_desc[ii][1];
-    arr_i = h5table[ii];
+    arr_i = allvalues[ii];
     
     funcs = [
-        ("dot",dot_product),("cos_dist",cos_dist),("euc_dist",euc_dist),("euc_dist_norm",euc_dist_norm),("correl",correl)
+        ("dot",dot_product),("cos_sim",cos_sim),("euc_dist",euc_dist),("euc_dist_norm",euc_dist_norm),("correl",correl)
     ];
     res = {};
     for ff in list(funcs):
@@ -219,7 +214,7 @@ for ii in range(sample_counter):
     for jj in range(sample_counter):
         if ii == jj:
             continue;
-        arr_j = h5table[jj];
+        arr_j = allvalues[jj];
         for tag,func in list(funcs):
             res[tag].append((jj,func(arr_i,arr_j)));
     for tag,func in list(funcs):
@@ -229,5 +224,3 @@ for ii in range(sample_counter):
             t = list(sorted(res[tag],key=lambda x:x[1]));
             for tt in list(t):
                 fout.write("\t".join(name_desc[tt[0]])+"\t"+str(tt[1])+"\n");
-h5in.close();
-os.remove(houtname);
