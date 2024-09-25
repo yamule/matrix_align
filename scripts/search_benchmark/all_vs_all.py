@@ -14,7 +14,7 @@ def check_bool(v):
 parser = argparse.ArgumentParser();
 parser.add_argument("--targetdir",required= True) ;
 parser.add_argument("--outdir",required=True) ;
-parser.add_argument("--rowwise_normalization",required=True) ;
+parser.add_argument("--rowwise_normalization",required=True,type=check_bool) ;
 
 args = parser.parse_args();
 
