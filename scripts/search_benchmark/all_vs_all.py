@@ -223,4 +223,4 @@ for ii in range(sample_counter):
             fout.write(">"+query_name+" "+query_desc+"\n");
             t = list(sorted(res[tag],key=lambda x:x[1]));
             for tt in list(t):
-                fout.write("\t".join(name_desc[tt[0]])+"\t"+str(tt[1])+"\n");
+                fout.write("\t".join(name_desc[tt[0]])+"\t"+"{:.7f}".format(tt[1])+"\n");
