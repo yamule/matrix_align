@@ -31,6 +31,7 @@ parser.add_argument("--device",required=True);
 parser.add_argument("--batch_size",required=False,default=20,type=int);
 parser.add_argument("--target_layer",required=True,type=int); # esm2_tXX の XX の部分だと思う。
 parser.add_argument("--save_with_seqname",required=False,default=False,type=check_bool);
+parser.add_argument("--use_half",required=False,default=False,type=check_bool);
 parser.add_argument("--round",required=False,default=7,help='小数点以下で丸める際の桁数',type=int);
 
 args = parser.parse_args();
@@ -48,11 +49,14 @@ outdir = args.outdir;
 rounder = args.round;
 target_layer = args.target_layer;
 ddev = args.device;
-
+use_half = args.use_half
 # Load ESM-2 model
 model, alphabet = esm.pretrained.load_model_and_alphabet(model_path)
 if ddev == "cuda":
-    model = model.eval().cuda();
+    if use_half:
+        model = model.eval().cuda();
+    else:
+        model = model.half().eval().cuda();
 else:
     model = model.eval();
 if not os.path.exists(outdir):
@@ -215,7 +219,10 @@ while len(fass) > 0 or len(remained) > 0:
     batch_labels, batch_strs, batch_tokens = batch_converter(data)
     batch_lens = (batch_tokens != alphabet.padding_idx).sum(1)
     data.clear();
-    batch_tokens = torch.utils._pytree.tree_map(lambda x:x.to(ddev),batch_tokens);
+    if use_half:
+        batch_tokens = torch.utils._pytree.tree_map(lambda x:x.to(torch.float16).to(ddev),batch_tokens);
+    else:
+        batch_tokens = torch.utils._pytree.tree_map(lambda x:x.to(ddev),batch_tokens);
     with torch.no_grad():
         results = model(batch_tokens, repr_layers=[target_layer], return_contacts=False);
     token_representations = results["representations"][target_layer];
