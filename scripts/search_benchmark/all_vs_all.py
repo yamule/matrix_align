@@ -15,12 +15,14 @@ parser = argparse.ArgumentParser();
 parser.add_argument("--targetdir",required= True) ;
 parser.add_argument("--outdir",required=True) ;
 parser.add_argument("--rowwise_normalization",required=True,type=check_bool) ;
+parser.add_argument("--pigz",required=False,type=check_bool) ;
 
 args = parser.parse_args();
 
 targetdir = args.targetdir;
 rowwise_normalization = args.rowwise_normalization;
 outdir = args.outdir;
+use_pigz = args.pigz;
 if not os.path.exists(outdir):
     os.mkdir(outdir);
 
@@ -224,3 +226,5 @@ for ii in range(sample_counter):
             t = list(sorted(res[tag],key=lambda x:x[1]));
             for tt in list(t):
                 fout.write("\t".join(name_desc[tt[0]])+"\t"+"{:.7f}".format(tt[1])+"\n");
+        if use_pigz:
+            os.system("pigz "+outname)
