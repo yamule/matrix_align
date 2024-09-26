@@ -25,9 +25,7 @@ for aa in list(sorted(os.listdir(targetdir))):
         continue;
     ptt = re.split(r"\.",aa); # <スコアの種類>.dat.gz というファイル名規則になっている想定
     stype = ptt[-3];
-
-    if len(file_to_group) > 1000:
-        break;
+    
     if stype not in allfiles:
         allfiles[stype] = [];
     filename = os.path.join(targetdir,aa);
