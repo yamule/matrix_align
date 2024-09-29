@@ -270,7 +270,7 @@ while len(fass) > 0 or len(remained) > 0:
                 while os.path.exists(outfile):
                     filename = baseseqname+"."+str(ccount)+".mat.gz";
                     outfile = os.path.join(outdir,filename);
-                    ccouint += 1;
+                    ccount += 1;
             else:
                 filename = "seq_"+str(seqcount)+".mat.gz";
                 outfile = os.path.join(outdir,filename);

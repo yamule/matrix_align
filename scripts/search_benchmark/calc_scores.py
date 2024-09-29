@@ -1,4 +1,5 @@
 import re,gzip,os,sys;
+import copy;
 targetdir = sys.argv[1];
 
 is_cath = False;
@@ -15,9 +16,9 @@ def get_groupids(gcode):
 
 targetdir 
 allfiles = {};
-group_1 = {}; 
-group_2 = {}; 
-group_3 = {};
+group_1_orig = {}; 
+group_2_orig = {}; 
+group_3_orig = {};
 file_to_group = {};
 for aa in list(sorted(os.listdir(targetdir))):
 
@@ -25,7 +26,7 @@ for aa in list(sorted(os.listdir(targetdir))):
         continue;
     ptt = re.split(r"\.",aa); # <スコアの種類>.dat.gz というファイル名規則になっている想定
     stype = ptt[-3];
-    
+
     if stype not in allfiles:
         allfiles[stype] = [];
     filename = os.path.join(targetdir,aa);
@@ -37,51 +38,44 @@ for aa in list(sorted(os.listdir(targetdir))):
         name = ptt[0];
         g1,g2,g3 = get_groupids(ptt[1]);
         file_to_group[filename] = g1;
-        if g1 not in group_1:
-            group_1[g1] = set();
-        if g2 not in group_2:
-            group_2[g2] = set();
-        if g3 not in group_3:
-            group_3[g3] = set();
-
-        group_1[g1].add(name);
-        group_2[g2].add(name);
-        group_3[g3].add(name);
+        if g1 not in group_1_orig:
+            group_1_orig[g1] = 0;
+        if g2 not in group_2_orig:
+            group_2_orig[g2] = 0;
+        if g3 not in group_3_orig:
+            group_3_orig[g3] = 0;
+    # if len(allfiles[stype]) > 1000: # デバッグ用
+    #    break;
 
 for score_type in list(sorted(allfiles.keys())):
-    g1_score_fp1 = 0;
-    g2_score_fp1 = 0;
-    g3_score_fp1 = 0;
+    
+    g1_count = copy.deepcopy(group_1_orig);
+    g2_count = copy.deepcopy(group_2_orig);
+    g3_count = copy.deepcopy(group_3_orig);
 
-    g1_score_fp10 = 0;
-    g2_score_fp10 = 0;
-    g3_score_fp10 = 0;
+    g1_score_fp1 = copy.deepcopy(group_1_orig);
+    g2_score_fp1 = copy.deepcopy(group_2_orig);
+    g3_score_fp1 = copy.deepcopy(group_3_orig);
 
-    g1_count = 0;
-    g2_count = 0;
-    g3_count = 0;
+    g1_score_fp10 = copy.deepcopy(group_1_orig);
+    g2_score_fp10 = copy.deepcopy(group_2_orig);
+    g3_score_fp10 = copy.deepcopy(group_3_orig);
 
-    g1_num = 0;
-    g2_num = 0;
-    g3_num = 0;
 
-    for kk,vv in list(group_1.items()):
-        if len(vv) > 1:
-            g1_num += 1;
-    for kk,vv in list(group_2.items()):
-        if len(vv) > 1:
-            g2_num += 1;
-    for kk,vv in list(group_3.items()):
-        if len(vv) > 1:
-            g3_num += 1;
+    g1_score_hit1 = copy.deepcopy(group_1_orig);
+    g2_score_hit1 = copy.deepcopy(group_2_orig);
+    g3_score_hit1 = copy.deepcopy(group_3_orig);
+
+    g1_score_hit10 = copy.deepcopy(group_1_orig);
+    g2_score_hit10 = copy.deepcopy(group_2_orig);
+    g3_score_hit10 = copy.deepcopy(group_3_orig);
+
 
     higher_is_better = "higher_is_better";
     for ff in list(allfiles[score_type]):
 
         g1,g2,g3 = get_groupids(file_to_group[ff]);
 
-        if (is_cath and len(group_2[g2]) == 1) or len(group_3[g3]) == 1:
-            continue;
         with gzip.open(ff,"rt") as fin:
             alllines = fin.readlines();
             ptt = re.split(r"[\s]+",alllines[0][1:]);
@@ -121,6 +115,7 @@ for score_type in list(sorted(allfiles.keys())):
                 
                 if bg1 == g1:
                     tpcount_g1 += 1;
+                    continue;
                 else:
                     fpcount_g1 += 1;
                     if fpcount_g1 == 1:
@@ -130,6 +125,7 @@ for score_type in list(sorted(allfiles.keys())):
 
                 if bg2 == g2:
                     tpcount_g2 += 1;
+                    continue;
                 else:
                     fpcount_g2 += 1;
                     if fpcount_g2 == 1:
@@ -146,29 +142,87 @@ for score_type in list(sorted(allfiles.keys())):
                     if fpcount_g3 == 10:
                         g3_fp10 = tpcount_g3;
 
-            #assert len(group_1[g1]) == tpcount_g1+1,g1+"\t"+str(len(group_1[g1]))+" vs "+str(tpcount_g1+1);
-            #assert len(group_2[g2]) == tpcount_g2+1;
-            #assert len(group_3[g3]) == tpcount_g3+1;
             if tpcount_g1 > 0:
-                g1_score_fp1 += g1_fp1/float(tpcount_g1)/float(len(group_1[g1]))/g1_num;
-                g1_score_fp10 += g1_fp10/float(tpcount_g1)/float(len(group_1[g1]))/g1_num;
+                g1_count[g1] += 1;
+                g1_score_fp1[g1] += g1_fp1/float(tpcount_g1);
+                g1_score_fp10[g1] += g1_fp10/float(tpcount_g1);
+                if g1_fp1 > 0:
+                    g1_score_hit1[g1] += 1.0;
+                if g1_fp10 > 0:
+                    g1_score_hit10[g1] += 1.0;
+                    
             if tpcount_g2 > 0:
-                g2_score_fp1 += g2_fp1/float(tpcount_g2)/float(len(group_2[g2]))/g2_num;
-                g2_score_fp10 += g2_fp10/float(tpcount_g2)/float(len(group_2[g2]))/g2_num;
+                g2_count[g2] += 1;
+                g2_score_fp1[g2] += g2_fp1/float(tpcount_g2);
+                g2_score_fp10[g2] += g2_fp10/float(tpcount_g2);
+                if g2_fp1 > 0:
+                    g2_score_hit1[g2] += 1.0;
+                if g2_fp10 > 0:
+                    g2_score_hit10[g2] += 1.0;
+                    
+
             if tpcount_g3 > 0:
-                g3_score_fp1 += g3_fp1/float(tpcount_g3)/float(len(group_3[g3]))/g3_num;
-                g3_score_fp10 += g3_fp10/float(tpcount_g3)/float(len(group_3[g3]))/g3_num;
+                g3_count[g3] += 1;
+                g3_score_fp1[g3] += g3_fp1/float(tpcount_g3);
+                g3_score_fp10[g3] += g3_fp10/float(tpcount_g3);
+
+                if g3_fp1 > 0:
+                    g3_score_hit1[g3] += 1.0;
+                if g3_fp10 > 0:
+                    g3_score_hit10[g3] += 1.0;
+                    
     print("=========");
+    num_queries  = {};
+    score_sum_fp1 = {};
+    score_sum_fp10 = {};
+
+    # Top1 or 10 に TP が含まれていたかどうか https://academic.oup.com/bioinformaticsadvances/article/4/1/vbae119/7735315
+    score_sum_hit1 = {}; 
+    score_sum_hit10 = {}; 
+    for (tag,count,score_fp1,score_fp10,score_hit1,score_hit10) in [
+        ("g1",g1_count,g1_score_fp1,g1_score_fp10,g1_score_hit1,g1_score_hit10),
+        ("g2",g2_count,g2_score_fp1,g2_score_fp10,g2_score_hit1,g2_score_hit10),
+        ("g3",g3_count,g3_score_fp1,g3_score_fp10,g3_score_hit1,g3_score_hit10),
+    ]:
+        counted_class = 0;
+        num_queries[tag]  = 0;
+        for gg in list(count.keys()):
+            if count[gg] > 0:# 同一クラスに存在するメンバ数で割って平均化する
+                counted_class += 1; 
+                num_queries[tag] += count[gg];
+                score_fp1[gg] /= count[gg];
+                score_fp10[gg] /= count[gg];
+                score_hit1[gg] /= count[gg];
+                score_hit10[gg] /= count[gg];
+        score_sum_fp1[tag] = 0;
+        score_sum_fp10[tag] = 0;
+        score_sum_hit1[tag] = 0;
+        score_sum_hit10[tag] = 0;
+        for gg in list(count.keys()):
+            if count[gg] > 0: # 全クラス数で割って更に平均化する
+                score_fp1[gg] /= counted_class;
+                score_fp10[gg] /= counted_class;
+                score_hit1[gg] /= counted_class;
+                score_hit10[gg] /= counted_class;
+                
+                score_sum_fp1[tag] += score_fp1[gg];
+                score_sum_fp10[tag] += score_fp10[gg];
+                score_sum_hit1[tag] += score_hit1[gg];
+                score_sum_hit10[tag] += score_hit10[gg];
     def strline(*argg):
         return "\t".join([str(x) for x in argg]);
 
 
-    print(strline(targetdir,score_type,higher_is_better,"g1","fp1","count:",len(allfiles[score_type]),"score:",g1_score_fp1));
-    print(strline(targetdir,score_type,higher_is_better,"g1","fp10","count:",len(allfiles[score_type]),"score:",g1_score_fp10));
-    print(strline(targetdir,score_type,higher_is_better,"g2","fp1","count:",len(allfiles[score_type]),"score:",g2_score_fp1));
-    print(strline(targetdir,score_type,higher_is_better,"g2","fp10","count:",len(allfiles[score_type]),"score:",g2_score_fp10));
-    print(strline(targetdir,score_type,higher_is_better,"g3","fp1","count:",len(allfiles[score_type]),"score:",g3_score_fp1));
-    print(strline(targetdir,score_type,higher_is_better,"g3","fp10","count:",len(allfiles[score_type]),"score:",g3_score_fp10));
+    print(strline(targetdir,score_type,higher_is_better,"g1","untilfp1","count:",num_queries["g1"],"score:",score_sum_fp1["g1"]));
+    print(strline(targetdir,score_type,higher_is_better,"g2","untilfp1","count:",num_queries["g2"],"score:",score_sum_fp1["g2"]));
+    print(strline(targetdir,score_type,higher_is_better,"g3","untilfp1","count:",num_queries["g3"],"score:",score_sum_fp1["g3"]));
+    
+    print(strline(targetdir,score_type,higher_is_better,"g1","hit_at_1","count:",num_queries["g1"],"score:",score_sum_hit1["g1"]));
+    print(strline(targetdir,score_type,higher_is_better,"g1","hit_at_10","count:",num_queries["g1"],"score:",score_sum_hit10["g1"]));
+    print(strline(targetdir,score_type,higher_is_better,"g2","hit_at_1","count:",num_queries["g2"],"score:",score_sum_hit1["g2"]));
+    print(strline(targetdir,score_type,higher_is_better,"g2","hit_at_10","count:",num_queries["g2"],"score:",score_sum_hit10["g2"]));
+    print(strline(targetdir,score_type,higher_is_better,"g3","hit_at_1","count:",num_queries["g3"],"score:",score_sum_hit1["g3"]));
+    print(strline(targetdir,score_type,higher_is_better,"g3","hit_at_10","count:",num_queries["g3"],"score:",score_sum_hit10["g3"]));
 
 
 

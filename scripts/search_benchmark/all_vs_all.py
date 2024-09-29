@@ -15,7 +15,7 @@ parser = argparse.ArgumentParser();
 parser.add_argument("--targetdir",required= True) ;
 parser.add_argument("--outdir",required=True) ;
 parser.add_argument("--rowwise_normalization",required=True,type=check_bool) ;
-parser.add_argument("--pigz",required=False,type=check_bool) ;
+parser.add_argument("--pigz",required=False,default=True,type=check_bool) ;
 
 args = parser.parse_args();
 

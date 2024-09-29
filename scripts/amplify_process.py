@@ -1,13 +1,13 @@
+import torch
+import amplify
 import sys,re,os,gzip
 import copy;
 import numpy as np;
 import gc;
 
-
-# タンパク質配列を ProtT5 にかける際に、長いタンパク質についても分割して処理し、切断部周辺はいくつかスキップして重複部分は平均 Representation として
+# タンパク質配列を AMPLIFY にかける際に、長いタンパク質についても分割して処理し、切断部周辺はいくつかスキップして重複部分は平均 Representation として
 # 出力するスクリプト
-# 
-
+# config.yaml については、中の vocab_path のパスを AMPLIFY のレポジトリ内にある config.yaml に変更しておかなければいけない。
 import argparse;
 
 def check_bool(v):
@@ -24,47 +24,38 @@ parser.add_argument("--infile",help='Multi-FASTA フォーマットのファイ�
 parser.add_argument("--outdir",required=True) ;
 parser.add_argument("--crop_length",required=True,help='断片化後の長さ',type=int);
 parser.add_argument("--shift_length",required=True,help='次の断片を作る際の移動量',type=int);
-parser.add_argument("--model_dir_path",required=True);
+parser.add_argument("--model_dir_path",help="Has config.yaml & pytorch_model.pt in it.",required=True);
 parser.add_argument("--cut_length",required=True,help='断片化された際の境界の残基についてはいくつか削除する',type=int);
 parser.add_argument("--device",required=True);
-parser.add_argument("--batch_size",required=False,default=5,type=int);
+# parser.add_argument("--batch_size",required=False,default=20,type=int); # 実装的に 1 しか想定してないっぽい
 parser.add_argument("--save_with_seqname",required=False,default=False,type=check_bool);
 parser.add_argument("--round",required=False,default=7,help='小数点以下で丸める際の桁数',type=int);
-parser.add_argument("--model_type",help='t5 or bert',required= True) ;
 
 args = parser.parse_args();
 
 print(args);
 model_dir_path = args.model_dir_path;
+
+
 crop_length = args.crop_length; # esm に渡す文字列の最大長
 shift_length = args.shift_length; # 複数に分割される際の開始点の移動量
-batch_size = args.batch_size; # model に与える配列数
+# batch_size = args.batch_size; # model に与える配列数
+batch_size = 1;
 cut_length = args.cut_length; # 複数に分割された際に分割点に近い部分のデータをどれくらい捨てるか
 save_with_seqname = args.save_with_seqname;
-model_type = args.model_type.lower();
 
 infile = args.infile;
 outdir = args.outdir;
 rounder = args.round;
 ddev = args.device;
 
-# Load ProtT5 model
-if model_type == 't5':
-    import torch;
-    from transformers import T5Tokenizer, T5EncoderModel;
-    tokenizer = T5Tokenizer.from_pretrained(model_dir_path,do_lower_case=False);
-    model = T5EncoderModel.from_pretrained(model_dir_path).to(ddev);
-elif model_type == 'bert':
-    import tensorflow as tf;
-    from transformers import BertTokenizer, TFBertModel;
-    tokenizer = BertTokenizer.from_pretrained(model_dir_path,do_lower_case=False);
-    model = TFBertModel.from_pretrained(model_dir_path, from_pt=True);
+config_path = os.path.join(model_dir_path,"config.yaml");
+checkpoint_file = os.path.join(model_dir_path,"pytorch_model.pt");
 
-if model_type == "t5":
-    if ddev == "cuda":
-        model = model.eval().cuda();
-    else:
-        model = model.eval();
+model, tokenizer = amplify.AMPLIFY.load(checkpoint_file, config_path);
+
+predictor = amplify.inference.Predictor(model, tokenizer, device=ddev)
+
 
 if not os.path.exists(outdir):
     os.mkdir(outdir);
@@ -150,6 +141,7 @@ def merge_representations(replist_,crop_length,cut_length):
     
     return values/counter[:,None];
 
+
 """
 デバッグ用
 crop_length = 600; # esm に渡す文字列の最大長
@@ -189,7 +181,6 @@ format_string = None;
 replen = None;
 seqcount = 0;
 while len(fass) > 0 or len(remained) > 0:
-
     while len(data) < batch_size:
         if len(remained) == 0:
             break;
@@ -213,48 +204,26 @@ while len(fass) > 0 or len(remained) > 0:
                 remained.append([
                     fragmentname,seqq
                 ]);
+    
 
     print("remained","fragment:",len(remained),"full:",len(fass));
-    
-    sequence_examples = [];
-    sequence_names = [];
-    sequence_length = [];
-    for dd in list(data):
-        sequence_examples.append(
-           " ".join(list(dd[1]))
-        );
-        sequence_length.append(len(dd[1]));
-        sequence_names.append(dd[0]);
 
-    if model_type == 't5':
-        ids = tokenizer(sequence_examples, add_special_tokens=True, padding="longest")
-        input_ids = torch.tensor(ids['input_ids']).to(ddev)
-        attention_mask = torch.tensor(ids['attention_mask']).to(ddev)
-    else:
-        ids = tokenizer.batch_encode_plus(sequence_examples, add_special_tokens=True, padding=True, return_tensors="tf")
-        input_ids = ids['input_ids']
-        attention_mask = ids['attention_mask']
-
+    assert len(data) == 1;
+    fragmentname = data[0][0];
+    fragmentseq = data[0][1];
     data.clear();
-    if model_type == "t5":
-        with torch.no_grad():
-            embedding_repr = model(input_ids=input_ids, attention_mask=attention_mask);
-    else:
-        embedding_repr = model(input_ids=input_ids, attention_mask=attention_mask);
-        
-    # Generate per-sequence representations via averaging
-    # NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
-    for i, tokens_len in enumerate(sequence_length):
-        mat = re.search(r"(.+)##([^#]+)$",sequence_names[i]);
-        assert mat is not None;
-        sname = mat.group(1);
-        if model_type == 't5':
-            seq_fragment[sname][sequence_names[i]][1] = copy.deepcopy(embedding_repr.last_hidden_state[i, 0 : tokens_len].to("cpu").numpy());
-        else:
-            seq_fragment[sname][sequence_names[i]][1] = np.array(embedding_repr[0][i, 0 : tokens_len]);
+    sequence_embedding = predictor.embed(fragmentseq);
 
-    del embedding_repr;
-    
+    mat = re.search(r"(.+)##([^#]+)$",fragmentname);
+    assert mat is not None;
+    sname = mat.group(1);
+
+    assert sequence_embedding.shape[0] == len(fragmentseq);
+    assert len(sequence_embedding.shape) == 2;
+    if sname not in seq_fragment:
+        print(seq_fragment.keys());
+    seq_fragment[sname][fragmentname][1] = copy.deepcopy(sequence_embedding);
+
     completed = [];
     for seqname in list(seq_fragment.keys()):
         flag = True;
@@ -311,4 +280,3 @@ assert len(seq_fragment) == 0;
 assert len(data) == 0;
 assert len(remained) == 0;
 assert len(fass) == 0;
-
