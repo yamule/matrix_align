@@ -1,5 +1,0 @@
-None
-Traceback (most recent call last):
-  File "/mnt/data0/GMalign/matrix_align/scripts/search_benchmark/all_vs_all.py", line 22, in <module>
-    raise Exception();
-Exception

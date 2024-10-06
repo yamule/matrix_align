@@ -169,13 +169,13 @@ with open(houtname,"wt") as fout:
         fout.write("\t".join(name_desc[ii])+"\t"+"\t".join(["{:.7f}".format(x) for x in allvalues[ii].tolist()])+"\n");
 
 def dot_product(a,b):
-    assert len(a.shape) == 1;
-    assert len(b.shape) == 1;
+    assert len(a.shape) == 2;
+    assert len(b.shape) == 2;
     return (a*b).sum();
 
 def cos_sim(a,b):
-    assert len(a.shape) == 1;
-    assert len(b.shape) == 1;
+    assert len(a.shape) == 2;
+    assert len(b.shape) == 2;
     anorm = np.sqrt((a*a).sum());
     bnorm = np.sqrt((b*b).sum());
     if anorm == 0 or bnorm == 0:
@@ -183,24 +183,26 @@ def cos_sim(a,b):
     return ((a/anorm)*(b/bnorm)).sum();
 
 def euc_dist(a,b):
-    assert len(a.shape) == 1;
-    assert len(b.shape) == 1;
+    assert len(a.shape) == 2;
+    assert len(b.shape) == 2;
     c = a-b;
     return np.sqrt((c*c).sum());
 
 def euc_dist_norm(a,b):
-    assert len(a.shape) == 1;
-    assert len(b.shape) == 1;
+    assert len(a.shape) == 2;
+    assert len(b.shape) == 2;
     anorm = np.sqrt((a*a).sum());
     bnorm = np.sqrt((b*b).sum());
     c = (a/anorm)-(b/bnorm);
     return np.sqrt((c*c).sum());
 
-def correl(a,b):
+
+def correl_(a,b):
     assert len(a.shape) == 1;
     assert len(b.shape) == 1;
-    return np.corrcoef(a,b)[0,1];
+    return torch.corrcoef(a,b)[0,1];
 
+かきさし
 all_results = [];
 for ii in range(sample_counter):
     query_name = name_desc[ii][0];

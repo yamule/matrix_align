@@ -54,9 +54,9 @@ use_half = args.use_half
 model, alphabet = esm.pretrained.load_model_and_alphabet(model_path)
 if ddev == "cuda":
     if use_half:
-        model = model.eval().cuda();
-    else:
         model = model.half().eval().cuda();
+    else:
+        model = model.eval().cuda();
 else:
     model = model.eval();
 if not os.path.exists(outdir):
@@ -219,10 +219,9 @@ while len(fass) > 0 or len(remained) > 0:
     batch_labels, batch_strs, batch_tokens = batch_converter(data)
     batch_lens = (batch_tokens != alphabet.padding_idx).sum(1)
     data.clear();
-    if use_half:
-        batch_tokens = torch.utils._pytree.tree_map(lambda x:x.to(torch.float16).to(ddev),batch_tokens);
-    else:
-        batch_tokens = torch.utils._pytree.tree_map(lambda x:x.to(ddev),batch_tokens);
+
+    batch_tokens = torch.utils._pytree.tree_map(lambda x:x.to(ddev),batch_tokens);
+
     with torch.no_grad():
         results = model(batch_tokens, repr_layers=[target_layer], return_contacts=False);
     token_representations = results["representations"][target_layer];
