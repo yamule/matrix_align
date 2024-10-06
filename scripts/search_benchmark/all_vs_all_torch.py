@@ -236,7 +236,8 @@ def cos_sim(a,b):
     bmask = bnorm > 0.0;
     anorm = torch.where(amask, anorm, EPSILON_TENSOR);
     bnorm = torch.where(bmask, bnorm,EPSILON_TENSOR);
-    return torch.where(amask*bmask,((a/anorm)*(b/bnorm)).sum(dim=-1), torch.tensor(0.0, dtype=torch.float32, device=ddev));
+    ret =  torch.where(torch.squeeze(amask*bmask,dim=-1),((a/anorm)*(b/bnorm)).sum(dim=-1), torch.tensor(0.0, dtype=torch.float32, device=ddev));
+    return ret;
 
 def euc_dist(a,b):
     assert len(a.shape) == 2;
@@ -288,14 +289,14 @@ for (stag,allvalues) in [("average",allvalues_average),("max",allvalues_max),("m
             end_index = min((jj+1)*batch_size, sample_counter);
             arr_j = allvalues[jj*batch_size:end_index];
             current_siz = arr_j.shape[0];
-            for tag,func in list(funcs):
+            for tag,func, _  in list(funcs):
                 with torch.no_grad():
                     batch_res = func(arr_i_expanded[:current_siz],arr_j).detach().cpu().tolist();
                 for kkk in range(current_siz):
                     globalindex = jj*batch_size+kkk;
                     if globalindex == ii:
                         continue;
-                    res[tag].append((globalindex,batch_res[kkk]));
+                    res[tag].append((globalindex,float(batch_res[kkk])));
 
         for tag,func,reverser in list(funcs):
             outname = os.path.join(outdir,"res_"+str(ii)+"."+stag+"."+tag+".dat");
