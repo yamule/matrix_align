@@ -26,6 +26,7 @@ parser.add_argument("--batch_size",required=False,default=20,type=int) ;
 parser.add_argument("--unbiased_global_stats",required=False,default=False,type=check_bool) ;
 
 args = parser.parse_args();
+print(args);
 
 targetdir = args.targetdir;
 global_per_channel_normalization = args.global_per_channel_normalization;
