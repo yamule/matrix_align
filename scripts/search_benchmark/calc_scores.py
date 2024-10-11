@@ -24,8 +24,12 @@ for aa in list(sorted(os.listdir(targetdir))):
 
     if not aa.endswith("dat.gz"):
         continue;
-    ptt = re.split(r"\.",aa); # <スコアの種類>.dat.gz というファイル名規則になっている想定
-    stype = ptt[-3];
+    ptt = re.split(r"\.",aa); # .<max, average, min>.<スコアの種類>.dat.gz というファイル名規則になっている想定
+    assert len(ptt) == 5;
+    stype = ptt[-4]+"."+ptt[-3];
+    
+    #print(aa,stype);
+    #raise Exception();
 
     if stype not in allfiles:
         allfiles[stype] = [];
@@ -70,6 +74,14 @@ for score_type in list(sorted(allfiles.keys())):
     g2_score_hit10 = copy.deepcopy(group_2_orig);
     g3_score_hit10 = copy.deepcopy(group_3_orig);
 
+    g1_score_roc = copy.deepcopy(group_1_orig);
+    g2_score_roc = copy.deepcopy(group_2_orig);
+    g3_score_roc = copy.deepcopy(group_3_orig);
+
+    g1_score_pr_roc = copy.deepcopy(group_1_orig);
+    g2_score_pr_roc = copy.deepcopy(group_2_orig);
+    g3_score_pr_roc = copy.deepcopy(group_3_orig);
+
 
     higher_is_better = "higher_is_better";
     for ff in list(allfiles[score_type]):
@@ -96,6 +108,7 @@ for score_type in list(sorted(allfiles.keys())):
             fpcount_g1 = 0;
             fpcount_g2 = 0;
             fpcount_g3 = 0;
+
             targetscores_ = [];
             for pii in range(1,len(alllines)):
                 ptt = re.split(r"[\s]+",alllines[pii]); # name[\t]groupid[\t]score となっている想定。
@@ -142,10 +155,124 @@ for score_type in list(sorted(allfiles.keys())):
                     if fpcount_g3 == 10:
                         g3_fp10 = tpcount_g3;
 
+
+            # 全 TP, FP を数えたので ROC-AUC を計算する
+            roc_g1 = 0;
+            roc_g2 = 0;
+            roc_g3 = 0;
+
+            tp_current_g1 = 0;
+            fp_current_g1 = 0;
+            tp_current_g2 = 0;
+            fp_current_g2 = 0;
+            tp_current_g3 = 0;
+            fp_current_g3 = 0;
+
+            tp_prev_g1 = 0;
+            fp_prev_g1 = 0;
+            tp_prev_g2 = 0;
+            fp_prev_g2 = 0;
+            tp_prev_g3 = 0;
+            fp_prev_g3 = 0;
+
+            for ptt in list(targetscores):
+                if ptt[0] == name:
+                    continue;
+                ############# 上位グループが同じでも FP とみなす。
+                bg1,bg2,bg3 = get_groupids(ptt[1]);
+
+                if bg1 == g1:
+                    tp_current_g1 += 1;
+                    continue;
+                else:
+                    fp_current_g1 += 1;
+                    roc_g1 += (tp_prev_g1+tp_current_g1)/float(fpcount_g1)/tpcount_g1/2.0;
+                    fp_prev_g1 = fp_current_g1;
+                    tp_prev_g1 = tp_current_g1;
+        
+                if bg2 == g2:
+                    tp_current_g2 += 1;
+                    continue;
+                else:
+                    fp_current_g2 += 1;
+                    roc_g2 += (tp_prev_g2+tp_current_g2)/float(fpcount_g2)/tpcount_g2/2.0;
+                    fp_prev_g2 = fp_current_g2;
+                    tp_prev_g2 = tp_current_g2;
+        
+                if bg3 == g3:
+                    tp_current_g3 += 1;
+                else:
+                    fp_current_g3 += 1;
+                    roc_g3 += (tp_prev_g3+tp_current_g3)/float(fpcount_g3)/tpcount_g3/2.0;
+                    fp_prev_g3 = fp_current_g3;
+                    tp_prev_g3 = tp_current_g3;
+
+            # pr_roc を計算する
+            pr_roc_g1 = 0;
+            pr_roc_g2 = 0;
+            pr_roc_g3 = 0;
+
+            tp_current_g1 = 0;
+            fp_current_g1 = 0;
+            tp_current_g2 = 0;
+            fp_current_g2 = 0;
+            tp_current_g3 = 0;
+            fp_current_g3 = 0;
+
+            tp_prev_g1 = 0;
+            fp_prev_g1 = 0;
+            tp_prev_g2 = 0;
+            fp_prev_g2 = 0;
+            tp_prev_g3 = 0;
+            fp_prev_g3 = 0;
+
+            for ptt in list(targetscores):
+                if ptt[0] == name:
+                    continue;
+                ############# 上位グループが同じでも FP とみなす。
+                bg1,bg2,bg3 = get_groupids(ptt[1]);
+
+                if bg1 == g1:
+                    tp_current_g1 += 1;
+                    pprev = tp_prev_g1/(tp_prev_g1+fp_prev_g1);
+                    pcurrent = tp_current_g1/float(tp_current_g1+fp_current_g1);
+                    rp_roc_g1 += (pprev+pcurrent)/float(tpcount_g1)/2.0;
+                    tp_prev_g1 = tp_current_g1;
+                    fp_prev_g1 = fp_current_g1;
+                    continue;
+                else:
+                    fp_current_g1 += 1;
+                    
+        
+                if bg2 == g2:
+                    tp_current_g2 += 1;
+                    pprev = tp_prev_g2/(tp_prev_g2+fp_prev_g2);
+                    pcurrent = tp_current_g2/float(tp_current_g2+fp_current_g2);
+                    rp_roc_g2 += (pprev+pcurrent)/float(tpcount_g2)/2.0;
+                    tp_prev_g2 = tp_current_g2;
+                    fp_prev_g2 = fp_current_g2;
+                    continue;
+                else:
+                    fp_current_g2 += 1;
+        
+                if bg3 == g3:
+                    tp_current_g3 += 1;
+                    pprev = tp_prev_g3/(tp_prev_g3+fp_prev_g3);
+                    pcurrent = tp_current_g3/(tp_current_g3+fp_current_g3);
+                    rp_roc_g3 += (pprev+pcurrent)/float(tpcount_g3)/2.0;
+                    tp_prev_g3 = tp_current_g3;
+                    fp_prev_g3 = fp_current_g3;
+                else:
+                    fp_current_g3 += 1;
+                    
             if tpcount_g1 > 0:
                 g1_count[g1] += 1;
                 g1_score_fp1[g1] += g1_fp1/float(tpcount_g1);
                 g1_score_fp10[g1] += g1_fp10/float(tpcount_g1);
+
+                g1_score_roc[g1] += roc_g1;
+                g1_score_pr_roc[g1] += pr_roc_g1;
+                
                 if g1_fp1 > 0:
                     g1_score_hit1[g1] += 1.0;
                 if g1_fp10 > 0:
@@ -155,6 +282,10 @@ for score_type in list(sorted(allfiles.keys())):
                 g2_count[g2] += 1;
                 g2_score_fp1[g2] += g2_fp1/float(tpcount_g2);
                 g2_score_fp10[g2] += g2_fp10/float(tpcount_g2);
+                
+                g2_score_roc[g2] += roc_g2;
+                g2_score_pr_roc[g2] += pr_roc_g2;
+                
                 if g2_fp1 > 0:
                     g2_score_hit1[g2] += 1.0;
                 if g2_fp10 > 0:
@@ -166,11 +297,14 @@ for score_type in list(sorted(allfiles.keys())):
                 g3_score_fp1[g3] += g3_fp1/float(tpcount_g3);
                 g3_score_fp10[g3] += g3_fp10/float(tpcount_g3);
 
+                g3_score_roc[g3] += roc_g3;
+                g3_score_pr_roc[g3] += pr_roc_g3;
+                
                 if g3_fp1 > 0:
                     g3_score_hit1[g3] += 1.0;
                 if g3_fp10 > 0:
                     g3_score_hit10[g3] += 1.0;
-                    
+            
     print("=========");
     num_queries  = {};
     score_sum_fp1 = {};
@@ -179,10 +313,14 @@ for score_type in list(sorted(allfiles.keys())):
     # Top1 or 10 に TP が含まれていたかどうか https://academic.oup.com/bioinformaticsadvances/article/4/1/vbae119/7735315
     score_sum_hit1 = {}; 
     score_sum_hit10 = {}; 
-    for (tag,count,score_fp1,score_fp10,score_hit1,score_hit10) in [
-        ("g1",g1_count,g1_score_fp1,g1_score_fp10,g1_score_hit1,g1_score_hit10),
-        ("g2",g2_count,g2_score_fp1,g2_score_fp10,g2_score_hit1,g2_score_hit10),
-        ("g3",g3_count,g3_score_fp1,g3_score_fp10,g3_score_hit1,g3_score_hit10),
+
+    score_sum_roc = {}; 
+    score_sum_pr_roc = {}; 
+
+    for (tag,count,score_fp1,score_fp10,score_hit1,score_hit10,score_roc,score_pr_roc) in [
+        ("g1",g1_count,g1_score_fp1,g1_score_fp10,g1_score_hit1,g1_score_hit10,g1_score_roc,g1_score_pr_roc),
+        ("g2",g2_count,g2_score_fp1,g2_score_fp10,g2_score_hit1,g2_score_hit10,g2_score_roc,g2_score_pr_roc),
+        ("g3",g3_count,g3_score_fp1,g3_score_fp10,g3_score_hit1,g3_score_hit10,g3_score_roc,g3_score_pr_roc),
     ]:
         counted_class = 0;
         num_queries[tag]  = 0;
@@ -194,21 +332,32 @@ for score_type in list(sorted(allfiles.keys())):
                 score_fp10[gg] /= count[gg];
                 score_hit1[gg] /= count[gg];
                 score_hit10[gg] /= count[gg];
+                score_roc[gg] /= count[gg];
+                score_pr_roc[gg] /= count[gg];
+                
         score_sum_fp1[tag] = 0;
         score_sum_fp10[tag] = 0;
         score_sum_hit1[tag] = 0;
         score_sum_hit10[tag] = 0;
+        score_sum_roc[tag] = 0;
+        score_sum_pr_roc[tag] = 0;
         for gg in list(count.keys()):
             if count[gg] > 0: # 全クラス数で割って更に平均化する
                 score_fp1[gg] /= counted_class;
                 score_fp10[gg] /= counted_class;
                 score_hit1[gg] /= counted_class;
                 score_hit10[gg] /= counted_class;
+                score_roc[gg] /= counted_class;
+                score_pr_roc[gg] /= counted_class;
                 
                 score_sum_fp1[tag] += score_fp1[gg];
                 score_sum_fp10[tag] += score_fp10[gg];
                 score_sum_hit1[tag] += score_hit1[gg];
                 score_sum_hit10[tag] += score_hit10[gg];
+                score_sum_roc[tag] += score_hit1[gg];
+                score_sum_pr_roc[tag] += score_hit10[gg];
+
+
     def strline(*argg):
         return "\t".join([str(x) for x in argg]);
 
@@ -224,7 +373,15 @@ for score_type in list(sorted(allfiles.keys())):
     print(strline(targetdir,score_type,higher_is_better,"g3","hit_at_1","count:",num_queries["g3"],"score:",score_sum_hit1["g3"]));
     print(strline(targetdir,score_type,higher_is_better,"g3","hit_at_10","count:",num_queries["g3"],"score:",score_sum_hit10["g3"]));
 
-
+    print(strline(targetdir,score_type,higher_is_better,"g1","roc","count:",num_queries["g1"],"score:",score_sum_roc["g1"]));
+    print(strline(targetdir,score_type,higher_is_better,"g2","roc","count:",num_queries["g2"],"score:",score_sum_roc["g2"]));
+    print(strline(targetdir,score_type,higher_is_better,"g3","roc","count:",num_queries["g3"],"score:",score_sum_roc["g3"]));
+    
+    print(strline(targetdir,score_type,higher_is_better,"g1","pr_roc","count:",num_queries["g1"],"score:",score_sum_pr_roc["g1"]));
+    print(strline(targetdir,score_type,higher_is_better,"g2","pr_roc","count:",num_queries["g2"],"score:",score_sum_pr_roc["g2"]));
+    print(strline(targetdir,score_type,higher_is_better,"g3","pr_roc","count:",num_queries["g3"],"score:",score_sum_pr_roc["g3"]));
+    
+    
 
 """
 一個しかないものについては削除する

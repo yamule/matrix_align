@@ -108,11 +108,12 @@ if use_unbiased_global_stats:
     statsfile = os.path.join(outdir,"stats.unbiased.dat");
 else:
     statsfile = os.path.join(outdir,"stats.dat");
+
+vsiz = None;
 if global_per_channel_normalization:
     ssum = [];
     mmean = [];
     vvar = [];
-    vsiz = None;
     headseq = None;
     valcount = 0;
     for aa in list(allfiles):
@@ -176,8 +177,6 @@ for ii in range(numfiles):
     c = load_mat(aa);
     if vsiz is None:
         vsiz = len(c[0]["value"][0]);
-    else:
-        assert len(c[0]["value"][0]) == vsiz, "Inconsistent value sizes detected."+aa+"\n";
 
     for cc in list(c):
         name_desc.append(
@@ -188,6 +187,7 @@ for ii in range(numfiles):
         mmax = [None for jj in range(vsiz)];
         mmin = [None for jj in range(vsiz)];
         for vv in list(cc["value"]):
+            assert len(vv) == vsiz, "Inconsistent value sizes detected."+aa+"\n";
             for vii in range(vsiz):
                 
                 if stats is not None:
