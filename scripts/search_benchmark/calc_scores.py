@@ -325,12 +325,10 @@ for score_type in list(sorted(allfiles.keys())):
                         g3_fp10 = tpcount_g3;
 
 
-            # 全 TP, FP を数えたので ROC-AUC を計算する
             roc_g1 = calc_roc_auc(allscores_g1,reverse=higher_is_better);
             roc_g2 = calc_roc_auc(allscores_g2,reverse=higher_is_better);
             roc_g3 = calc_roc_auc(allscores_g3,reverse=higher_is_better);
 
-            # ave_prec を計算する
             ave_prec_g1 = calc_average_precision_score(allscores_g1,reverse=higher_is_better);
             ave_prec_g2 = calc_average_precision_score(allscores_g2,reverse=higher_is_better);
             ave_prec_g3 = calc_average_precision_score(allscores_g3,reverse=higher_is_better);

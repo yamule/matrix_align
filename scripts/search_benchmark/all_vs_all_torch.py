@@ -82,7 +82,7 @@ def load_mat(infile):
                 current["seq"] = [];
                 current["value"] = [];
                 continue;
-            ptt = re.split(r"[\s]",ll);
+            ptt = re.split(r"[\s]+",ll);
             assert len(ptt[0]) == 1, "Unexpected line "+ll 
             current["seq"].append(ptt[0]);
             current["value"].append(
@@ -168,6 +168,11 @@ if global_per_channel_normalization:
 allvalues_average = [];
 allvalues_max = [];
 allvalues_min = [];
+
+allvalues_median = [];
+allvalues_05 = [];
+allvalues_95 = [];
+
 numfiles = len(allfiles);
 name_desc = [];
 
@@ -183,13 +188,11 @@ for ii in range(numfiles):
             (cc["name"],re.split(r"[\s]+",cc["desc"])[0]) # 最初のカラムに Family ID が入っている想定
         );
         sample_counter += 1;
-        ssum = [0.0 for jj in range(vsiz)];
-        mmax = [None for jj in range(vsiz)];
-        mmin = [None for jj in range(vsiz)];
+        values_all = [[] for jj in range(vsiz)];
+        rownum = len(cc["value"])
         for vv in list(cc["value"]):
             assert len(vv) == vsiz, "Inconsistent value sizes detected."+aa+"\n";
             for vii in range(vsiz):
-                
                 if stats is not None:
                     if stats["std"][vii] == 0:
                         xvalue = vv[vii]-stats["mean"][vii];
@@ -197,23 +200,46 @@ for ii in range(numfiles):
                         xvalue = (vv[vii]-stats["mean"][vii])/stats["std"][vii];
                 else:
                     xvalue = vv[vii];
-                
-                ssum[vii] += xvalue;
-                if mmax[vii] is None:
-                    mmax[vii] = xvalue;
-                    mmin[vii] = xvalue;
-                else:
-                    mmax[vii] = max([mmax[vii],xvalue]);
-                    mmin[vii] = min([mmin[vii],xvalue]);
+                values_all[vii].append(xvalue);
 
+        ave = [];
+        mmax = [];
+        mmin = [];
+        v05 = [];
+        v95 = [];
+        mmed = [];
         for vii in range(vsiz):
-            ssum[vii] /= len(cc["value"]);
-        allvalues_average.append(ssum);
+            values_all[vii] = list(sorted(values_all[vii]));
+            ave.append(
+                sum(values_all[vii])/float(rownum)
+            );
+
+            mmax.append(values_all[vii][-1]);
+            mmin.append(values_all[vii][0]);
+            values_array = np.array(values_all[vii]);
+            mmed.append(np.median(values_array));
+            v05.append(np.percentile(values_array, 5));
+            v95.append(np.percentile(values_array, 95));
+            del values_array;
+        del values_all;
+
+        allvalues_average.append(ave);
         allvalues_max.append(mmax);
         allvalues_min.append(mmin);
 
+        allvalues_median.append(mmed);
+        allvalues_05.append(v05);
+        allvalues_95.append(v95);
 
-for (stag,val) in [("average",allvalues_average),("max",allvalues_max),("min",allvalues_min)]:
+
+for (stag,val) in [
+    ("average",allvalues_average)
+    ,("max",allvalues_max)
+    ,("min",allvalues_min)
+    ,("v05",allvalues_05)
+    ,("v95",allvalues_95)
+    ,("median",allvalues_median)
+    ]:
     houtname = os.path.join(outdir,stag+".dat");
     with open(houtname,"wt") as fout:
         for ii in range(sample_counter):
@@ -222,6 +248,10 @@ for (stag,val) in [("average",allvalues_average),("max",allvalues_max),("min",al
 allvalues_average = torch.tensor(allvalues_average,dtype=torch.float32,device=ddev);
 allvalues_max = torch.tensor(allvalues_max,dtype=torch.float32,device=ddev);
 allvalues_min = torch.tensor(allvalues_min,dtype=torch.float32,device=ddev);
+
+allvalues_05 = torch.tensor(allvalues_05,dtype=torch.float32,device=ddev);
+allvalues_95 = torch.tensor(allvalues_95,dtype=torch.float32,device=ddev);
+allvalues_median = torch.tensor(allvalues_median,dtype=torch.float32,device=ddev);
 
 def dot_product(a,b):
     assert len(a.shape) == 2;
@@ -233,6 +263,10 @@ def cos_sim(a,b):
     assert len(b.shape) == 2;
     anorm = torch.sqrt((a*a).sum(dim=-1, keepdim=True));
     bnorm = torch.sqrt((b*b).sum(dim=-1, keepdim=True));
+
+    if (anorm < EPSILON).any() or (bnorm < EPSILON).any():
+        sys.stderr.write("Warning: Extremely low values were found in cos_sim.\n"+str(a)+"\n"+str(b)+"\n");
+
     amask = anorm > 0.0;
     bmask = bnorm > 0.0;
     anorm = torch.where(amask, anorm, EPSILON_TENSOR);
@@ -251,6 +285,10 @@ def euc_dist_norm(a,b):
     assert len(b.shape) == 2;
     anorm = torch.sqrt((a*a).sum(dim=-1, keepdim=True));
     bnorm = torch.sqrt((b*b).sum(dim=-1, keepdim=True));
+    
+    if (anorm < EPSILON).any() or (bnorm < EPSILON).any():
+        sys.stderr.write("Warning: Extremely low values were found in euc_dist_norm.\n"+str(a)+"\n"+str(b)+"\n");
+
     anorm = torch.where(anorm == 0.0, EPSILON_TENSOR, anorm);
     bnorm = torch.where(bnorm == 0.0, EPSILON_TENSOR, bnorm);
     c = (a/anorm)-(b/bnorm);
@@ -265,12 +303,22 @@ def correl(a, b):
     b_centered = b - mean_b;
     numerator = (a_centered * b_centered).sum(dim=1);
     denominator = torch.sqrt((a_centered ** 2).sum(dim=1) * (b_centered ** 2).sum(dim=1));
+    
+    if (denominator < EPSILON).any():
+        sys.stderr.write("Warning: Extremely low values were found in correl.\n"+str(a)+"\n"+str(b)+"\n");
+
     zero_denominator = denominator == 0;
     denominator = torch.where(zero_denominator, EPSILON_TENSOR, denominator);
     return torch.where(zero_denominator, torch.tensor(0.0, dtype=torch.float32, device=ddev),  numerator / denominator);
 
-    
-for (stag,allvalues) in [("average",allvalues_average),("max",allvalues_max),("min",allvalues_min)]:
+for (stag,allvalues) in [
+    ("average",allvalues_average)
+    ,("max",allvalues_max)
+    ,("min",allvalues_min)
+    ,("v05",allvalues_05)
+    ,("v95",allvalues_95)
+    ,("median",allvalues_median)
+    ]:
     for ii in range(sample_counter):
         query_name = name_desc[ii][0];
         query_desc = name_desc[ii][1];
