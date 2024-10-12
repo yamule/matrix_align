@@ -24,6 +24,7 @@ parser.add_argument("--global_per_channel_normalization",required=True,type=chec
 parser.add_argument("--pigz",required=False,default=True,type=check_bool) ;
 parser.add_argument("--batch_size",required=False,default=20,type=int) ;
 parser.add_argument("--unbiased_global_stats",required=False,default=False,type=check_bool) ;
+parser.add_argument("--fragment_length",required=False,default=99999,type=int) ;
 
 args = parser.parse_args();
 print(args);
@@ -35,6 +36,7 @@ use_pigz = args.pigz;
 use_unbiased_global_stats = args.unbiased_global_stats;
 batch_size=args.batch_size;
 ddev = torch.device(args.device);
+fragment_length = args.fragment_length;
 
 EPSILON_TENSOR=torch.tensor(EPSILON, dtype=torch.float32, device=ddev)
 
@@ -46,6 +48,8 @@ if not torch.cuda.is_available() and ddev.type == 'cuda':
 
 if not os.path.exists(outdir):
     os.mkdir(outdir);
+else:
+    raise Exception("Please remove "+outdir);
 
 def load_mat(infile):
     ret = [];
@@ -176,7 +180,8 @@ allvalues_95 = [];
 numfiles = len(allfiles);
 name_desc = [];
 
-sample_counter = 0;
+fragment_counter = 0;
+values_nameindex_map = [];
 for ii in range(numfiles):
     aa = allfiles[ii];
     c = load_mat(aa);
@@ -184,54 +189,71 @@ for ii in range(numfiles):
         vsiz = len(c[0]["value"][0]);
 
     for cc in list(c):
+        nameindex = len(name_desc);
         name_desc.append(
             (cc["name"],re.split(r"[\s]+",cc["desc"])[0]) # 最初のカラムに Family ID が入っている想定
         );
-        sample_counter += 1;
-        values_all = [[] for jj in range(vsiz)];
-        rownum = len(cc["value"])
-        for vv in list(cc["value"]):
-            assert len(vv) == vsiz, "Inconsistent value sizes detected."+aa+"\n";
-            for vii in range(vsiz):
-                if stats is not None:
-                    if stats["std"][vii] == 0:
-                        xvalue = vv[vii]-stats["mean"][vii];
+        st = 0;
+        sequence_length = len(cc["value"]);
+        while True:
+            if st == sequence_length:
+                break;
+            fragment_counter += 1;
+            en = st+fragment_length;
+            if en > sequence_length:
+                en = sequence_length;
+                st = max([0,en - fragment_length]);
+                
+            values_all = [[] for jj in range(vsiz)];
+            for spos in range(st,en):
+                vv = cc["value"][spos]
+                assert len(vv) == vsiz, "Inconsistent value sizes detected."+aa+"\n";
+                for vii in range(vsiz):
+                    if stats is not None:
+                        if stats["std"][vii] == 0:
+                            xvalue = vv[vii]-stats["mean"][vii];
+                        else:
+                            xvalue = (vv[vii]-stats["mean"][vii])/stats["std"][vii];
                     else:
-                        xvalue = (vv[vii]-stats["mean"][vii])/stats["std"][vii];
-                else:
-                    xvalue = vv[vii];
-                values_all[vii].append(xvalue);
+                        xvalue = vv[vii];
+                    values_all[vii].append(xvalue);
 
-        ave = [];
-        mmax = [];
-        mmin = [];
-        v05 = [];
-        v95 = [];
-        mmed = [];
-        for vii in range(vsiz):
-            values_all[vii] = list(sorted(values_all[vii]));
-            ave.append(
-                sum(values_all[vii])/float(rownum)
-            );
+            ave = [];
+            mmax = [];
+            mmin = [];
+            v05 = [];
+            v95 = [];
+            mmed = [];
+            for vii in range(vsiz):
+                values_all[vii] = list(sorted(values_all[vii]));
+                ave.append(
+                    sum(values_all[vii])/float(len(values_all[vii]))
+                );
 
-            mmax.append(values_all[vii][-1]);
-            mmin.append(values_all[vii][0]);
-            values_array = np.array(values_all[vii]);
-            mmed.append(np.median(values_array));
-            v05.append(np.percentile(values_array, 5));
-            v95.append(np.percentile(values_array, 95));
-            del values_array;
-        del values_all;
+                mmax.append(values_all[vii][-1]);
+                mmin.append(values_all[vii][0]);
+                values_array = np.array(values_all[vii]);
+                mmed.append(np.median(values_array));
+                v05.append(np.percentile(values_array, 5));
+                v95.append(np.percentile(values_array, 95));
+                del values_array;
+            del values_all;
 
-        allvalues_average.append(ave);
-        allvalues_max.append(mmax);
-        allvalues_min.append(mmin);
+            allvalues_average.append(ave);
+            allvalues_max.append(mmax);
+            allvalues_min.append(mmin);
 
-        allvalues_median.append(mmed);
-        allvalues_05.append(v05);
-        allvalues_95.append(v95);
+            allvalues_median.append(mmed);
+            allvalues_05.append(v05);
+            allvalues_95.append(v95);
+            
+            values_nameindex_map.append([nameindex,st,False]);
+            
+            if en == sequence_length:
+                break;
+            st += fragment_length//2;
 
-
+        values_nameindex_map[-1][-1] = True;# 最後のフラグメントは True
 for (stag,val) in [
     ("average",allvalues_average)
     ,("max",allvalues_max)
@@ -242,8 +264,8 @@ for (stag,val) in [
     ]:
     houtname = os.path.join(outdir,stag+".dat");
     with open(houtname,"wt") as fout:
-        for ii in range(sample_counter):
-            fout.write("\t".join(name_desc[ii])+"\t"+"\t".join(["{:.7f}".format(float(x)) for x in val[ii]])+"\n");
+        for ii in range(fragment_counter):
+            fout.write("\t".join(name_desc[values_nameindex_map[ii][0]])+"#"+str(values_nameindex_map[ii][1])+"\t"+"\t".join(["{:.7f}".format(float(x)) for x in val[ii]])+"\n");
 
 allvalues_average = torch.tensor(allvalues_average,dtype=torch.float32,device=ddev);
 allvalues_max = torch.tensor(allvalues_max,dtype=torch.float32,device=ddev);
@@ -319,23 +341,31 @@ for (stag,allvalues) in [
     ,("v95",allvalues_95)
     ,("median",allvalues_median)
     ]:
-    for ii in range(sample_counter):
-        query_name = name_desc[ii][0];
-        query_desc = name_desc[ii][1];
-        arr_i = allvalues[ii];
-        
-        funcs = [
-            ("dot",dot_product,True),("cos_sim",cos_sim,True),("euc_dist",euc_dist,False),("euc_dist_norm",euc_dist_norm,False),("correl",correl,True)
-        ];
-        res = {};
-        for ff in list(funcs):
-            res[ff[0]] = [];
+    
+    funcs = [
+        ("dot",dot_product,True),("cos_sim",cos_sim,True),("euc_dist",euc_dist,False),("euc_dist_norm",euc_dist_norm,False),("correl",correl,True)
+    ];
+    res = {};
+    for ff in list(funcs):
+        res[ff[0]] = [];
+    prev_index = -1;
+    for fragmentindex in range(fragment_counter):
+        currenttargetindex = values_nameindex_map[fragmentindex][0];
 
-        num_batches = math.ceil(sample_counter/batch_size);
+        if currenttargetindex != prev_index:
+            # 初期化されていない場合エラーを発生させて終了する
+            assert len(res[funcs[0][0]]) == 0, "Error in code.";
+        prev_index = currenttargetindex;
+
+        query_name = name_desc[currenttargetindex][0];
+        query_desc = name_desc[currenttargetindex][1];
+        arr_i = allvalues[fragmentindex];
+        
+        num_batches = math.ceil(fragment_counter/batch_size);
         arr_i_expanded = arr_i.unsqueeze(0).repeat(batch_size, 1);
 
         for jj in range(num_batches):
-            end_index = min((jj+1)*batch_size, sample_counter);
+            end_index = min((jj+1)*batch_size, fragment_counter);
             arr_j = allvalues[jj*batch_size:end_index];
             current_siz = arr_j.shape[0];
             for tag,func, _  in list(funcs):
@@ -343,16 +373,31 @@ for (stag,allvalues) in [
                     batch_res = func(arr_i_expanded[:current_siz],arr_j).detach().cpu().tolist();
                 for kkk in range(current_siz):
                     globalindex = jj*batch_size+kkk;
-                    if globalindex == ii:
+                    if values_nameindex_map[globalindex][0] == currenttargetindex:
                         continue;
-                    res[tag].append((globalindex,float(batch_res[kkk])));
+                    res[tag].append((values_nameindex_map[globalindex][0],float(batch_res[kkk])));
+        if values_nameindex_map[fragmentindex][-1]:
+            for tag,func,reverser in list(funcs):
+                outname = os.path.join(outdir,"res_"+str(currenttargetindex)+"."+stag+"."+tag+".dat");
 
-        for tag,func,reverser in list(funcs):
-            outname = os.path.join(outdir,"res_"+str(ii)+"."+stag+"."+tag+".dat");
-            with open(outname,"wt") as fout:
-                fout.write(">"+query_name+" "+query_desc+"\n");
-                t = list(sorted(res[tag],key=lambda x:x[1],reverse=reverser));
-                for tt in list(t):
-                    fout.write("\t".join(name_desc[tt[0]])+"\t"+"{:.7f}".format(tt[1])+"\n");
-            if use_pigz:
-                subprocess.run(["pigz",outname],check=True);
+                assert not os.path.exists(outname),outname+" already exists!";
+
+                with open(outname,"wt") as fout:
+                    fout.write(">"+query_name+" "+query_desc+"\n");
+                    t = list(sorted(res[tag],key=lambda x:x[1],reverse=reverser));
+                    processed = {};
+                    for tt in list(t):
+                        sequenceindex = tt[0];
+                        if sequenceindex in processed:
+                            continue;
+                        assert sequenceindex != currenttargetindex;
+                        processed[sequenceindex] = 100;
+                        fout.write("\t".join(name_desc[sequenceindex])+"\t"+"{:.7f}".format(tt[1])+"\n");
+                if use_pigz:
+                    subprocess.run(["pigz",outname],check=True);
+            # 前の配列の全フラグメントが処理されたので初期化
+            res = {};
+            for ff in list(funcs):
+                res[ff[0]] = [];
+
+    assert values_nameindex_map[fragment_counter-1][-1],"???";
