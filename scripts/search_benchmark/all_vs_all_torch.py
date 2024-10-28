@@ -5,6 +5,7 @@ import subprocess;
 import torch;
 import math;
 import shutil;
+import gc;
 
 EPSILON = 1.0e-7;
 
@@ -24,7 +25,9 @@ parser.add_argument("--global_per_channel_normalization",required=True,type=chec
 parser.add_argument("--pigz",required=False,default=True,type=check_bool) ;
 parser.add_argument("--batch_size",required=False,default=20,type=int) ;
 parser.add_argument("--unbiased_global_stats",required=False,default=False,type=check_bool) ;
-parser.add_argument("--fragment_length",required=False,default=99999,type=int) ;
+# 名前の最後に %[0-9]+ という文字列がある場合、フラグメント化された Representation であると考えて
+# 検証時にグループ化されて検証される
+parser.add_argument("--check_fragment",required=False,default=True,type=check_bool) ; 
 
 args = parser.parse_args();
 print(args);
@@ -36,7 +39,7 @@ use_pigz = args.pigz;
 use_unbiased_global_stats = args.unbiased_global_stats;
 batch_size=args.batch_size;
 ddev = torch.device(args.device);
-fragment_length = args.fragment_length;
+check_fragment = args.check_fragment;
 
 EPSILON_TENSOR=torch.tensor(EPSILON, dtype=torch.float32, device=ddev)
 
@@ -90,7 +93,7 @@ def load_mat(infile):
             assert len(ptt[0]) == 1, "Unexpected line "+ll 
             current["seq"].append(ptt[0]);
             current["value"].append(
-                [float(xx) for xx in ptt[1:]]
+                torch.tensor([float(xx) for xx in ptt[1:]],dtype=torch.float32,device=ddev)
             );
 
         if current is not None:
@@ -127,48 +130,45 @@ if global_per_channel_normalization:
         if vsiz is None:
             vsiz = len(c[0]["value"][0]);
             headseq = c[0];
-            for _ in range(vsiz):
-                ssum.append(0);
-                mmean.append(0);
-                vvar.append(0);
+            ssum = torch.zeros((vsiz,),dtype=torch.float32,device=ddev)
         else:
             assert len(c[0]["value"][0]) == vsiz, "Inconsistent value sizes detected."+aa+"\n";
         for cc in c:
             for jj in range(len(cc["value"])):
                 valcount += 1;
                 assert vsiz == len(cc["value"][jj]),cc["name"]+" position "+str(jj)+" has different value length with "+headseq["name"] +"\n"+str(len(cc["value"][jj]))+" vs "+str(vsiz);
-                for ii in range(vsiz):
-                    ssum[ii] += cc["value"][jj][ii];
+                ssum += cc["value"][jj];
 
-    for ii in range(vsiz):
-        mmean[ii] = ssum[ii]/float(valcount);
-
+    
+    mmean = ssum/float(valcount);
+    vvar = torch.zeros_like(mmean);
     for aa in list(allfiles):
         c = load_mat(aa);
         for cc in c:
             for jj in range(len(cc["value"])):
-                for ii in range(vsiz):
-                    vvar[ii] += (mmean[ii]-cc["value"][jj][ii])*(mmean[ii]-cc["value"][jj][ii]);
-    sstd = [];
-    for ii in range(vsiz):
-        if use_unbiased_global_stats:
-            vvar[ii] /= valcount-1;
-        else:
-            vvar[ii] /= valcount;
-        sstd.append(
-            np.sqrt(vvar[ii])
-        );
+                vc = cc["value"][jj];
+                vvar += (mmean -vc)*(mmean-vc);
+    
+    if use_unbiased_global_stats:
+        vvar /= float(valcount-1);
+    else:
+        vvar /= float(valcount);
+
+    sstd = torch.sqrt(vvar);
+    with open(statsfile,"wt") as fout:
+        for ii in range(vsiz):
+            fout.write(
+                "index:\t{}\tvar:\t{:.7f}\tmean:\t{:.7f}\tcount:\t{}\n".format(ii,float(vvar[ii]),float(mmean[ii]),valcount)
+            );
+
+    for ii in range(sstd.shape[0]):
+        if sstd[ii] == 0: # stdev が 0 の場合、あとの処理で mean が引かれて全部 0 になるはず。
+            sstd[ii] = 1;
     stats = {
         "std":sstd,
         "var":vvar,
         "mean":mmean
     };
-    with open(statsfile,"wt") as fout:
-        for ii in range(vsiz):
-            fout.write(
-                "index:\t{}\tvar:\t{:.7f}\tmean:\t{:.7f}\tcount:\t{}\n".format(ii,vvar[ii],mmean[ii],valcount)
-            );
-
 allvalues_average = [];
 allvalues_max = [];
 allvalues_min = [];
@@ -181,7 +181,8 @@ numfiles = len(allfiles);
 name_desc = [];
 
 fragment_counter = 0;
-values_nameindex_map = [];
+basename_to_value = {};
+name_to_index = {};
 for ii in range(numfiles):
     aa = allfiles[ii];
     c = load_mat(aa);
@@ -189,91 +190,81 @@ for ii in range(numfiles):
         vsiz = len(c[0]["value"][0]);
 
     for cc in list(c):
-        nameindex = len(name_desc);
-        name_desc.append(
-            (cc["name"],re.split(r"[\s]+",cc["desc"])[0]) # 最初のカラムに Family ID が入っている想定
-        );
-        st = 0;
-        sequence_length = len(cc["value"]);
-        while True:
-            if st == sequence_length:
-                break;
-            fragment_counter += 1;
-            en = st+fragment_length;
-            if en > sequence_length:
-                en = sequence_length;
-                st = max([0,en - fragment_length]);
-                
-            values_all = [[] for jj in range(vsiz)];
-            for spos in range(st,en):
-                vv = cc["value"][spos]
-                assert len(vv) == vsiz, "Inconsistent value sizes detected."+aa+"\n";
-                for vii in range(vsiz):
-                    if stats is not None:
-                        if stats["std"][vii] == 0:
-                            xvalue = vv[vii]-stats["mean"][vii];
-                        else:
-                            xvalue = (vv[vii]-stats["mean"][vii])/stats["std"][vii];
-                    else:
-                        xvalue = vv[vii];
-                    values_all[vii].append(xvalue);
+        
+        basename = cc["name"];
+        fragmentindex = 0;
+        familyname = re.split(r"[\s]+",cc["desc"])[0]; # 最初のカラムに Family ID が入っている想定
+        if check_fragment:
+            mat = re.search(r"^'(.+)%[0-9]+$",cc["name"]);
+            if mat:
+                basename = mat.group(1);
+                fragmentindex = int(mat.group(2));
 
-            ave = [];
-            mmax = [];
-            mmin = [];
-            v05 = [];
-            v95 = [];
-            mmed = [];
-            for vii in range(vsiz):
-                values_all[vii] = list(sorted(values_all[vii]));
-                ave.append(
-                    sum(values_all[vii])/float(len(values_all[vii]))
-                );
+        if basename not in name_to_index:
+            basename_to_value[basename] = [];
+            nameindex = len(name_desc);
+            name_to_index[basename] = nameindex;
+            name_desc.append(
+                (basename,familyname) 
+            );
+        
+        assert name_desc[name_to_index[basename]][1] == familyname,cc["name"]+" "+cc["desc"]+"\n"+str(name_desc[name_to_index[basename]])+" ???";
+        values_all = [];
+        for spos in range(len(cc["value"])):
+            vv = cc["value"][spos]
+            assert len(vv) == vsiz, "Inconsistent value sizes detected."+aa+"\n";
+            if stats is not None:
+                assert (stats["std"] != 0.0).all(); # 0 の場合は 1 が入っており、mean を引いて 0 になるはず
+                xvalue = (vv-stats["mean"])/stats["std"];
+            else:
+                xvalue = vv;
+            values_all.append(xvalue);
+        values_all = torch.stack(values_all,dim=0);
+        values_all = torch.permute(values_all,(1,0));
 
-                mmax.append(values_all[vii][-1]);
-                mmin.append(values_all[vii][0]);
-                values_array = np.array(values_all[vii]);
-                mmed.append(np.median(values_array));
-                v05.append(np.percentile(values_array, 5));
-                v95.append(np.percentile(values_array, 95));
-                del values_array;
-            del values_all;
+        ave = [];
+        mmax = [];
+        mmin = [];
+        v05 = [];
+        v95 = [];
+        mmed = [];
+        qspan = torch.tensor([0.0,0.05,0.5,0.95,1.0],dtype=torch.float32,device=ddev);
+        for vii in range(vsiz):
+            ave.append(
+                values_all[ii].mean()
+            );
 
-            allvalues_average.append(ave);
-            allvalues_max.append(mmax);
-            allvalues_min.append(mmin);
 
-            allvalues_median.append(mmed);
-            allvalues_05.append(v05);
-            allvalues_95.append(v95);
-            
-            values_nameindex_map.append([nameindex,st,False]);
-            
-            if en == sequence_length:
-                break;
-            st += fragment_length//2;
+            qres = torch.quantile(input=values_all[vii], q=qspan);
+            mmin.append(float(qres[0]));
+            v05.append(float(qres[1]));
+            mmed.append(float(qres[2]));
+            v95.append(float(qres[3]));
+            mmax.append(float(qres[4]));
 
-        values_nameindex_map[-1][-1] = True;# 最後のフラグメントは True
-for (stag,val) in [
-    ("average",allvalues_average)
-    ,("max",allvalues_max)
-    ,("min",allvalues_min)
-    ,("v05",allvalues_05)
-    ,("v95",allvalues_95)
-    ,("median",allvalues_median)
-    ]:
-    houtname = os.path.join(outdir,stag+".dat");
-    with open(houtname,"wt") as fout:
-        for ii in range(fragment_counter):
-            fout.write("\t".join(name_desc[values_nameindex_map[ii][0]])+"#"+str(values_nameindex_map[ii][1])+"\t"+"\t".join(["{:.7f}".format(float(x)) for x in val[ii]])+"\n");
+        del values_all;
+        basename_to_value[basename].append([[nameindex,fragmentindex,False]
+        ,{"av":ave,"ma":mmax,"mi":mmin,"me":mmed,"5":v05,"95":v95}]);
+        
+tagkeys = ["av","ma","mi","me","5","95"];
+allvalues_source = {};
+for tt in list(tagkeys):
+    allvalues_source[tt] = [];
 
-allvalues_average = torch.tensor(allvalues_average,dtype=torch.float32,device=ddev);
-allvalues_max = torch.tensor(allvalues_max,dtype=torch.float32,device=ddev);
-allvalues_min = torch.tensor(allvalues_min,dtype=torch.float32,device=ddev);
+globalid_to_basedata = [];
+for kk in list(basename_to_value.keys()):
+    vlist = list(sorted(basename_to_value[kk],key=lambda x:x[0][1]));
+    baseid = name_to_index[kk];
+    tmpp = []
+    for vv in list(vlist):
+        for tt in list(tagkeys):
+            allvalues_source[tt].append(vv[1][tt]);
+        tmpp.append(vv[0])
+    globalid_to_basedata.append(tmpp);
+    globalid_to_basedata[-1][-1] = True;# 最後のフラグメントは True
 
-allvalues_05 = torch.tensor(allvalues_05,dtype=torch.float32,device=ddev);
-allvalues_95 = torch.tensor(allvalues_95,dtype=torch.float32,device=ddev);
-allvalues_median = torch.tensor(allvalues_median,dtype=torch.float32,device=ddev);
+del basename_to_value;
+gc.collect();
 
 def dot_product(a,b):
     assert len(a.shape) == 2;
@@ -333,15 +324,18 @@ def correl(a, b):
     denominator = torch.where(zero_denominator, EPSILON_TENSOR, denominator);
     return torch.where(zero_denominator, torch.tensor(0.0, dtype=torch.float32, device=ddev),  numerator / denominator);
 
-for (stag,allvalues) in [
-    ("average",allvalues_average)
-    ,("max",allvalues_max)
-    ,("min",allvalues_min)
-    ,("v05",allvalues_05)
-    ,("v95",allvalues_95)
-    ,("median",allvalues_median)
+for (stag,ttag) in [
+    ("average","av")
+    ,("max","ma")
+    ,("min","mi")
+    ,("v05","5")
+    ,("v95","95")
+    ,("median","me")
     ]:
-    
+    allvalues = torch.tensor(allvalues_source[ttag],dtype=torch.float32,device=ddev);
+    del allvalues_source[ttag];
+    gc.collect();
+
     funcs = [
         ("dot",dot_product,True),("cos_sim",cos_sim,True),("euc_dist",euc_dist,False),("euc_dist_norm",euc_dist_norm,False),("correl",correl,True)
     ];
@@ -350,7 +344,7 @@ for (stag,allvalues) in [
         res[ff[0]] = [];
     prev_index = -1;
     for fragmentindex in range(fragment_counter):
-        currenttargetindex = values_nameindex_map[fragmentindex][0];
+        currenttargetindex = globalid_to_basedata[fragmentindex][0];
 
         if currenttargetindex != prev_index:
             # 初期化されていない場合エラーを発生させて終了する
@@ -373,10 +367,10 @@ for (stag,allvalues) in [
                     batch_res = func(arr_i_expanded[:current_siz],arr_j).detach().cpu().tolist();
                 for kkk in range(current_siz):
                     globalindex = jj*batch_size+kkk;
-                    if values_nameindex_map[globalindex][0] == currenttargetindex:
+                    if globalid_to_basedata[globalindex][0] == currenttargetindex:
                         continue;
-                    res[tag].append((values_nameindex_map[globalindex][0],float(batch_res[kkk])));
-        if values_nameindex_map[fragmentindex][-1]:
+                    res[tag].append((globalid_to_basedata[globalindex][0],float(batch_res[kkk])));
+        if globalid_to_basedata[fragmentindex][-1]:
             for tag,func,reverser in list(funcs):
                 outname = os.path.join(outdir,"res_"+str(currenttargetindex)+"."+stag+"."+tag+".dat");
 
@@ -399,5 +393,6 @@ for (stag,allvalues) in [
             res = {};
             for ff in list(funcs):
                 res[ff[0]] = [];
-
-    assert values_nameindex_map[fragment_counter-1][-1],"???";
+    del allvalues;
+    gc.collect();
+    assert globalid_to_basedata[fragment_counter-1][-1],"???";
