@@ -231,7 +231,7 @@ for ii in range(numfiles):
         qspan = torch.tensor([0.0,0.05,0.5,0.95,1.0],dtype=torch.float32,device=ddev);
         for vii in range(vsiz):
             ave.append(
-                values_all[ii].mean()
+                values_all[vii].mean()
             );
 
 
