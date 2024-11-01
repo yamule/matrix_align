@@ -180,7 +180,6 @@ allvalues_95 = [];
 numfiles = len(allfiles);
 name_desc = [];
 
-fragment_counter = 0;
 basename_to_value = {};
 name_to_index = {};
 for ii in range(numfiles):
@@ -195,7 +194,7 @@ for ii in range(numfiles):
         fragmentindex = 0;
         familyname = re.split(r"[\s]+",cc["desc"])[0]; # 最初のカラムに Family ID が入っている想定
         if check_fragment:
-            mat = re.search(r"^'(.+)%[0-9]+$",cc["name"]);
+            mat = re.search(r"^(.+)%([0-9]+)$",cc["name"]);
             if mat:
                 basename = mat.group(1);
                 fragmentindex = int(mat.group(2));
@@ -231,9 +230,8 @@ for ii in range(numfiles):
         qspan = torch.tensor([0.0,0.05,0.5,0.95,1.0],dtype=torch.float32,device=ddev);
         for vii in range(vsiz):
             ave.append(
-                values_all[vii].mean()
+                float(values_all[vii].mean())
             );
-
 
             qres = torch.quantile(input=values_all[vii], q=qspan);
             mmin.append(float(qres[0]));
@@ -241,11 +239,13 @@ for ii in range(numfiles):
             mmed.append(float(qres[2]));
             v95.append(float(qres[3]));
             mmax.append(float(qres[4]));
-
+            del qres;
         del values_all;
         basename_to_value[basename].append([[nameindex,fragmentindex,False]
         ,{"av":ave,"ma":mmax,"mi":mmin,"me":mmed,"5":v05,"95":v95}]);
-        
+    del c;
+    gc.collect();
+
 tagkeys = ["av","ma","mi","me","5","95"];
 allvalues_source = {};
 for tt in list(tagkeys):
@@ -260,7 +260,7 @@ for kk in list(basename_to_value.keys()):
         for tt in list(tagkeys):
             allvalues_source[tt].append(vv[1][tt]);
         tmpp.append(vv[0])
-    globalid_to_basedata.append(tmpp);
+    globalid_to_basedata.extend(tmpp);
     globalid_to_basedata[-1][-1] = True;# 最後のフラグメントは True
 
 del basename_to_value;
@@ -324,6 +324,7 @@ def correl(a, b):
     denominator = torch.where(zero_denominator, EPSILON_TENSOR, denominator);
     return torch.where(zero_denominator, torch.tensor(0.0, dtype=torch.float32, device=ddev),  numerator / denominator);
 
+fragment_counter = len(globalid_to_basedata);
 for (stag,ttag) in [
     ("average","av")
     ,("max","ma")
@@ -332,6 +333,7 @@ for (stag,ttag) in [
     ,("v95","95")
     ,("median","me")
     ]:
+    print("calc",stag,flush=True);
     allvalues = torch.tensor(allvalues_source[ttag],dtype=torch.float32,device=ddev);
     del allvalues_source[ttag];
     gc.collect();
@@ -345,7 +347,7 @@ for (stag,ttag) in [
     prev_index = -1;
     for fragmentindex in range(fragment_counter):
         currenttargetindex = globalid_to_basedata[fragmentindex][0];
-
+        print(currenttargetindex);
         if currenttargetindex != prev_index:
             # 初期化されていない場合エラーを発生させて終了する
             assert len(res[funcs[0][0]]) == 0, "Error in code.";
