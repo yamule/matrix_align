@@ -347,7 +347,6 @@ for (stag,ttag) in [
     prev_index = -1;
     for fragmentindex in range(fragment_counter):
         currenttargetindex = globalid_to_basedata[fragmentindex][0];
-        print(currenttargetindex);
         if currenttargetindex != prev_index:
             # 初期化されていない場合エラーを発生させて終了する
             assert len(res[funcs[0][0]]) == 0, "Error in code.";
@@ -360,18 +359,20 @@ for (stag,ttag) in [
         num_batches = math.ceil(fragment_counter/batch_size);
         arr_i_expanded = arr_i.unsqueeze(0).repeat(batch_size, 1);
 
-        for jj in range(num_batches):
-            end_index = min((jj+1)*batch_size, fragment_counter);
-            arr_j = allvalues[jj*batch_size:end_index];
-            current_siz = arr_j.shape[0];
-            for tag,func, _  in list(funcs):
-                with torch.no_grad():
+        with torch.no_grad():
+            for jj in range(num_batches):
+                end_index = min((jj+1)*batch_size, fragment_counter);
+                arr_j = allvalues[jj*batch_size:end_index];
+                current_siz = arr_j.shape[0];
+                for tag,func, _  in list(funcs):
                     batch_res = func(arr_i_expanded[:current_siz],arr_j).detach().cpu().tolist();
-                for kkk in range(current_siz):
-                    globalindex = jj*batch_size+kkk;
-                    if globalid_to_basedata[globalindex][0] == currenttargetindex:
-                        continue;
-                    res[tag].append((globalid_to_basedata[globalindex][0],float(batch_res[kkk])));
+                    for kkk in range(current_siz):
+                        globalindex = jj*batch_size+kkk;
+                        if globalid_to_basedata[globalindex][0] == currenttargetindex:
+                            continue;
+                        res[tag].append((globalid_to_basedata[globalindex][0],float(batch_res[kkk])));
+                    del batch_res;
+
         if globalid_to_basedata[fragmentindex][-1]:
             for tag,func,reverser in list(funcs):
                 outname = os.path.join(outdir,"res_"+str(currenttargetindex)+"."+stag+"."+tag+".dat");
@@ -388,7 +389,7 @@ for (stag,ttag) in [
                             continue;
                         assert sequenceindex != currenttargetindex;
                         processed[sequenceindex] = 100;
-                        fout.write("\t".join(name_desc[sequenceindex])+"\t"+"{:.7f}".format(tt[1])+"\n");
+                        fout.write("{}\t{}\t{:.7f}".format(name_desc[sequenceindex][0],name_desc[sequenceindex][1],tt[1])+"\n");
                 if use_pigz:
                     subprocess.run(["pigz",outname],check=True);
             # 前の配列の全フラグメントが処理されたので初期化
