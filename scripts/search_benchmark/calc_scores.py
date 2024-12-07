@@ -138,6 +138,39 @@ def calc_average_precision_score(targets,reverse):
         
     return ret;
 
+def calc_tp_until_fpx_score(targets,x,reverse):
+    ssorted = list(sorted(targets,key=lambda x:x["score"],reverse=reverse));
+    prev_score = ssorted[0]["score"];
+    samplenum = len(ssorted);
+    positives = 0;
+    for ss in list(ssorted):
+        if ss["label"] == 1:
+            positives += 1;
+    negatives = samplenum - positives;
+    if positives == 0 or negatives == 0:
+        return float("nan");
+    tpcount = 0;
+    fpcount = 0;
+    ii = 0;
+    points = [];
+    ret = 0;
+    while True:
+        while prev_score == ssorted[ii]["score"]:
+            if ssorted[ii]["label"] == 1:
+                tpcount += 1;
+            else:
+                fpcount += 1;
+            ii+=1;
+            if samplenum == ii:
+                break;
+        if fpcount >= x:# 同じ値の場合 FP 優先
+            break;
+        if samplenum == ii:
+            break;
+        ret = tpcount/float(positives);
+        prev_score = ssorted[ii]["score"];
+        
+    return ret;
 
 def tester():
     from sklearn.metrics import roc_auc_score
@@ -166,7 +199,6 @@ def tester():
 if sys.argv[1] == "test":
     tester();
     exit(0);
-
 
 
 def get_groupids(gcode):
@@ -212,6 +244,10 @@ for aa in list(sorted(os.listdir(targetdir))):
             group_3_orig[g3] = 0;
     # if len(allfiles[stype]) > 1000: # デバッグ用
     #    break;
+
+def strline(*argg):
+    return "\t".join([str(x) for x in argg]);
+
 
 for score_type in list(sorted(allfiles.keys())):
     
@@ -294,36 +330,21 @@ for score_type in list(sorted(allfiles.keys())):
                     allscores_g1.append({"score":ptt[-1],"label":1});
                     continue;
                 else:
-                    fpcount_g1 += 1;
                     allscores_g1.append({"score":ptt[-1],"label":0});
-                    if fpcount_g1 == 1:
-                        g1_fp1 = tpcount_g1;
-                    if fpcount_g1 == 10:
-                        g1_fp10 = tpcount_g1;
 
                 if bg2 == g2:
                     tpcount_g2 += 1;
                     allscores_g2.append({"score":ptt[-1],"label":1});
                     continue;
                 else:
-                    fpcount_g2 += 1;
                     allscores_g2.append({"score":ptt[-1],"label":0});
-                    if fpcount_g2 == 1:
-                        g2_fp1 = tpcount_g2;
-                    if fpcount_g2 == 10:
-                        g2_fp10 = tpcount_g2;
         
                 if bg3 == g3:
                     tpcount_g3 += 1;
                     allscores_g3.append({"score":ptt[-1],"label":1});
                 else:
-                    fpcount_g3 += 1;
                     allscores_g3.append({"score":ptt[-1],"label":0});
-                    if fpcount_g3 == 1:
-                        g3_fp1 = tpcount_g3;
-                    if fpcount_g3 == 10:
-                        g3_fp10 = tpcount_g3;
-
+                    
 
             roc_g1 = calc_roc_auc(allscores_g1,reverse=higher_is_better);
             roc_g2 = calc_roc_auc(allscores_g2,reverse=higher_is_better);
@@ -333,10 +354,18 @@ for score_type in list(sorted(allfiles.keys())):
             ave_prec_g2 = calc_average_precision_score(allscores_g2,reverse=higher_is_better);
             ave_prec_g3 = calc_average_precision_score(allscores_g3,reverse=higher_is_better);
 
+            g1_fp1 = calc_tp_until_fpx_score(allscores_g1,1,reverse=higher_is_better);
+            g2_fp1 = calc_tp_until_fpx_score(allscores_g2,1,reverse=higher_is_better);
+            g3_fp1 = calc_tp_until_fpx_score(allscores_g3,1,reverse=higher_is_better);
+
+            g1_fp10 = calc_tp_until_fpx_score(allscores_g1,10,reverse=higher_is_better);
+            g2_fp10 = calc_tp_until_fpx_score(allscores_g2,10,reverse=higher_is_better);
+            g3_fp10 = calc_tp_until_fpx_score(allscores_g3,10,reverse=higher_is_better);
+
             if tpcount_g1 > 0:
                 g1_count[g1] += 1;
-                g1_score_fp1[g1] += g1_fp1/float(tpcount_g1);
-                g1_score_fp10[g1] += g1_fp10/float(tpcount_g1);
+                g1_score_fp1[g1] += g1_fp1;
+                g1_score_fp10[g1] += g1_fp10;
                 
                 assert not math.isnan(roc_g1);
                 assert not math.isnan(ave_prec_g1);
@@ -351,8 +380,8 @@ for score_type in list(sorted(allfiles.keys())):
                     
             if tpcount_g2 > 0:
                 g2_count[g2] += 1;
-                g2_score_fp1[g2] += g2_fp1/float(tpcount_g2);
-                g2_score_fp10[g2] += g2_fp10/float(tpcount_g2);
+                g2_score_fp1[g2] += g2_fp1;
+                g2_score_fp10[g2] += g2_fp10;
 
                 assert not math.isnan(roc_g2);
                 assert not math.isnan(ave_prec_g2);
@@ -368,8 +397,8 @@ for score_type in list(sorted(allfiles.keys())):
 
             if tpcount_g3 > 0:
                 g3_count[g3] += 1;
-                g3_score_fp1[g3] += g3_fp1/float(tpcount_g3);
-                g3_score_fp10[g3] += g3_fp10/float(tpcount_g3);
+                g3_score_fp1[g3] += g3_fp1;
+                g3_score_fp10[g3] += g3_fp10;
                 
                 assert not math.isnan(roc_g3);
                 assert not math.isnan(ave_prec_g3);
@@ -421,6 +450,21 @@ for score_type in list(sorted(allfiles.keys())):
                 score_roc[gg] /= count[gg];
                 score_ave_prec[gg] /= count[gg];
 
+                print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"level:sep"
+                ,"id:"+gg,"untilfp1","count:",count[gg],"score:",score_fp1[gg]));
+                print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"level:sep"
+                ,"id:"+gg,"untilfp10","count:",count[gg],"score:",score_fp10[gg]));
+
+                print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"level:sep"
+                ,"id:"+gg,"hit_at_1","count:",count[gg],"score:",score_hit1[gg]));
+                print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"level:sep"
+                ,"id:"+gg,"hit_at_10","count:",count[gg],"score:",score_hit10[gg]));
+
+                print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"level:sep"
+                ,"id:"+gg,"aucroc","count:",count[gg],"score:",score_roc[gg]));
+                print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"level:sep"
+                ,"id:"+gg,"ave_prec","count:",count[gg],"score:",score_ave_prec[gg]));
+
                 score_sum_fp1[tag] += score_fp1[gg];
                 score_sum_fp10[tag] += score_fp10[gg];
                 score_sum_hit1[tag] += score_hit1[gg];
@@ -428,6 +472,7 @@ for score_type in list(sorted(allfiles.keys())):
                 score_sum_roc[tag] += score_roc[gg];
                 score_sum_ave_prec[tag] += score_ave_prec[gg];
                 
+
         # 全クラス数で割って更に平均化する
         score_sum_fp1[tag] /= counted_class;
         score_sum_fp10[tag] /= counted_class;
@@ -435,10 +480,6 @@ for score_type in list(sorted(allfiles.keys())):
         score_sum_hit10[tag] /= counted_class;
         score_sum_roc[tag] /= counted_class;
         score_sum_ave_prec[tag] /= counted_class;
-
-    def strline(*argg):
-        return "\t".join([str(x) for x in argg]);
-
 
     print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"g1","untilfp1","count:",num_queries["g1"],"score:",score_sum_fp1["g1"]));
     print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"g2","untilfp1","count:",num_queries["g2"],"score:",score_sum_fp1["g2"]));
@@ -451,9 +492,9 @@ for score_type in list(sorted(allfiles.keys())):
     print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"g3","hit_at_1","count:",num_queries["g3"],"score:",score_sum_hit1["g3"]));
     print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"g3","hit_at_10","count:",num_queries["g3"],"score:",score_sum_hit10["g3"]));
 
-    print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"g1","roc","count:",num_queries["g1"],"score:",score_sum_roc["g1"]));
-    print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"g2","roc","count:",num_queries["g2"],"score:",score_sum_roc["g2"]));
-    print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"g3","roc","count:",num_queries["g3"],"score:",score_sum_roc["g3"]));
+    print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"g1","aucroc","count:",num_queries["g1"],"score:",score_sum_roc["g1"]));
+    print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"g2","aucroc","count:",num_queries["g2"],"score:",score_sum_roc["g2"]));
+    print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"g3","aucroc","count:",num_queries["g3"],"score:",score_sum_roc["g3"]));
     
     print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"g1","ave_prec","count:",num_queries["g1"],"score:",score_sum_ave_prec["g1"]));
     print(strline(targetdir,score_type,"higher_is_better:"+str(higher_is_better),"g2","ave_prec","count:",num_queries["g2"],"score:",score_sum_ave_prec["g2"]));
