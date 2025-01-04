@@ -52,7 +52,7 @@ def calc_roc_auc(targets,reverse):
     return ret;
 
 # {score:score,label:label}
-def calc_pr_roc_auc(targets,reverse):
+def calc_prcurve_auc(targets,reverse):
     ssorted = list(sorted(targets,key=lambda x:x["score"],reverse=reverse));
     prev_score = ssorted[0]["score"];
     samplenum = len(ssorted);
@@ -80,7 +80,7 @@ def calc_pr_roc_auc(targets,reverse):
         precision = tpcount/float(tpcount+fpcount);
         recall = tpcount/float(positives);
         if len(points) == 0:
-            points.append((precision,0.0))
+            points.append((1.0,0.0))
         points.append((precision,recall));
         if samplenum == ii:
             break;
