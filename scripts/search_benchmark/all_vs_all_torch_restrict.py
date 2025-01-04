@@ -8,7 +8,6 @@ import shutil;
 import gc;
 import random;
 
-random.seed(123);
 
 # 一部のみ使用して global per channel normalization をかける
 # 検証用
@@ -31,6 +30,8 @@ parser.add_argument("--num_samples",required=False,default=None,type=int) ;
 parser.add_argument("--sample_superfamily",required=False,default=None) ;
 parser.add_argument("--pigz",required=False,default=True,type=check_bool) ;
 parser.add_argument("--batch_size",required=False,default=20,type=int) ;
+parser.add_argument("--random_seed",required=False,default=123,type=int) ;
+
 
 # 使用しない
 # parser.add_argument("--unbiased_global_stats",required=False,default=False,type=check_bool) ;
@@ -38,6 +39,8 @@ parser.add_argument("--batch_size",required=False,default=20,type=int) ;
 
 args = parser.parse_args();
 print(args);
+
+random.seed(args.random_seed);
 
 # どちらか一方のみが None
 assert (args.sample_superfamily is None) != (args.num_samples is None);
@@ -65,6 +68,19 @@ if not os.path.exists(outdir):
     os.mkdir(outdir);
 else:
     raise Exception("Please remove "+outdir);
+
+def check_first_line(infile):
+    ffin = gzip.open(infile,"rt");
+    l = re.sub(r"[\r\n]","",ffin.readline());
+    ffin.close();
+    assert l[0] == ">";
+
+    mat = re.search(r">([^\s]+)[\s]+([^\s].+)",ll);
+    if mat:    
+        return {"name":mat.group(0),"desc":mat.group(1)};
+    else:
+        raise Exception("????"+infile+"\n"+l+"\n");
+    
 
 def load_mat(infile):
     ret = [];
@@ -140,9 +156,17 @@ if global_per_channel_normalization:
     usednames = {};
     saout = open(statsfile+".samples","wt");
     for aa in list(allfiles):
+        if sample_superfamily is not None:
+            chk = check_first_line(aa);
+            familyname = re.split(r"[\s]+",chk["desc"])[0];
+            pcc = re.split(r"\.",familyname)
+            sfname = pcc[0]+"."+pcc[1]+"."+pcc[2];
+            if sfname != sample_superfamily:
+                continue;
+
         c = load_mat(aa);
-        if len(c) == 0:
-            raise Exception(aa+" does not have data.");
+        if len(c) != 1:
+            raise Exception(aa+" only one entry per file is expected.");
         if vsiz is None:
             vsiz = len(c[0]["value"][0]);
             headseq = c[0];
@@ -150,12 +174,6 @@ if global_per_channel_normalization:
         else:
             assert len(c[0]["value"][0]) == vsiz, "Inconsistent value sizes detected."+aa+"\n";
         for cc in c:
-            if sample_superfamily is not None:
-                familyname = re.split(r"[\s]+",cc["desc"])[0];
-                pcc = re.split(r"\.",familyname)
-                sfname = pcc[0]+"."+pcc[1]+"."+pcc[2];
-                if sfname != sample_superfamily:
-                    continue;
             saout.write(cc["name"]+" "+cc["desc"]+"\n");
             assert cc["name"] not in usednames;
             usednames[cc["name"]] = 100;
@@ -175,7 +193,17 @@ if global_per_channel_normalization:
     mmean = ssum/float(valcount);
     vvar = torch.zeros_like(mmean);
     for aa in list(allfiles):
+        if sample_superfamily is not None:
+            chk = check_first_line(aa);
+            familyname = re.split(r"[\s]+",chk["desc"])[0];
+            pcc = re.split(r"\.",familyname)
+            sfname = pcc[0]+"."+pcc[1]+"."+pcc[2];
+            if sfname != sample_superfamily:
+                continue;
+        
         c = load_mat(aa);
+        if len(c) != 1:
+            raise Exception(aa+" only one entry per file is expected.");
         for cc in c:
             if cc["name"] not in usednames:
                 continue;
@@ -210,6 +238,9 @@ if global_per_channel_normalization:
         "var":vvar,
         "mean":mmean
     };
+
+allfiles = list(sorted(allfiles));
+
 allvalues_average = [];
 allvalues_max = [];
 allvalues_min = [];
