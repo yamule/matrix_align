@@ -77,7 +77,7 @@ def check_first_line(infile):
 
     mat = re.search(r">([^\s]+)[\s]+([^\s].+)",l);
     if mat:    
-        return {"name":mat.group(0),"desc":mat.group(1)};
+        return {"name":mat.group(1),"desc":mat.group(2)};
     else:
         raise Exception("????"+infile+"\n"+l+"\n");
     
