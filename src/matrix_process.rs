@@ -563,9 +563,9 @@ pub fn calc_euclid_dist_native(vec1: &Vec<f32>,vec2: &Vec<f32>)->f32{
 }
 
 pub fn calc_pearson_correl(vec1: &Vec<f32>,vec2: &Vec<f32>)->f32{
+    assert_eq!(vec1.len(), vec2.len());
     let mut mvec1:Vec<f32> = vec1.clone();//破壊するので Clone
     let mut mvec2:Vec<f32> = vec2.clone();//破壊するので Clone
-    assert_eq!(vec1.len(), vec2.len());
     let mean1:f32 = vec1.iter().sum::<f32>()/(vec1.len() as f32);//まあ多分ベクトル化してくれるのでは・・・
     let mean2:f32 = vec2.iter().sum::<f32>()/(vec2.len() as f32);//まあ多分ベクトル化してくれるのでは・・・
 
@@ -603,6 +603,38 @@ pub fn calc_pearson_correl_native(a: &Vec<f32>,b: &Vec<f32>)->f32{
     }
 }
 
+pub fn calc_cosine_similarity(vec1: &Vec<f32>,vec2: &Vec<f32>)->f32{
+    assert_eq!(vec1.len(), vec2.len());
+
+    let mut mvec1:Vec<f32> = vec1.clone();//破壊するので Clone
+    let mut mvec2:Vec<f32> = vec2.clone();//破壊するので Clone
+
+    vector_square(&mut mvec1);
+    vector_square(&mut mvec2);
+
+    let norm1:f32 = mvec1.iter().sum::<f32>().sqrt();//まあ多分ベクトル化してくれるのでは・・・
+    let norm2:f32 = mvec2.iter().sum::<f32>().sqrt();//まあ多分ベクトル化してくれるのでは・・・
+
+    if norm1 == 0.0 || norm2 == 0.0{
+        return 0.0;
+    }
+
+    let dot:f32 = dot_product(vec1,vec2);
+
+    return dot/norm1/norm2;
+}
+
+pub fn calc_cosine_similarity_native(a: &Vec<f32>,b: &Vec<f32>)->f32{
+    assert_eq!(a.len(), b.len());
+    //eprintln!("running native");
+    let anorm:f32  =  a.iter().map(|x|x*x).sum::<f32>().sqrt();
+    let bnorm:f32  =  b.iter().map(|x|x*x).sum::<f32>().sqrt();
+    if anorm == 0.0 || bnorm == 0.0{
+        return 0.0;
+    }
+    let dot = dot_product_native(&a,&b);
+    return dot/anorm/bnorm;
+}
 
 #[derive(Debug)]
 pub struct VectorStats{
@@ -627,7 +659,6 @@ pub fn calc_stats(vec1:&Vec<f32>)->VectorStats{
     };
 }
 
-
 pub fn calc_weighted_stats(vec1_:&Vec<f32>,weight:&Vec<f32>)->VectorStats{
     assert!(vec1_.len() != 0);
     let mut vec1 = vec1_.clone();
@@ -651,7 +682,6 @@ pub fn calc_weighted_stats(vec1_:&Vec<f32>,weight:&Vec<f32>)->VectorStats{
 }
 
 
-
 #[test]
 fn matrix_test(){
     let a = vec![1.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
@@ -670,5 +700,10 @@ fn matrix_test(){
     let result_native: f32 = calc_euclid_dist(&a,&b);
     let result = calc_euclid_dist_native(&a, &b);
     assert!((result-result_native).abs() < 0.000001,"{}",(result-result_native).abs());
-    println!("Euclid Distance: {}", calc_euclid_dist(&a,&b));    
+    println!("Euclid Distance: {}", calc_euclid_dist(&a,&b));
+
+    let result_native: f32 = calc_cosine_similarity(&a,&b);
+    let result = calc_cosine_similarity_native(&a, &b);
+    assert!((result-result_native).abs() < 0.000001,"{}",(result-result_native).abs());
+    println!("Cosine Similarity: {}", calc_cosine_similarity(&a,&b));    
 }
