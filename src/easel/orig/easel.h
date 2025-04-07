@@ -283,7 +283,7 @@
  * a waste (but we do it for some anyway).
  */
 #define eslCONST_E     2.71828182845904523536028747135
-#define eslCONST_PI    3.14159265358979323846264338328
+#define ESL_CONST_PI    3.14159265358979323846264338328
 #define eslCONST_EULER 0.57721566490153286060651209008
 #define eslCONST_GOLD  1.61803398874989484820458683437
 #define eslCONST_LOG2  0.69314718055994529
@@ -313,7 +313,7 @@
 /* log(1+x) ~ x and  1-e^x = -x approximation.
  * Same threshold appears to be optimal for float or double x. xref STL9/138.
  */
-#define eslSMALLX1    5e-9
+#define ESL_SMALLX1    5e-9
 
 
 /*****************************************************************

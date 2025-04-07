@@ -35,7 +35,7 @@ pub mod gumbel {
         let y = lambda * (x - mu);
         let ey = -(-y).exp();
 
-        if ey.abs() < eslSMALLX1 {
+        if ey.abs() < ESL_SMALLX1 {
             -ey
         } else {
             1.0 - ey.exp()
@@ -47,9 +47,9 @@ pub mod gumbel {
         let y = lambda * (x - mu);
         let ey = -(-y).exp();
 
-        if ey.abs() < eslSMALLX1 {
+        if ey.abs() < ESL_SMALLX1 {
             return -y;
-        } else if ey.exp().abs() < eslSMALLX1 {
+        } else if ey.exp().abs() < ESL_SMALLX1 {
             return -ey.exp();
         } else {
             return (1.0 - ey.exp()).ln();
@@ -63,7 +63,7 @@ pub mod gumbel {
 
     /// Calculates the score at which the right tail's mass is `p`.
     pub fn invsurv(p: f64, mu: f64, lambda: f64) -> f64 {
-        let log_part = if p < eslSMALLX1 {
+        let log_part = if p < ESL_SMALLX1 {
             (p.powf(p) - 1.0) / p
         } else {
             (- (1.0 - p).ln()).ln()
@@ -121,7 +121,7 @@ pub mod gumbel {
             eprintln!("fit_complete(): Newton/Raphson failed; switchover to bisection\n");
             // Bisection method
             let mut left = 0.0;
-            let mut right = eslCONST_PI / (6.0 * variance).sqrt();
+            let mut right = ESL_CONST_PI / (6.0 * variance).sqrt();
             let (mut fx, _) = lawless416(x, lambda);
             while fx > 0.0 {
                 right *= 2.0;
@@ -192,7 +192,7 @@ pub mod gumbel {
         (f, df)
     }
 }
-
+#[allow(dead_code)]
 fn main() {
     // Example usage
     let mut rng = rand::thread_rng();

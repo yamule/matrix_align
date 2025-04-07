@@ -15,7 +15,7 @@ pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
 
             // 乗算と加算
             let mul = _mm_mul_ps(a_chunk, b_chunk);
-
+            
             //[a[0]+a[1],a[2]+a[3],b[0]+b[1],b[2]+b[3]] を返す
             let sum_chunk = _mm_hadd_ps(mul, mul);
 
@@ -519,7 +519,6 @@ pub fn vector_square(vec: &mut[f32]){
     vector_square_native(vec);
 }
 
-
 #[cfg(all(not(target_feature = "sse3"),not(target_feature = "avx2")))]
 pub fn vector_sqrt(vec: &mut[f32]){
     vector_sqrt_native(vec);
@@ -552,6 +551,59 @@ pub fn calc_euclid_dist(vec1: &Vec<f32>,vec2: &Vec<f32>)->f32{
     let ret:f32 = mvec1.into_iter().sum(); //まあ多分ベクトル化してくれるのでは・・・
     return ret.sqrt();
 }
+
+pub fn calc_euclid_dist_native(vec1: &Vec<f32>,vec2: &Vec<f32>)->f32{
+    let mut mvec1:Vec<f32> = vec1.clone();//破壊するので Clone
+    element_multiply_native(&mut mvec1,-1.0);
+    vector_add_native(&mut mvec1,&vec2);
+    vector_square_native(&mut mvec1);
+
+    let ret:f32 = mvec1.into_iter().sum(); //まあ多分ベクトル化してくれるのでは・・・
+    return ret.sqrt();
+}
+
+pub fn calc_pearson_correl(vec1: &Vec<f32>,vec2: &Vec<f32>)->f32{
+    let mut mvec1:Vec<f32> = vec1.clone();//破壊するので Clone
+    let mut mvec2:Vec<f32> = vec2.clone();//破壊するので Clone
+    assert_eq!(vec1.len(), vec2.len());
+    let mean1:f32 = vec1.iter().sum::<f32>()/(vec1.len() as f32);//まあ多分ベクトル化してくれるのでは・・・
+    let mean2:f32 = vec2.iter().sum::<f32>()/(vec2.len() as f32);//まあ多分ベクトル化してくれるのでは・・・
+
+    element_add(&mut mvec1,-1.0*mean1);
+    element_add(&mut mvec2,-1.0*mean2);
+
+    let mut mvec1b = mvec1.clone();
+    vector_multiply(&mut mvec1b, &mvec2);
+    let covar:f32 = mvec1b.into_iter().sum();
+
+    vector_square(&mut mvec1);
+    vector_square(&mut mvec2);
+    
+    let var1:f32 = mvec1.iter().sum();
+    let var2:f32 = mvec2.iter().sum();
+    if var1*var2 == 0.0{
+        return 0.0;
+    }else{
+        return covar/(var1*var2).sqrt();
+    }
+}
+
+pub fn calc_pearson_correl_native(a: &Vec<f32>,b: &Vec<f32>)->f32{
+    assert_eq!(a.len(), b.len());
+    //eprintln!("running native");
+    let amean:f32 = a.iter().sum::<f32>()/(a.len() as f32);
+    let bmean:f32 = b.iter().sum::<f32>()/(b.len() as f32);
+    let covar:f32 =  a.iter().zip(b.iter()).map(|(x,y)|(x-amean)*(y-bmean)).sum();
+    let avar:f32  =  a.iter().map(|x|(x-amean)*(x-amean)).sum();
+    let bvar:f32  =  b.iter().map(|x|(x-bmean)*(x-bmean)).sum();
+    if avar*bvar == 0.0{
+        return 0.0;
+    }else{
+        return covar/(avar*bvar).sqrt();
+    }
+}
+
+
 #[derive(Debug)]
 pub struct VectorStats{
     pub mean:f32,
@@ -598,11 +650,25 @@ pub fn calc_weighted_stats(vec1_:&Vec<f32>,weight:&Vec<f32>)->VectorStats{
     };
 }
 
+
+
 #[test]
 fn matrix_test(){
-    let a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let a = vec![1.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     let b = vec![8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
+    let result_native = dot_product_native(&a,&b);
     let result = dot_product(&a, &b);
+    check_simd();
+    assert!((result-result_native).abs() < 0.000001,"{}",(result-result_native).abs());
     println!("Dot Product: {}", result);
+
+    let result_native: f32 = calc_pearson_correl(&a,&b);
+    let result = calc_pearson_correl_native(&a, &b);
+    assert!((result-result_native).abs() < 0.000001,"{}",(result-result_native).abs());
+    println!("Pearson Correl: {}", result);    
+
+    let result_native: f32 = calc_euclid_dist(&a,&b);
+    let result = calc_euclid_dist_native(&a, &b);
+    assert!((result-result_native).abs() < 0.000001,"{}",(result-result_native).abs());
     println!("Euclid Distance: {}", calc_euclid_dist(&a,&b));    
 }
