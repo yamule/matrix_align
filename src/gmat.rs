@@ -361,6 +361,38 @@ pub fn calc_dot_product_matrix(avec:&Vec<&Vec<f32>>,bvec:&Vec<&Vec<f32>>)->Vec<V
     }
     return ret;
 }
+ 
+pub fn calc_pearson_correl_matrix(avec:&Vec<&Vec<f32>>,bvec:&Vec<&Vec<f32>>)->Vec<Vec<f32>>{
+    let alen = avec.len();
+    let blen = bvec.len();
+    let mut ret:Vec<Vec<f32>> = vec![];
+    for rr in 0..alen{
+        let mut evec:Vec<f32> = vec![];
+        for cc in 0..blen{
+            let score = matrix_process::calc_pearson_correl(avec[rr], bvec[cc]);
+            evec.push(score);
+        }
+        ret.push(evec);
+    }
+    return ret;
+}
+
+pub fn calc_cos_sim_matrix(avec:&Vec<&Vec<f32>>,bvec:&Vec<&Vec<f32>>)->Vec<Vec<f32>>{
+    let alen = avec.len();
+    let blen = bvec.len();
+    let mut ret:Vec<Vec<f32>> = vec![];
+    for rr in 0..alen{
+        let mut evec:Vec<f32> = vec![];
+        for cc in 0..blen{
+            let score = matrix_process::calc_cosine_similarity(avec[rr], bvec[cc]);
+            evec.push(score);
+        }
+        ret.push(evec);
+    }
+    return ret;
+}
+
+
 #[cfg(test)]
 mod tests{
     use crate::ioutil;

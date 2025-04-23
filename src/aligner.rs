@@ -27,6 +27,8 @@ pub enum AlignmentType {
 pub enum ScoreType {
     DistanceZscore,
     DotProduct,
+    CosineSimilarity,
+    PearsonCorrelationCoefficient,
 }
 
 #[derive(Debug,Clone)]
@@ -239,7 +241,13 @@ impl ProfileAligner {
             },
             ScoreType::DotProduct => {
                 gmat::calc_dot_product_matrix(&aavec, &bbvec)
-            }
+            },
+            ScoreType::PearsonCorrelationCoefficient => {
+                gmat::calc_pearson_correl_matrix(&aavec, &bbvec)
+            },
+            ScoreType::CosineSimilarity => {
+                gmat::calc_cos_sim_matrix(&aavec, &bbvec)
+            },
         };
 
         if self.gap_penalty_auto_adjust{

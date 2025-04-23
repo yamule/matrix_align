@@ -131,7 +131,7 @@ fn main_(mut args:Vec<String>){
         ,Some("NJ"),vec!["NJ","UPGMA"],false),
         
         ("--score_type",None
-        ,"<string> : Type of scoring function. \"distance_zscore\" or \"dot_product\"."
+        ,"<string> : Type of scoring function. \"distance_zscore\", \"cos_sim\",\"pearson_correl\", or \"dot_product\"."
         ,Some("dot_product"),vec![],false),
         
         ("--out_matrix",None
@@ -244,10 +244,14 @@ fn main_(mut args:Vec<String>){
     let typ = argparser.get_string("--score_type").unwrap().to_lowercase();
     if typ.as_str() == "distance_zscore"{
         score_type = ScoreType::DistanceZscore;
+    }else if typ.as_str() == "cos_sim"{
+        score_type = ScoreType::CosineSimilarity;
+    }else if typ.as_str() == "pearson_correl"{
+        score_type = ScoreType::PearsonCorrelationCoefficient;
     }else if typ.as_str() == "dot_product"{
         score_type = ScoreType::DotProduct;
     }else{
-        panic!("???");
+        panic!("Unknown scoring function {}.",typ);
     }
 
     let mut name_to_res:HashMap<String,String> = HashMap::new();
