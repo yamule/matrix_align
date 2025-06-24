@@ -43,10 +43,11 @@ find nogit/run_example/esmout|sort|grep mat.gz|tail -n 9 > nogit/run_example/esm
 
 ### Generate A3M Alignment (For Template Search For Template Based Modeling)
 ```
-target/release/matrix_align --in nogit/run_example/esmout/seq_0.mat.gz --in_list nogit/run_example/esmout_list.dat --out nogit/run_example/example_res.a3m  --num_threads 32 --a3m_pairwise true --alignment_type local --score_type dot_product --normalize true
+target/release/matrix_align --in nogit/run_example/esmout/seq_0.mat.gz --in_list nogit/run_example/esmout_list.dat --out nogit/run_example/example_res.a3m  --num_threads 32 --a3m_pairwise true --alignment_type local --score_type dot_product --normalize true --score_out nogit/run_example/example_score.dat
 ```
 A3m alignment file will be saved in nogit/run_example/example_res.a3m.
-With this command, score/profile_length > 300 may be homologous proteins.
+Some alignment information will be saved in nogit/run_example/example_score.dat.
+With this command, score/profile_length(or slen) > 300 may be homologous proteins.
 
 ### Generate MSA
 ```
