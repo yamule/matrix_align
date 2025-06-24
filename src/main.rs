@@ -25,6 +25,50 @@ fn create_gmat_from_fasta(fastafile:&str,smatname:&str)-> Vec<(String,Vec<char>,
     return gmat1_;
 }
 
+// header として name と desc が一つになっているので name だけ取り出す単純な関数
+fn get_name(s:&str)-> String{ 
+    return s.split_ascii_whitespace().into_iter().map(|m|m.to_owned()).collect::<Vec<String>>()[0].clone();
+}
+
+// a3m のヒットから query, subject の align された範囲を計算する
+// 1 開始
+fn get_alignment_range(s:&str)->(i128,i128,i128,i128){
+    let mut qstart = -1_i128;
+    let mut qend = -1_i128;
+    let mut sstart = -1_i128;
+    let mut send = -1_i128;
+
+    let chk:Vec<char> = s.chars().into_iter().collect();
+
+    let mut qcount = 0;
+    let mut scount = 0;
+
+    for cc in chk{
+        if cc.is_whitespace(){
+            continue;
+        }
+        if cc != '-'{
+            if cc.is_uppercase() && qstart == -1{
+                qstart = qcount;
+                sstart = scount;
+            }
+            if cc.is_uppercase(){
+                qend = qcount;
+                send = scount;
+                qcount += 1;
+            }
+            scount += 1;
+        }else{
+            qcount += 1;
+        }
+    }
+    if qstart == -1{
+        return (-1,-1,-1,-1);
+    }
+
+    return (qstart+1,qend+1,sstart+1,send+1);
+}
+
 fn main(){
     main_(std::env::args().collect::<Vec<String>>());
 }
@@ -145,6 +189,10 @@ fn main_(mut args:Vec<String>){
         ("--gap_penalty_dynamic_bias",None
         ,"<bool or novalue=true> : Adjust gap penalty depending on transition state (deletion -> deletion, match->deletion.) Recommended to set false if input contains local sequence search hits."
         ,Some("true"),vec![],false),
+
+        ("--score_out",None
+        ,"<output score file path> : Output file which describe alignemt scores. Currently compatible only with --a3m_pairwise."
+        ,None,vec![], false),
     ];
 
     for aa in args.iter(){
@@ -200,6 +248,10 @@ fn main_(mut args:Vec<String>){
         assert!(argparser.get_string("--distance_base").unwrap() == "score_with_seed","--num_seed_seqs must be set with '--distance_base score_with_seed'.");
     }
 
+    if argparser.user_defined("--score_out"){
+        assert!(argparser.get_bool("--a3m_pairwise").unwrap(),"--score_out can be used with --a3m_pairwise.")
+    }
+    
     let reqpair:Vec<Vec<&str>> = vec![
         vec!["--in","--in_list","--in_fasta"],
         vec!["--out","--out_stats"],
@@ -392,6 +444,7 @@ fn main_(mut args:Vec<String>){
 
     if argparser.get_bool("--a3m_pairwise").unwrap(){
         
+        let out_score_flag = argparser.user_defined("--score_out");
         let mut firstseq_ = gmat1_.remove(0);
 
         let mut aligners:Vec<ProfileAligner> = vec![];
@@ -407,11 +460,12 @@ fn main_(mut args:Vec<String>){
             vec![(firstseq_.0,firstseq_.1)],alen,firstseq_.2[0].len(),None,Some(firstseq_.2),firstseq_.3
         );
 
-        let mut lines:Vec<String> = vec![];
-        lines.push(
+        let mut out_lines:Vec<String> = vec![];
+        let mut score_lines:Vec<String> = vec![];
+        out_lines.push(
             ">".to_owned()+firstseq.headers[0].as_str()
         );
-        lines.push(
+        out_lines.push(
             firstseq.member_sequences[0].iter().filter(|c| **c != '-').map(|m| m.to_string()).collect::<Vec<String>>().join("")
         );
 
@@ -461,8 +515,7 @@ fn main_(mut args:Vec<String>){
 
             for nn in name_length_order.iter(){
                 if let Some(p) = res.remove(&nn.0){
-                    lines.push(">".to_owned()+&nn.0);
-                    lines.push(p.0);
+
                     println!(">{}",nn.0);
                     println!("score:{}",p.1.score);
                     let mut posicount = 0 as usize;
@@ -473,13 +526,37 @@ fn main_(mut args:Vec<String>){
                     }
                     println!("positive_count:{}",posicount);
                     println!("profile_length:{}",nn.1);
+
+                    if out_score_flag{
+                        let arange = get_alignment_range(&p.0);
+                        let sout:Vec<String> = vec![
+                            "sname:".to_owned(),get_name(&nn.0),
+                            "qstart:".to_owned(),arange.0.to_string(),
+                            "qend:".to_owned(),arange.1.to_string(),
+                            "sstart:".to_owned(),arange.2.to_string(),
+                            "send:".to_owned(),arange.3.to_string(),
+                            "score:".to_owned(),p.1.score.to_string(),
+                            "positive_count:".to_owned(),posicount.to_string(),
+                            "profile_length:".to_owned(),nn.1.to_string()
+                        ];
+                        score_lines.push(
+                            sout.join("\t")
+                        );
+                    }
+
+                    out_lines.push(">".to_owned()+&nn.0);
+                    out_lines.push(p.0);
                 }
             }
             assert!(res.len() == 0);
         }
         //結果は全部メモリに乗る想定
         let outfile = argparser.get_string("--out").unwrap();
-        save_lines(&outfile, lines,outfile.ends_with(".gz"));
+        save_lines(&outfile, out_lines,outfile.ends_with(".gz"));
+        if out_score_flag{
+            let soutfile = argparser.get_string("--score_out").unwrap();
+            save_lines(&soutfile, score_lines,soutfile.ends_with(".gz"));
+        }
         std::process::exit(0);   
     }
     
@@ -587,4 +664,13 @@ fn maintest(){
     let v3 = ioutil::load_lines("nogit/list1234ex.dat.gz",true);
     assert_eq!(v1,v2);
     assert_eq!(v1,v3);
+
+    assert_eq!(get_alignment_range("---aBCDEfGhi"),(4,8,2,7));
+    assert_eq!(get_alignment_range("---aBCDE-fGhi"),(4,9,2,7));
+    assert_eq!(get_alignment_range("---aBCDEfGhI"),(4,9,2,9));
+    assert_eq!(get_alignment_range("---aBCDEfGhI--"),(4,9,2,9));
+    assert_eq!(get_alignment_range("---aBCDEfGhI--jkl"),(4,9,2,9));
+    assert_eq!(get_alignment_range("---aBCDEfGhI--jklM"),(4,12,2,13));
+    assert_eq!(get_alignment_range("aBCDEfGhI--jklM"),(1,9,2,13));
+    assert_eq!(get_alignment_range("------"),(-1,-1,-1,-1));
 }
