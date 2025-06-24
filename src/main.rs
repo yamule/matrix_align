@@ -537,7 +537,7 @@ fn main_(mut args:Vec<String>){
                             "send:".to_owned(),arange.3.to_string(),
                             "score:".to_owned(),p.1.score.to_string(),
                             "positive_count:".to_owned(),posicount.to_string(),
-                            "profile_length:".to_owned(),nn.1.to_string()
+                            "slen:".to_owned(),nn.1.to_string()
                         ];
                         score_lines.push(
                             sout.join("\t")
