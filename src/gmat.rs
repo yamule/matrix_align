@@ -237,20 +237,25 @@ pub unsafe fn calc_vec_stats_legacy(filenames:&Vec<String>)->Vec<GMatStatistics>
     }
     return calc_vec_stats_(allval);
 }
-pub fn normalize(vec:&mut Vec<f32>,gmatstats:&Vec<GMatStatistics>){
+
+pub fn normalize(vec:&mut Vec<f32>,gmatstats:&Vec<GMatStatistics>,print_error:bool){
     assert_eq!(vec.len(),gmatstats.len());
     for (ii,vv) in vec.iter_mut().zip(gmatstats.iter()).enumerate(){
-        if !(1.0/vv.1.var.sqrt()).is_finite(){  
-            panic!("Variance of column {} is too small! {} ",ii+1,vv.1.var);
+        if !(1.0/vv.1.var.sqrt()).is_finite(){
+            if print_error{ //汚いが全アミノ酸についてメッセージが出てしまって冗長なので
+                eprintln!("Warning: Variance of column {} is too small {}! All values will be set to 0.0!",ii+1,vv.1.var);
+            }
+            *vv.0 = 0.0;
+        }else{
+            *vv.0 = (*vv.0 -vv.1.mean)/vv.1.var.sqrt();
         }
-        *vv.0 = (*vv.0 -vv.1.mean)/vv.1.var.sqrt();
     }
 }
 
 pub fn normalize_seqmatrix(vec:&mut Vec<Vec<f32>>, gmatstats:&Vec<GMatStatistics>){
     let vlen = vec.len();
     for ii in 0..vlen{
-        normalize(&mut vec[ii], gmatstats);
+        normalize(&mut vec[ii], gmatstats,ii == 0);
     }
 }
 

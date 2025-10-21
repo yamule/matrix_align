@@ -1,0 +1,4 @@
+memo during dev
+2025/10/21
+・Fixed a bug for options requiring at least one to exist: Where a panic occurred only when both options were present.
+・The behavior when variance of a channel is close to zero has been changed. Previously, the program had panicked but now it just output warning messages.

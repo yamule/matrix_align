@@ -172,7 +172,7 @@ impl SimpleArgParse{
             if !self.mapper.contains_key(kk){
                 if kk.starts_with("--nokey"){
                     errors.push(
-                        format!("{} lacks tag.",vv)
+                        format!("{} lacks option key.",vv)
                     );
                 }else{
                     errors.push(
