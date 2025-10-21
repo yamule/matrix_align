@@ -80,6 +80,14 @@ fn main_(mut args:Vec<String>){
         let _fst = args.remove(0);
     }
     
+    /*
+        let name = ii.0;
+        let altname = ii.1;
+        let descstring = ii.2;//description
+        let defvalue = ii.3;//default value
+        let acc = &ii.4;//acceptable values
+        let req = ii.5;//required or not 
+     */
     let allowed_arg_:Vec<(&str,Option<&str>,&str,Option<&str>,Vec<&str>,bool)> = vec![
         ("--in",None
         ,"<input file path> : Text based file which contains general profile matrices for multiple sequences. Something \
@@ -135,7 +143,7 @@ fn main_(mut args:Vec<String>){
         ,Some("0.5,0.5"),vec![],false),
 
         ("--normalize",None
-        ,"<bool or novalue=true> : Normalize profile values before alignment."
+        ,"<bool or novalue=true> : Normalize (per-channel normalization) profile values before alignment."
         ,Some("true"),vec![],false),
         
         ("--alignment_type",None
@@ -260,7 +268,7 @@ fn main_(mut args:Vec<String>){
     for v in reqpair{
         let mut chk = false;
         for vv in v.iter(){
-            if argparser.is_generous_false(vv){
+            if !argparser.is_generous_false(vv){
                 chk = true;
             }
         }
