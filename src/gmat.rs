@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use self::matrix_process::*;
 use super::*;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq,Clone,Copy)]
 pub struct GMatStatistics{
     pub max:f32,
     pub min:f32,
@@ -238,27 +238,39 @@ pub unsafe fn calc_vec_stats_legacy(filenames:&Vec<String>)->Vec<GMatStatistics>
     return calc_vec_stats_(allval);
 }
 
-pub fn normalize(vec:&mut Vec<f32>,gmatstats:&Vec<GMatStatistics>,print_error:bool){
+pub fn normalize(vec:&mut Vec<f32>,gmatstats:&Vec<GMatStatistics>)->Result<(),String>{
     assert_eq!(vec.len(),gmatstats.len());
+    let mut err:String = "".to_owned();
     for (ii,vv) in vec.iter_mut().zip(gmatstats.iter()).enumerate(){
         if !(1.0/vv.1.var.sqrt()).is_finite(){
-            if print_error{ //汚いが全アミノ酸についてメッセージが出てしまって冗長なので
-                eprintln!("Warning: Variance of column {} is too small {}! All values will be set to 0.0!",ii+1,vv.1.var);
-            }
+            err += format!("Warning: Variance of column {} is too small {}! All values will be set to 0.0!\n",ii+1,vv.1.var).as_str();
             *vv.0 = 0.0;
         }else{
             *vv.0 = (*vv.0 -vv.1.mean)/vv.1.var.sqrt();
         }
     }
+    if err.len() > 0{
+        return Err(err);
+    }
+    return Ok(());
 }
 
 pub fn normalize_seqmatrix(vec:&mut Vec<Vec<f32>>, gmatstats:&Vec<GMatStatistics>){
     let vlen = vec.len();
+    let mut errorflag = false;
     for ii in 0..vlen{
-        normalize(&mut vec[ii], gmatstats,ii == 0);
+        let res = normalize(&mut vec[ii], gmatstats);
+        match res{
+            Ok(_)=>{},
+            Err(x)=>{
+                if !errorflag{
+                    errorflag = true;
+                    eprint!("{}",x);
+                }
+            }
+        }
     }
 }
-
 
 //secondary structure を表現する場所があると数残基シフトの Alternative Alignment が出来てしまうので調整する
 pub fn ssbias(vec:&mut Vec<Vec<f32>>,ignore_last:bool) -> Vec<Vec<f32>>{
@@ -474,4 +486,65 @@ mod tests{
             }
         }
     }
+}
+
+#[test]
+fn normtest(){
+    let gs = GMatStatistics{
+        max:1.0,
+        min:1.0,
+        sum:1.0,
+        mean:1.0,
+        var:1.0,
+        count:1
+    };
+    let mut dummystat:Vec<GMatStatistics> = vec![];
+    for i in 0..10{
+        let mut gs_ = gs.clone();
+        if i == 5 || i == 9{
+            gs_.var = 0.0;
+        }
+        dummystat.push(gs_);
+    }
+
+    let mut v_:Vec<f32> = vec![];
+    for _ in 0..10{
+        v_.push(100.0);
+    }
+    let res = normalize(&mut v_, &dummystat);
+    match res{
+        Ok(_)=>{
+            panic!();
+        },
+        Err(x)=>{
+            assert!(
+                "Warning: Variance of column 6 is too small 0! All values will be set to 0.0!\nWarning: Variance of column 10 is too small 0! All values will be set to 0.0!\n" == x.as_str()
+                ||
+                "Warning: Variance of column 6 is too small 0.0! All values will be set to 0.0!\nWarning: Variance of column 10 is too small 0.0! All values will be set to 0.0!\n" == x.as_str()
+            );
+        }
+    }
+    assert_eq!(v_[5],0.0);
+    assert_eq!(v_[9],0.0);
+    
+    let mut dummystat:Vec<GMatStatistics> = vec![];
+    for _ in 0..10{
+        let gs_ = gs.clone();
+        dummystat.push(gs_);
+    }
+
+    let mut v_:Vec<f32> = vec![];
+    for _ in 0..10{
+        v_.push(100.0);
+    }
+    let res = normalize(&mut v_, &dummystat);
+    match res{
+        Ok(_)=>{
+        },
+        Err(x)=>{
+            panic!("{}",x);
+        }
+    }
+    assert_eq!(v_[5],99.0);
+    assert_eq!(v_[9],99.0);
 }
