@@ -467,7 +467,7 @@ fn main_(mut args:Vec<String>){
         let firstseq = SequenceProfile::new(
             vec![(firstseq_.0,firstseq_.1)],alen,firstseq_.2[0].len(),None,Some(firstseq_.2),firstseq_.3
         );
-
+        let firstseq_name = firstseq.headers[0].clone();
         let mut out_lines:Vec<String> = vec![];
         let mut score_lines:Vec<String> = vec![];
         out_lines.push(
@@ -538,6 +538,7 @@ fn main_(mut args:Vec<String>){
                     if out_score_flag{
                         let arange = get_alignment_range(&p.0);
                         let sout:Vec<String> = vec![
+                            "qname:".to_owned(),get_name(&firstseq_name),
                             "sname:".to_owned(),get_name(&nn.0),
                             "qstart:".to_owned(),arange.0.to_string(),
                             "qend:".to_owned(),arange.1.to_string(),
