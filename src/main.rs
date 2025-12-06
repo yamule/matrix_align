@@ -133,14 +133,18 @@ fn main_(mut args:Vec<String>){
         ,"<float> : Gap open penalty for DP. Must be negative."
         ,Some("-10.0"),vec![],false),
         
+        ("--gap_extension_penalty",None
+        ,"<float> : Gap extension penalty for first DP. Must be negative. If not set, gap_open_penalty*0.05 will be used."
+        ,Some("-0.5"),vec![],false),
+        
         ("--gap_penalty_auto_adjust",None
         ,"<bool or novalue=true> : Adjust gap penalty automaticall. <gap open penalty> = <maximum matching score>*a1*-1.0 + \
-        <minimum matching score>*a2; If <minimum matching score> is positive, a2 will be set as 0.0 ."
+        <minimum matching score>*a2; <gap extension penalty> = <gap open penalty>*b1; If <minimum matching score> is positive, a2 will be set as 0.0 ."
         ,Some("true"),vec![],false),
         
-        ("--gap_penalty_a1_a2",None
-        ,"<float>,<float> : Parameters for gap penalty auto adjust."
-        ,Some("0.5,0.5"),vec![],false),
+        ("--gap_penalty_a1_a2_b1",None
+        ,"<float>,<float>,<float> : Parameters for gap penalty auto adjust."
+        ,Some("0.5,0.5,0.05"),vec![],false),
 
         ("--normalize",None
         ,"<bool or novalue=true> : Normalize (per-channel normalization) profile values before alignment."
@@ -238,7 +242,8 @@ fn main_(mut args:Vec<String>){
         ("--a3m_pairwise","--distance_base"),
         ("--num_iter","--tree_guided"),
         ("--gap_penalty_auto_adjust","--gap_open_penalty"),
-        ("--gap_penalty_a1_a2","--gap_open_penalty"),
+        ("--gap_penalty_a1_a2_a3","--gap_open_penalty"),
+        ("--gap_penalty_a1_a2_a3","--gap_extension_penalty"),
     ];
     for (a,b) in voidpair{
         if argparser.is_generous_false(a){
@@ -418,18 +423,27 @@ fn main_(mut args:Vec<String>){
 
     let veclen = gmat1_[0].2[0].len();
     let mut saligner:ProfileAligner = if argparser.get_bool("--gap_penalty_auto_adjust").unwrap(){
-        let gap_penalty_a1_a2:Vec<String> = argparser.get_string("--gap_penalty_a1_a2").unwrap().to_string().split(',').map(|m|m.to_owned()).collect();
-        ProfileAligner::new(veclen,300,None
+        let gap_penalty_a1_a2_b1:Vec<String> = argparser.get_string("--gap_penalty_a1_a2_b1").unwrap().to_string().split(',').map(|m|m.to_owned()).collect();
+        ProfileAligner::new(veclen,300,None,None
         ,alignment_type,score_type,Some(GapPenaltyAutoAdjustParam{
-            a1:gap_penalty_a1_a2[0].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2,e)),
-            a2:gap_penalty_a1_a2[1].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2,e))
+            a1:gap_penalty_a1_a2_b1[0].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2_b1,e)),
+            a2:gap_penalty_a1_a2_b1[1].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2_b1,e)),
+            b1:gap_penalty_a1_a2_b1[2].parse::<f32>().unwrap_or_else(|e| panic!("{:?} {:?}",gap_penalty_a1_a2_b1,e)),
         })
         ,argparser.get_bool("--gap_penalty_dynamic_bias").unwrap())
     }else{
-        ProfileAligner::new(veclen,300, Some(argparser.get_float("--gap_open_penalty").unwrap() as f32)
+        let go = argparser.get_float("--gap_open_penalty").unwrap();
+        let ge = if argparser.user_defined("--gap_extension_penalty"){
+            argparser.get_float("--gap_extension_penalty").unwrap()
+        }else{
+            go*0.05
+        };
+
+        ProfileAligner::new(veclen,300
+        , Some(go as f32)
+        , Some(ge as f32)
         ,alignment_type,score_type,None,argparser.get_bool("--gap_penalty_dynamic_bias").unwrap())
     };
-
 
     let seqprepare = |mut gg:(String,Vec<char>,Vec<Vec<f32>>,Option<Vec<(f32,f32,f32,f32)>>)
         ,name_to_res:&mut HashMap<String,String>,name_ordered: &mut Vec<String>|

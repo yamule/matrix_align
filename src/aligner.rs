@@ -80,7 +80,8 @@ pub struct DPResult{
 #[derive(Clone,Debug)]
 pub struct GapPenaltyAutoAdjustParam{
     pub a1:f32,
-    pub a2:f32
+    pub a2:f32,
+    pub b1:f32,
 }
 
 
@@ -93,6 +94,7 @@ pub struct ProfileAligner{
     pub alen:usize,
     pub blen:usize,
     pub gap_open_penalty:f32,
+    pub gap_extension_penalty:f32,
     pub penalty_warning:bool,
     pub alignment_type:AlignmentType,
     pub score_type:ScoreType,
@@ -102,12 +104,15 @@ pub struct ProfileAligner{
     pub auto_adjust_param:GapPenaltyAutoAdjustParam,
 }
 impl ProfileAligner {
-    pub fn new(vec_size:usize,buff_len:usize,gap_open_penaty_:Option<f32>
+    pub fn new(vec_size:usize,buff_len:usize
+        ,gap_open_penaty_:Option<f32>
+        ,gap_extension_penaty_:Option<f32>
         ,alignment_type:AlignmentType,score_type:ScoreType
         ,gap_penalty_auto_adjust_:Option<GapPenaltyAutoAdjustParam>
         ,gap_penalty_dynamic_bias:bool)->ProfileAligner{
         
-        let mut gap_open_penalty:f32 = 0.0;
+        let mut gap_open_penalty:f32 = -10.0;
+        let gap_extension_penalty:f32;
         let mut autoadjustflag = false;
         if let Some(x) = gap_open_penaty_{
             if let Some(_y) = gap_penalty_auto_adjust_{
@@ -117,7 +122,15 @@ impl ProfileAligner {
         }else{
             autoadjustflag = true;
         }
-        
+        if let Some(x) = gap_extension_penaty_{
+            if let Some(_y) = gap_penalty_auto_adjust_{
+                panic!("one of gap_penalty_param or gap_penalty_auto_adjust_ should be None.");
+            }
+            gap_extension_penalty = x;
+        }else{
+            gap_extension_penalty = gap_open_penalty*0.05;
+        }
+
         if let None = gap_penalty_auto_adjust_{
             if let None = gap_open_penaty_{
                 panic!("one of gap_penalty_param or gap_penalty_auto_adjust_ should not be None.");
@@ -125,7 +138,7 @@ impl ProfileAligner {
         }
         
         let gap_penalty_auto_adjust = gap_penalty_auto_adjust_.unwrap_or(
-            GapPenaltyAutoAdjustParam{a1:1.0,a2:1.0});
+            GapPenaltyAutoAdjustParam{a1:1.0,a2:1.0,b1:0.05});
         
         let dp_matrix:Vec<Vec<Vec<f32>>> = vec![vec![vec![];1];1];
         let path_matrix:Vec<Vec<Vec<u8>>> = vec![vec![vec![];1];1];
@@ -144,7 +157,8 @@ impl ProfileAligner {
             ,vec_size:vec_size
             ,alen:0
             ,blen:0
-            ,gap_open_penalty
+            ,gap_open_penalty:gap_open_penalty
+            ,gap_extension_penalty:gap_extension_penalty
             ,penalty_warning:false
             ,alignment_type:alignment_type
             ,score_type:score_type
@@ -164,8 +178,9 @@ impl ProfileAligner {
 
     pub fn perform_dp(&mut self,a:&SequenceProfile,b:&SequenceProfile)->DPResult {
         let mut gap_open_penalty = self.gap_open_penalty;
-
+        let mut gap_extension_penalty = self.gap_extension_penalty;
         assert!(gap_open_penalty <= 0.0);
+        assert!(gap_extension_penalty <= 0.0);
 
         let aalen = a.get_alignment_length();
         let bblen = b.get_alignment_length();
@@ -261,9 +276,11 @@ impl ProfileAligner {
             }
             if zmin > 0.0{
                 eprintln!("Minimum match value is positive. {}\nThe value will be not used for gap penalty auto adjust.",zmin);   
-                gap_open_penalty  = zmax*self.auto_adjust_param.a2*-1.0;
+                gap_open_penalty  = zmax*self.auto_adjust_param.a1*-1.0;
+                gap_extension_penalty = gap_open_penalty*self.auto_adjust_param.b1;
             }else{
-                gap_open_penalty  = zmax*self.auto_adjust_param.a2*-1.0+zmin*self.auto_adjust_param.a2;
+                gap_open_penalty  = zmax*self.auto_adjust_param.a1*-1.0+zmin*self.auto_adjust_param.a2;
+                gap_extension_penalty = gap_open_penalty*self.auto_adjust_param.b1;
             }
             //println!("Adjusted gap penalty open:{}",gap_open_penalty);
         }
@@ -283,12 +300,12 @@ impl ProfileAligner {
                 let gebias = if self.gap_penalty_dynamic_bias{
                     1.0-b.gmat[0].del_to_del
                 }else{
-                    0.05 //ToDo 初期値設定
+                    1.0
                 };
 
                 match self.alignment_type{
                     AlignmentType::Global => {
-                        currentpenal =gobias*gap_open_penalty+gebias*gap_open_penalty*(ii as f32 - 1.0);
+                        currentpenal =gobias*gap_open_penalty+gebias*gap_extension_penalty*(ii as f32 - 1.0);
                     },
                     AlignmentType::Local => {
                         currentpenal = 0.0;
@@ -318,12 +335,12 @@ impl ProfileAligner {
                 let gebias = if self.gap_penalty_dynamic_bias{
                     1.0-a.gmat[0].del_to_del
                 }else{
-                    0.05 //ToDo 初期値設定
+                    1.0
                 };
 
                 match self.alignment_type{
                     AlignmentType::Global => {
-                        currentpenal = gobias*gap_open_penalty+gebias*gap_open_penalty*(ii as f32 - 1.0);
+                        currentpenal = gobias*gap_open_penalty+gebias*gap_extension_penalty*(ii as f32 - 1.0);
                     },
                     AlignmentType::Local => {
                         currentpenal = 0.0;
@@ -375,7 +392,7 @@ impl ProfileAligner {
                 let gebias_a = if self.gap_penalty_dynamic_bias{
                     1.0-acol_next.del_to_del
                 }else{
-                    0.05 //ToDo 初期値設定
+                    1.0
                 };
 
 
@@ -387,7 +404,7 @@ impl ProfileAligner {
                 let gebias_b = if self.gap_penalty_dynamic_bias{
                     1.0- bcol_next.del_to_del
                 }else{
-                    0.05 //ToDo 初期値設定
+                    1.0
                 };
 
                 let abweight = 1.0; //match state で重みをつけようかと思ったりもした
@@ -401,14 +418,14 @@ impl ProfileAligner {
                 let lef_m:f32 = self.dp_matrix[ii-1][jj][DIREC_UPLEFT as usize]
                 + gobias_b*gap_open_penalty;
                 let lef_l:f32 = self.dp_matrix[ii-1][jj][DIREC_LEFT as usize]
-                + gebias_b*gap_open_penalty;
+                + gebias_b*gap_extension_penalty;
                 let lef_u:f32 = std::f32::NEG_INFINITY;
 
                 let up_m:f32 = self.dp_matrix[ii][jj-1][DIREC_UPLEFT as usize]
                 + gobias_a*gap_open_penalty;
                 let up_l:f32 = std::f32::NEG_INFINITY;
                 let up_u:f32 = self.dp_matrix[ii][jj-1][DIREC_UP as usize]
-                + gebias_a*gap_open_penalty;
+                + gebias_a*gap_extension_penalty;
 
                 let px = vec![
                     (DIREC_UPLEFT,(diag_m,diag_l,diag_u)),
