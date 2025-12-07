@@ -242,8 +242,8 @@ fn main_(mut args:Vec<String>){
         ("--a3m_pairwise","--distance_base"),
         ("--num_iter","--tree_guided"),
         ("--gap_penalty_auto_adjust","--gap_open_penalty"),
-        ("--gap_penalty_a1_a2_a3","--gap_open_penalty"),
-        ("--gap_penalty_a1_a2_a3","--gap_extension_penalty"),
+        ("--gap_penalty_a1_a2_b1","--gap_open_penalty"),
+        ("--gap_penalty_a1_a2_b1","--gap_extension_penalty"),
     ];
     for (a,b) in voidpair{
         if argparser.is_generous_false(a){
