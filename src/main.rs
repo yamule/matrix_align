@@ -209,6 +209,7 @@ fn main_(mut args:Vec<String>){
 
     for aa in args.iter(){
         if aa == "--help" || aa == "-h"{
+            eprintln!("GPSMalign: Matrix based multiple sequence alignment tool.");
             eprintln!("Version: dev_20251216");
             matrix_process::check_simd();
         }
