@@ -209,6 +209,7 @@ fn main_(mut args:Vec<String>){
 
     for aa in args.iter(){
         if aa == "--help" || aa == "-h"{
+            eprintln!("Version: dev_20251216");
             matrix_process::check_simd();
         }
     }
@@ -420,9 +421,15 @@ fn main_(mut args:Vec<String>){
             gmat1_.append(&mut z);
         }
     }
+    let mut autoadjust = true;
+    if argparser.user_defined("--gap_open_penalty") || argparser.user_defined("--gap_extension_penalty"){
+        assert!(argparser.is_generous_false("--gap_penalty_auto_adjust") 
+        || !argparser.user_defined("--gap_penalty_auto_adjust"));
+        autoadjust = false;
+    }
 
     let veclen = gmat1_[0].2[0].len();
-    let mut saligner:ProfileAligner = if argparser.get_bool("--gap_penalty_auto_adjust").unwrap(){
+    let mut saligner:ProfileAligner = if autoadjust{
         let gap_penalty_a1_a2_b1:Vec<String> = argparser.get_string("--gap_penalty_a1_a2_b1").unwrap().to_string().split(',').map(|m|m.to_owned()).collect();
         ProfileAligner::new(veclen,300,None,None
         ,alignment_type,score_type,Some(GapPenaltyAutoAdjustParam{

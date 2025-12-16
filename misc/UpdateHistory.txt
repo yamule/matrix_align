@@ -2,3 +2,6 @@ memo during dev
 2025/10/21
 ・Fixed a bug for options requiring at least one to exist: Where a panic occurred only when both options were present.
 ・The behavior when variance of a channel is close to zero has been changed. Previously, the program had panicked but now it just output warning messages.
+
+2025/12/16
+・Fixed a bug that --gap_open_penalty & --gap_extension_penalty were ignored if --gap_penalty_auto_adjust false was not set.
