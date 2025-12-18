@@ -8,3 +8,4 @@ memo during dev
 
 2025/12/18
 ・Add qlen and changed order of score_table
+・Changed qlen to show profile length.

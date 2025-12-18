@@ -210,7 +210,7 @@ fn main_(mut args:Vec<String>){
     for aa in args.iter(){
         if aa == "--help" || aa == "-h"{
             eprintln!("GPSMalign: Matrix based multiple sequence alignment tool.");
-            eprintln!("Version: dev_20251218");
+            eprintln!("Version: dev_20251218b");
             matrix_process::check_simd();
         }
     }
@@ -566,7 +566,7 @@ fn main_(mut args:Vec<String>){
                             "sname:".to_owned(),get_name(&nn.0),
                             "qstart:".to_owned(),arange.0.to_string(),
                             "qend:".to_owned(),arange.1.to_string(),
-                            "qlen:".to_owned(),query_length.to_string(),
+                            "qlen:".to_owned(),firstprofile_length.to_string(),
                             "sstart:".to_owned(),arange.2.to_string(),
                             "send:".to_owned(),arange.3.to_string(),
                             "slen:".to_owned(),nn.1.to_string(),
