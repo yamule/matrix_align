@@ -485,9 +485,9 @@ fn main_(mut args:Vec<String>){
         if argparser.get_bool("--normalize").unwrap(){
             gmat::normalize_seqmatrix(&mut (firstseq_.2), &gmatstats);
         }
-        let alen = firstseq_.1.len();
+        let firstprofile_length = firstseq_.1.len();
         let firstseq = SequenceProfile::new(
-            vec![(firstseq_.0,firstseq_.1)],alen,firstseq_.2[0].len(),None,Some(firstseq_.2),firstseq_.3
+            vec![(firstseq_.0,firstseq_.1)],firstprofile_length,firstseq_.2[0].len(),None,Some(firstseq_.2),firstseq_.3
         );
         let firstseq_name = firstseq.headers[0].clone();
         let mut out_lines:Vec<String> = vec![];
@@ -495,8 +495,10 @@ fn main_(mut args:Vec<String>){
         out_lines.push(
             ">".to_owned()+firstseq.headers[0].as_str()
         );
+        let firstseq_nogap = firstseq.member_sequences[0].iter().filter(|c| **c != '-').map(|m| m.to_string()).collect::<Vec<String>>().join("");
+        let query_length = firstseq_nogap.len();
         out_lines.push(
-            firstseq.member_sequences[0].iter().filter(|c| **c != '-').map(|m| m.to_string()).collect::<Vec<String>>().join("")
+            firstseq_nogap
         );
 
         let mut name_length_order:Vec<(String,usize)> = vec![];
@@ -564,11 +566,13 @@ fn main_(mut args:Vec<String>){
                             "sname:".to_owned(),get_name(&nn.0),
                             "qstart:".to_owned(),arange.0.to_string(),
                             "qend:".to_owned(),arange.1.to_string(),
+                            "qlen:".to_owned(),query_length.to_string(),
                             "sstart:".to_owned(),arange.2.to_string(),
                             "send:".to_owned(),arange.3.to_string(),
+                            "slen:".to_owned(),nn.1.to_string(),
                             "score:".to_owned(),p.1.score.to_string(),
                             "positive_count:".to_owned(),posicount.to_string(),
-                            "slen:".to_owned(),nn.1.to_string()
+
                         ];
                         score_lines.push(
                             sout.join("\t")
